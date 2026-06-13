@@ -9,7 +9,8 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "echo \"No linter configured for shared-types\"",
-    "test": "echo \"No tests for shared-types\" && exit 0"
+    "test": "echo \"No tests for shared-types\" && exit 0",
+    "lint": "eslint 'src/**/*.ts'"
   },
   "devDependencies": {
     "typescript": "^5.4.0"

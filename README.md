@@ -130,9 +130,10 @@ npm run typecheck
 
 ## Linting
 
-```bash
-npm run lint
-```
+This project uses ESLint to maintain code quality.
+
+- **Run linting for all packages:** `npm run lint`
+- **Run linting for a specific package:** `npm run lint -w <package-name>`
 
 ---
 
