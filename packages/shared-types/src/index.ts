@@ -1,17 +1,26 @@
 export type WalletAddress = `0x${string}`;
 
-export type MembershipState = 'invited' | 'active' | 'expired' | 'suspended';
+export type MembershipState = "invited" | "active" | "expired" | "suspended";
 
-export type Role = 'admin' | 'member' | 'contributor';
+export type Role = "admin" | "member" | "contributor";
 
 export interface DecisionReason {
   code: string;
   message: string;
 }
 
+export type PolicyRuleType =
+  | "PUBLIC"
+  | "MEMBERS_ONLY"
+  | "ADMINS_ONLY"
+  | "CONTRIBUTORS_OR_ADMINS"
+  | string;
+
+export type AccessPolicyParams = Record<string, unknown> | null;
+
 export interface AccessDecision {
   allowed: boolean;
-  code: 'ALLOW' | 'DENY';
+  code: "ALLOW" | "DENY";
   reasons: DecisionReason[];
   effectiveRoles?: Role[];
   membershipState?: MembershipState;
@@ -20,14 +29,15 @@ export interface AccessDecision {
 export interface ResourceRef {
   communityId: string;
   resourceId?: string;
-  resourceType?: 'page' | 'content' | 'event' | 'other';
+  resourceType?: "page" | "content" | "event" | "other";
 }
 
 export interface AccessPolicy {
   id: string;
   communityId: string;
   resource: string;
-  rule: 'PUBLIC' | 'MEMBERS_ONLY' | 'ADMINS_ONLY' | 'CONTRIBUTORS_OR_ADMINS';
+  ruleType: PolicyRuleType;
+  params?: AccessPolicyParams;
 }
 
 export interface MemberProfile {
@@ -52,7 +62,7 @@ export interface AccessCheckInput {
 
 export interface RoleAssignment {
   role: Role;
-  source: 'manual' | 'auto';
+  source: "manual" | "auto";
   active: boolean;
 }
 
@@ -62,8 +72,5 @@ export interface RoleContext {
 }
 
 export interface PolicyEngine {
-  evaluate(
-    policy: AccessPolicy,
-    ctx: RoleContext
-  ): AccessDecision;
+  evaluate(policy: AccessPolicy, ctx: RoleContext): AccessDecision;
 }

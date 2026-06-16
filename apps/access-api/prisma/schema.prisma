@@ -85,7 +85,8 @@ model AccessPolicy {
   id          String   @id @default(cuid())
   communityId String
   resource    String
-  rule        String
+  ruleType    String
+  params      Json?
   community   Community @relation(fields: [communityId], references: [id])
   @@unique([communityId, resource])
 }
