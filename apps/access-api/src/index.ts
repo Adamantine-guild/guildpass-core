@@ -1,6 +1,7 @@
 import Fastify from 'fastify';
 import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
+import { config } from './config';
 import { registerRoutes } from './routes';
 
 const server = Fastify({ logger: true });
@@ -22,8 +23,7 @@ async function main() {
 
   registerRoutes(server);
 
-  const port = parseInt(process.env.PORT || '3000', 10);
-  await server.listen({ port, host: '0.0.0.0' });
+  await server.listen({ port: config.port, host: '0.0.0.0' });
 }
 
 main().catch((err) => {

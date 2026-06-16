@@ -141,6 +141,8 @@ This project uses ESLint to maintain code quality.
 
 See [`.env.example`](./.env.example) for all required variables.
 
+All environment variables are validated at startup by `apps/access-api/src/config.ts`. The server will refuse to start and print a clear error if any required variable is missing or malformed (invalid URL, port out of range, bad chain ID, or invalid contract address).
+
 ---
 
 ## Deferred Areas (Intentionally Not Implemented)
