@@ -21,7 +21,8 @@
     "@guildpass/policy-engine": "workspace:*",
     "@guildpass/shared-types": "workspace:*",
     "@prisma/client": "^5.14.0",
-    "fastify": "^4.25.0"
+    "fastify": "^4.25.0",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "@types/node": "^20.11.30",

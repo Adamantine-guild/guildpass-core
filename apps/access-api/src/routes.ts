@@ -1,7 +1,15 @@
 import type { FastifyInstance } from 'fastify';
 import { getPrisma } from './services/prisma';
 import { getMemberService } from './services/memberService';
-import { AccessCheckInput } from '@guildpass/shared-types';
+import {
+  accessCheckBodySchema,
+  communityIdParamSchema,
+  parseBody,
+  parseParams,
+  parseQuery,
+  roleQuerySchema,
+  walletParamSchema,
+} from './validators';
 
 export function registerRoutes(app: FastifyInstance) {
   const prisma = getPrisma();
@@ -33,10 +41,10 @@ export function registerRoutes(app: FastifyInstance) {
         },
       },
     },
-  }, async (req) => {
-    // @ts-ignore
-    const wallet: string = req.params.wallet;
-    return svc.getMembershipsByWallet(wallet);
+  }, async (req, reply) => {
+    const params = parseParams(req, reply, walletParamSchema);
+    if (!params) return;
+    return svc.getMembershipsByWallet(params.wallet);
   });
 
   app.get('/v1/members/:wallet', {
@@ -45,9 +53,9 @@ export function registerRoutes(app: FastifyInstance) {
       params: { type: 'object', properties: { wallet: { type: 'string' } }, required: ['wallet'] },
     },
   }, async (req, reply) => {
-    // @ts-ignore
-    const wallet: string = req.params.wallet;
-    const profile = await svc.getProfileByWallet(wallet);
+    const params = parseParams(req, reply, walletParamSchema);
+    if (!params) return;
+    const profile = await svc.getProfileByWallet(params.wallet);
     if (!profile) return reply.code(404).send({ message: 'Not found' });
     return profile;
   });
@@ -65,8 +73,9 @@ export function registerRoutes(app: FastifyInstance) {
         required: ['wallet', 'communityId', 'resource']
       }
     }
-  }, async (req) => {
-    const body = req.body as AccessCheckInput;
+  }, async (req, reply) => {
+    const body = parseBody(req, reply, accessCheckBodySchema);
+    if (!body) return;
     return svc.checkAccess(body);
   });
 
@@ -76,11 +85,11 @@ export function registerRoutes(app: FastifyInstance) {
       params: { type: 'object', properties: { communityId: { type: 'string' } }, required: ['communityId'] },
       querystring: { type: 'object', properties: { role: { type: 'string' } } }
     }
-  }, async (req) => {
-    // @ts-ignore
-    const communityId: string = req.params.communityId;
-    // @ts-ignore
-    const role: string | undefined = (req.query as any).role;
-    return svc.listMembersForAdmin(communityId, role as any);
+  }, async (req, reply) => {
+    const params = parseParams(req, reply, communityIdParamSchema);
+    if (!params) return;
+    const query = parseQuery(req, reply, roleQuerySchema);
+    if (!query) return;
+    return svc.listMembersForAdmin(params.communityId, query.role);
   });
 }
