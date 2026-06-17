@@ -97,3 +97,13 @@ model Badge {
   name      String
   member    Member   @relation(fields: [memberId], references: [id])
 }
+
+model IndexerCheckpoint {
+  id            String   @id @default(cuid())
+  chainId       Int
+  contractAddress String
+  lastBlock     BigInt
+  lastBlockHash String?
+  updatedAt     DateTime @default(now()) @updatedAt
+  @@unique([chainId, contractAddress])
+}

@@ -83,6 +83,44 @@ After deploying, set `MEMBERSHIP_NFT_ADDRESS` and `CHAIN_ID` in `.env`.
 
 ---
 
+## Event Indexer
+
+The indexer synchronizes on-chain membership state from the MembershipNFT contract into the access API database.
+
+### Features
+
+- **Event Processing**: Consumes `MembershipMinted`, `MembershipRenewed`, and `MembershipSuspended` events
+- **Checkpoint Management**: Tracks last processed block to avoid duplicate processing
+- **Idempotent**: Safe to re-run without creating duplicate records
+- **Batch Processing**: Processes events in configurable batch sizes to avoid RPC rate limits
+- **Graceful Shutdown**: Responds to SIGTERM/SIGINT signals
+
+### Configuration
+
+Set the following environment variables in `.env`:
+
+```bash
+RPC_URL="http://localhost:8545"              # EVM RPC endpoint
+CHAIN_ID=31337                               # Network chain ID
+MEMBERSHIP_NFT_ADDRESS="0x..."               # Deployed contract address
+INDEXER_START_BLOCK=0                        # Block to start indexing from
+INDEXER_BATCH_SIZE=1000                      # Events per batch
+```
+
+### Running the Indexer
+
+```bash
+# Run once from current checkpoint to latest block
+npm run indexer
+
+# Or with pnpm
+pnpm --filter access-api indexer
+```
+
+The indexer can be run manually on-demand or scheduled as a cron job. Future enhancements may include a continuous watch mode.
+
+---
+
 ## API Endpoints (MVP)
 
 | Method | Path | Description |

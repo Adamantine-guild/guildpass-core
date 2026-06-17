@@ -13,14 +13,17 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "seed": "ts-node prisma/seed.ts",
-    "test": "jest --passWithNoTests"
+    "test": "jest --passWithNoTests",
+    "indexer": "ts-node src/workers/indexer.ts"
   },
   "dependencies": {
     "@fastify/swagger": "^8.14.0",
     "@fastify/swagger-ui": "^2.0.1",
+    "@guildpass/contracts": "workspace:*",
     "@guildpass/policy-engine": "workspace:*",
     "@guildpass/shared-types": "workspace:*",
     "@prisma/client": "^5.14.0",
+    "ethers": "^6.13.0",
     "fastify": "^4.25.0",
     "pino-http": "^11.0.0",
     "prom-client": "^15.1.3",
