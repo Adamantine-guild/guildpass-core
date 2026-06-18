@@ -90,7 +90,7 @@ After deploying, set `MEMBERSHIP_NFT_ADDRESS` and `CHAIN_ID` in `.env`.
 | GET | `/v1/memberships/:wallet` | Membership status summary by wallet |
 | GET | `/v1/members/:wallet` | Member profile (with membership and roles) |
 | POST | `/v1/access/check` | Access decision for `{ wallet, communityId, resource }` |
-| GET | `/v1/communities/:communityId/members` | Admin member listing |
+| GET | `/v1/communities/:communityId/members` | Admin member listing (supports query params `limit`, `cursor`, `role` for cursor-based pagination) |
 
 Responses include `allowed`/`denied` plus human-readable and machine-readable reasons.
 
