@@ -473,11 +473,13 @@ describe('getMemberService - Membership State Normalization', () => {
 
       (mockPrisma.member.findMany as jest.Mock).mockResolvedValue(mockMembers);
 
-      const result = await memberService.listMembersForAdmin('community-1');
+      const result = await memberService.listMembersForAdmin('community-1', undefined, 50);
 
       expect(result.members).toHaveLength(2);
       expect(result.members[0].state).toBe('expired');
       expect(result.members[1].state).toBe('active');
+      expect(result.limit).toBe(50);
+      expect(result.nextCursor).toBeNull();
     });
 
     test('should filter members by role', async () => {
@@ -504,10 +506,11 @@ describe('getMemberService - Membership State Normalization', () => {
 
       (mockPrisma.member.findMany as jest.Mock).mockResolvedValue(mockMembers);
 
-      const result = await memberService.listMembersForAdmin('community-1', 'admin');
+      const result = await memberService.listMembersForAdmin('community-1', 'admin', 50);
 
       expect(result.members).toHaveLength(1);
       expect(result.members[0].wallet).toBe('0x1111111111111111');
+      expect(result.limit).toBe(50);
     });
 
     test('should only include active roles', async () => {
@@ -528,9 +531,53 @@ describe('getMemberService - Membership State Normalization', () => {
 
       (mockPrisma.member.findMany as jest.Mock).mockResolvedValue(mockMembers);
 
-      const result = await memberService.listMembersForAdmin('community-1');
+      const result = await memberService.listMembersForAdmin('community-1', undefined, 50);
 
       expect(result.members[0].roles).toEqual(['admin']);
+      expect(result.limit).toBe(50);
+    });
+  });
+
+  describe('pagination behaviour', () => {
+    test('default pagination returns nextCursor when more results exist', async () => {
+      const members = [] as any[];
+      for (let i = 0; i < 6; i++) {
+        members.push({ id: `m-${i}`, wallet: { address: `0x${i}` }, profile: {}, membership: { state: 'active', expiresAt: null }, roles: [] });
+      }
+
+      // request limit 5 -> should return 5 items and nextCursor set
+      (mockPrisma.member.findMany as jest.Mock).mockResolvedValue(members);
+
+      const result = await memberService.listMembersForAdmin('community-1', undefined, 5);
+
+      expect(result.members).toHaveLength(5);
+      expect(result.limit).toBe(5);
+      expect(result.nextCursor).toBe('m-4');
+    });
+
+    test('custom limit is bounded', async () => {
+      const members = [] as any[];
+      for (let i = 0; i < 3; i++) {
+        members.push({ id: `m-${i}`, wallet: { address: `0x${i}` }, profile: {}, membership: { state: 'active', expiresAt: null }, roles: [] });
+      }
+
+      (mockPrisma.member.findMany as jest.Mock).mockResolvedValue(members);
+
+      const result = await memberService.listMembersForAdmin('community-1', undefined, 1000);
+
+      // capped to maxLimit (100) but since mock returns 3, we get 3 and nextCursor null
+      expect(result.members).toHaveLength(3);
+      expect(result.limit).toBe(100);
+      expect(result.nextCursor).toBeNull();
+    });
+
+    test('empty pages return empty members and null cursor', async () => {
+      (mockPrisma.member.findMany as jest.Mock).mockResolvedValue([]);
+
+      const result = await memberService.listMembersForAdmin('community-1', undefined, 10);
+
+      expect(result.members).toEqual([]);
+      expect(result.nextCursor).toBeNull();
     });
   });
 

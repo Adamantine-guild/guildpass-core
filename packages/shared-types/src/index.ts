@@ -67,3 +67,18 @@ export interface PolicyEngine {
     ctx: RoleContext
   ): AccessDecision;
 }
+
+export interface MemberListItem {
+  id?: string;
+  wallet: WalletAddress;
+  displayName?: string | null;
+  state: MembershipState;
+  roles: Role[];
+}
+
+export interface PaginatedMembersResponse {
+  communityId: string;
+  members: MemberListItem[];
+  limit: number;
+  nextCursor?: string | null;
+}

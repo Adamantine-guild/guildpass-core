@@ -167,28 +167,47 @@ export function getMemberService(prisma: PrismaClient) {
       return decision;
     },
 
-    async listMembersForAdmin(communityId: string, role?: 'admin' | 'member' | 'contributor') {
+    async listMembersForAdmin(
+      communityId: string,
+      role?: 'admin' | 'member' | 'contributor',
+      limit: number = 50,
+      cursor?: string,
+    ) {
       // TODO: add auth to ensure requester is admin
+      const maxLimit = 100;
+      const take = Math.min(Math.max(1, Math.floor(limit)), maxLimit);
+
+      // Build where clause. Apply role filtering at the DB level when provided.
+      const where: any = { communityId };
+      if (role) {
+        where.roles = { some: { role, active: true } };
+      }
+
       const members = await prisma.member.findMany({
-        where: { communityId },
+        where,
         include: { wallet: true, membership: true, roles: true, profile: true },
+        orderBy: { id: 'asc' },
+        take: take + 1, // fetch one extra to determine nextCursor
+        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
       });
 
-      const list = members
-        .map((m) => {
-          const activeRoles = m.roles.filter((r) => r.active).map((r) => r.role);
-          return {
-            // Wallet address is a legitimate response field for admin use.
-            // It is masked only when emitting log lines (not in the API response).
-            wallet: m.wallet.address,
-            displayName: m.profile?.displayName ?? null,
-            state: getNormalizedMembershipState(m.membership?.state, m.membership?.expiresAt),
-            roles: activeRoles,
-          };
-        })
-        .filter((item) => (role ? item.roles.includes(role) : true));
+      const hasMore = members.length > take;
+      const page = hasMore ? members.slice(0, take) : members;
 
-      return { communityId, members: list };
+      const list = page.map((m) => {
+        const activeRoles = m.roles.filter((r) => r.active).map((r) => r.role);
+        return {
+          wallet: m.wallet.address,
+          displayName: m.profile?.displayName ?? null,
+          state: getNormalizedMembershipState(m.membership?.state, m.membership?.expiresAt),
+          roles: activeRoles,
+          id: m.id,
+        };
+      });
+
+      const nextCursor = hasMore ? page[page.length - 1].id : null;
+
+      return { communityId, members: list, limit: take, nextCursor };
     },
   };
 }

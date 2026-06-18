@@ -24,6 +24,8 @@ interface ListMembersParams {
 
 interface ListMembersQuery {
   role?: Role;
+  limit?: string;
+  cursor?: string;
 }
 
 export function registerRoutes(app: FastifyInstance) {
@@ -94,11 +96,20 @@ export function registerRoutes(app: FastifyInstance) {
     schema: {
       summary: 'List simple community member data for admins',
       params: { type: 'object', properties: { communityId: { type: 'string' } }, required: ['communityId'] },
-      querystring: { type: 'object', properties: { role: { type: 'string' } } }
+      querystring: {
+        type: 'object',
+        properties: {
+          role: { type: 'string' },
+          limit: { type: 'string' },
+          cursor: { type: 'string' },
+        },
+      },
     }
   }, async (req) => {
     const communityId: string = req.params.communityId;
-    const role = req.query.role;
-    return svc.listMembersForAdmin(communityId, role);
+    const role = req.query.role as any;
+    const limit = req.query.limit ? parseInt(req.query.limit, 10) : undefined;
+    const cursor = req.query.cursor as string | undefined;
+    return svc.listMembersForAdmin(communityId, role, limit, cursor);
   });
 }
