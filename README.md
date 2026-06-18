@@ -116,15 +116,33 @@ Role resolution combines:
 ## Testing
 
 ```bash
+# All tests across workspaces
+npm run test
+
 # Policy engine unit tests
 npm run -w @guildpass/policy-engine test
 
-# All workspaces
-npm run test
+# Access API unit and integration tests
+npm run -w access-api test
+
+# Contract tests (Foundry)
+npm run contracts:test
 
 # TypeScript type checking
 npm run typecheck
 ```
+
+### Integration Testing
+
+The **Membership Integration Test** (`apps/access-api/src/membership-integration.test.ts`) validates the complete flow from MembershipNFT contract events to API access decisions:
+
+- **Contract Events** → Database State → Policy Engine → API Response
+- Tests event ingestion (MembershipMinted, MembershipRenewed, MembershipSuspended)
+- Validates active, expired, and suspended membership scenarios
+- Proves access control decisions reflect actual membership state
+- Can run locally without a live blockchain
+
+See [apps/access-api/INTEGRATION_TEST_GUIDE.md](./apps/access-api/INTEGRATION_TEST_GUIDE.md) for detailed documentation.
 
 ---
 
