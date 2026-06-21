@@ -1,86 +1,53 @@
 import type { FastifyInstance } from 'fastify';
-import { getPrisma } from './services/prisma';
 import { getMemberService } from './services/memberService';
-import { AccessCheckInput } from '@guildpass/shared-types';
+import { getPrisma } from './services/prisma';
 
-export function registerRoutes(app: FastifyInstance) {
+/**
+ * Register all business routes on the Fastify instance.
+ * Uses app.inject() friendly routes — no network binding required for tests.
+ */
+export async function registerRoutes(app: FastifyInstance): Promise<void> {
   const prisma = getPrisma();
-  const svc = getMemberService(prisma);
+  const memberService = getMemberService(prisma);
 
-  app.get('/health', async () => ({ ok: true }));
-
-  app.get('/v1/memberships/:wallet', {
-    schema: {
-      summary: 'Fetch membership status for a wallet',
-      params: { type: 'object', properties: { wallet: { type: 'string' } }, required: ['wallet'] },
-      response: {
-        200: {
-          type: 'object',
-          properties: {
-            wallet: { type: 'string' },
-            communities: {
-              type: 'array',
-              items: {
-                type: 'object',
-                properties: {
-                  communityId: { type: 'string' },
-                  state: { type: 'string' },
-                  expiresAt: { type: ['string', 'null'] },
-                },
-              },
-            },
-          },
-        },
-      },
-    },
-  }, async (req) => {
-    // @ts-ignore
-    const wallet: string = req.params.wallet;
-    return svc.getMembershipsByWallet(wallet);
+  // GET /v1/memberships/:wallet — list membership communities for a wallet
+  app.get('/v1/memberships/:wallet', async (request, reply) => {
+    const { wallet } = request.params as { wallet: string };
+    const result = await memberService.getMembershipsByWallet(wallet);
+    return result;
   });
 
-  app.get('/v1/members/:wallet', {
-    schema: {
-      summary: 'Fetch a member profile by wallet',
-      params: { type: 'object', properties: { wallet: { type: 'string' } }, required: ['wallet'] },
-    },
-  }, async (req, reply) => {
-    // @ts-ignore
-    const wallet: string = req.params.wallet;
-    const profile = await svc.getProfileByWallet(wallet);
-    if (!profile) return reply.code(404).send({ message: 'Not found' });
-    return profile;
-  });
-
-  app.post('/v1/access/check', {
-    schema: {
-      summary: 'Perform an access check for a wallet, community, and resource',
-      body: {
-        type: 'object',
-        properties: {
-          wallet: { type: 'string' },
-          communityId: { type: 'string' },
-          resource: { type: 'string' }
-        },
-        required: ['wallet', 'communityId', 'resource']
-      }
+  // GET /v1/members/:wallet — get member profile
+  app.get('/v1/members/:wallet', async (request, reply) => {
+    const { wallet } = request.params as { wallet: string };
+    const result = await memberService.getProfileByWallet(wallet);
+    if (!result) {
+      return reply.status(404).send({ error: 'Member not found' });
     }
-  }, async (req) => {
-    const body = req.body as AccessCheckInput;
-    return svc.checkAccess(body);
+    return result;
   });
 
-  app.get('/v1/communities/:communityId/members', {
-    schema: {
-      summary: 'List simple community member data for admins',
-      params: { type: 'object', properties: { communityId: { type: 'string' } }, required: ['communityId'] },
-      querystring: { type: 'object', properties: { role: { type: 'string' } } }
+  // POST /v1/access/check — check access for wallet/resource
+  app.post('/v1/access/check', async (request, reply) => {
+    const body = request.body as {
+      wallet: string;
+      communityId: string;
+      resource: string;
+    };
+    if (!body?.wallet || !body?.communityId || !body?.resource) {
+      return reply.status(400).send({
+        error: 'Missing required fields: wallet, communityId, resource',
+      });
     }
-  }, async (req) => {
-    // @ts-ignore
-    const communityId: string = req.params.communityId;
-    // @ts-ignore
-    const role: string | undefined = (req.query as any).role;
-    return svc.listMembersForAdmin(communityId, role as any);
+    const result = await memberService.checkAccess(body);
+    return result;
+  });
+
+  // GET /v1/communities/:communityId/members — list members for admin
+  app.get('/v1/communities/:communityId/members', async (request, reply) => {
+    const { communityId } = request.params as { communityId: string };
+    const role = (request.query as { role?: string })?.role;
+    const result = await memberService.listMembersForAdmin(communityId, role);
+    return result;
   });
 }

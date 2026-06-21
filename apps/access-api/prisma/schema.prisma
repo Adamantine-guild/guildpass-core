@@ -1,7 +1,3 @@
-generator client {
-  provider = "prisma-client-js"
-}
-
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
@@ -89,11 +85,35 @@ model AccessPolicy {
   params      Json?
   community   Community @relation(fields: [communityId], references: [id])
   @@unique([communityId, resource])
+generator client {
+  provider = "prisma-client-js"
 }
 
-model Badge {
-  id        String   @id @default(cuid())
-  memberId  String
-  name      String
-  member    Member   @relation(fields: [memberId], references: [id])
+// --- existing models above (User, Wallet, Community, Member, Policy, etc.) ---
+
+enum EventType {
+  ACCESS_CHECK
+  MEMBERSHIP_CREATED
+  MEMBERSHIP_UPDATED
+  MEMBERSHIP_DELETED
+  POLICY_EVALUATION
+  OTHER
+}
+
+model AuditEvent {
+  id          String   @id @default(uuid())
+  eventType   EventType
+  walletId    String?  // optional: some events may not have a wallet
+  communityId String?  // optional
+  resource    String?
+  policyRule  String?
+  decision    String?  // e.g. "ALLOW", "DENY"
+  reasonCode  String?  // machine-readable code for decision
+  beforeState Json?
+  afterState  Json?
+  createdAt   DateTime @default(now())
+
+  @@index([walletId])
+  @@index([communityId])
+  @@index([createdAt])
 }
