@@ -22,6 +22,13 @@ const ConfigSchema = z.object({
   logLevel: z
     .enum(['error', 'warn', 'info', 'debug'])
     .default('info'),
+
+  // Reconciliation worker
+  reconciliationIntervalMs: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(60_000),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
@@ -36,6 +43,7 @@ function validateConfig(): Config {
     nodeEnv: process.env.NODE_ENV,
     databaseUrl: process.env.DATABASE_URL,
     logLevel: process.env.LOG_LEVEL,
+    reconciliationIntervalMs: process.env.RECONCILIATION_INTERVAL_MS,
   };
 
   const result = ConfigSchema.safeParse(envVars);

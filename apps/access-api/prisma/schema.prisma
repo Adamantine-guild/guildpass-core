@@ -35,7 +35,7 @@ model Member {
   profile     Profile?  @relation(fields: [profileId], references: [id])
   membership  Membership?
   roles       RoleAssignment[]
-  // badges      Badge[]
+  badges      Badge[]
   @@unique([communityId, walletId])
 }
 
@@ -54,6 +54,8 @@ model Membership {
   renewedAt  DateTime?
   createdAt  DateTime        @default(now())
   member     Member          @relation(fields: [memberId], references: [id])
+
+  @@index([state, expiresAt])
 }
 
 enum Role {
@@ -109,6 +111,7 @@ enum EventType {
   MEMBERSHIP_UPDATED
   MEMBERSHIP_DELETED
   POLICY_EVALUATION
+  MEMBERSHIP_RECONCILED
   OTHER
 }
 

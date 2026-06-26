@@ -9,6 +9,7 @@ export type AuditEventInput = {
     | "MEMBERSHIP_UPDATED"
     | "MEMBERSHIP_DELETED"
     | "POLICY_EVALUATION"
+    | "MEMBERSHIP_RECONCILED"
     | "OTHER";
   walletId?: string | null;
   communityId?: string | null;
