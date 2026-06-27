@@ -135,10 +135,15 @@ export async function applyContractEvent(
       },
     });
   } else if (event.type === 'MembershipRenewed') {
-    // Find membership by tokenId and update expiry
-    const membership = await prisma.membership.findUnique({
-      where: { tokenId: event.tokenId },
+    // Find membership by tokenId and update expiry.
+    // Contract events don't include communityId in this decoded type, so we
+    // update by membership.id after resolving the membership record.
+    const membership = await prisma.membership.findFirst({
+      where: {
+        tokenId: event.tokenId,
+      },
     });
+
 
     if (!membership) {
       throw new Error(
@@ -155,9 +160,13 @@ export async function applyContractEvent(
       },
     });
   } else if (event.type === 'MembershipSuspended') {
-    // Find membership by tokenId and update suspension state
-    const membership = await prisma.membership.findUnique({
-      where: { tokenId: event.tokenId },
+    // Find membership by tokenId and update suspension state.
+    // Same rationale as in renew: we resolve membership first, then update by membership.id.
+    const membership = await prisma.membership.findFirst({
+      where: {
+        tokenId: event.tokenId,
+      },
+      include: { member: { select: { communityId: true } } },
     });
 
     if (!membership) {
@@ -174,6 +183,7 @@ export async function applyContractEvent(
     });
   }
 }
+
 
 /**
  * Apply multiple contract events in order

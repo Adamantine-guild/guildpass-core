@@ -12,13 +12,13 @@ const prisma = new PrismaClient();
 export function getMemberService(prismaOverride?: PrismaClient) {
   const db = prismaOverride ?? prisma;
   return {
-    async getMembershipsByWallet(wallet: string) {
+    async getMembershipsByWallet(wallet: string, communityId: string) {
       const w = await db.wallet.findUnique({
         where: { address: wallet.toLowerCase() },
       });
       if (!w) return { wallet, communities: [] };
       const members = await db.member.findMany({
-        where: { walletId: w.id },
+        where: { walletId: w.id, communityId },
         include: { membership: true },
       });
       const communities = members.map((m) => ({
@@ -28,13 +28,13 @@ export function getMemberService(prismaOverride?: PrismaClient) {
       }));
       return { wallet, communities };
     },
-    async getProfileByWallet(wallet: string) {
+    async getProfileByWallet(wallet: string, communityId: string) {
       const w = await db.wallet.findUnique({
         where: { address: wallet.toLowerCase() },
       });
       if (!w) return null;
       const m = await db.member.findFirst({
-        where: { walletId: w.id },
+        where: { walletId: w.id, communityId },
         include: { profile: true, membership: true, roles: true },
       });
       if (!m) return null;
@@ -53,6 +53,7 @@ export function getMemberService(prismaOverride?: PrismaClient) {
         roles: m.roles.filter((r) => r.active).map((r) => r.role),
       };
     },
+
     async checkAccess(input: AccessCheckInput): Promise<AccessDecision> {
       const wallet = input.wallet.toLowerCase();
       const w = await db.wallet.findUnique({ where: { address: wallet } });
@@ -111,6 +112,7 @@ export function getMemberService(prismaOverride?: PrismaClient) {
       communityId: string,
       role?: "admin" | "member" | "contributor",
     ) {
+
       // TODO: add auth to ensure requester is admin
       const members = await db.member.findMany({
         where: { communityId },

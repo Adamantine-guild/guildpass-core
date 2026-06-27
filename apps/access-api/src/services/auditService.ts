@@ -41,10 +41,16 @@ export async function logEvent(event: AuditEventInput) {
 }
 
 /**
- * Get audit events for a walletId, newest first. Pagination optional.
+ * Get audit events for a communityId + walletId, newest first. Pagination optional.
  */
-export async function getEventsByWallet(walletId: string, limit = 50, cursor?: string) {
-  const where: any = { walletId };
+export async function getEventsByCommunityAndWallet(
+  communityId: string,
+  walletId: string,
+  limit = 50,
+  cursor?: string,
+) {
+  const where: any = { communityId, walletId };
+
   const args: any = {
     where,
     orderBy: { createdAt: "desc" },
@@ -60,7 +66,11 @@ export async function getEventsByWallet(walletId: string, limit = 50, cursor?: s
 /**
  * Get audit events for a communityId, newest first. Pagination optional.
  */
-export async function getEventsByCommunity(communityId: string, limit = 50, cursor?: string) {
+export async function getEventsByCommunity(
+  communityId: string,
+  limit = 50,
+  cursor?: string,
+) {
   const where: any = { communityId };
   const args: any = {
     where,
@@ -73,3 +83,5 @@ export async function getEventsByCommunity(communityId: string, limit = 50, curs
   }
   return prisma.auditEvent.findMany(args);
 }
+
+
