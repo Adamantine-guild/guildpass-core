@@ -23,6 +23,26 @@ const ConfigSchema = z.object({
     .enum(['error', 'warn', 'info', 'debug'])
     .default('info'),
 
+  // Access decision caching (disabled by default)
+  accessDecisionCacheEnabled: z
+    .coerce
+    .boolean()
+    .default(false),
+  accessDecisionCacheTtlSeconds: z
+    .coerce
+    .number()
+    .int()
+    .positive('accessDecisionCacheTtlSeconds must be > 0')
+    .default(30),
+  // TTL for version counters; prevents unbounded key growth if never updated
+  accessDecisionCacheVersionTtlSeconds: z
+    .coerce
+    .number()
+    .int()
+    .positive('accessDecisionCacheVersionTtlSeconds must be > 0')
+    .default(86400),
+  // Redis connection (required only when accessDecisionCacheEnabled=true)
+  redisUrl: z.string().optional(),
   // Reconciliation worker
   reconciliationIntervalMs: z.coerce
     .number()
@@ -68,6 +88,11 @@ function validateConfig(): Config {
     console.log(`   NODE_ENV: ${result.data.nodeEnv}`);
     console.log(`   PORT: ${result.data.port}`);
     console.log(`   LOG_LEVEL: ${result.data.logLevel}\n`);
+  }
+
+  // If caching is enabled, ensure redisUrl is present.
+  if (result.data.accessDecisionCacheEnabled && !result.data.redisUrl) {
+    throw new Error('accessDecisionCacheEnabled=true requires redisUrl');
   }
 
   return result.data;
