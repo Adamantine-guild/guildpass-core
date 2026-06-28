@@ -87,6 +87,23 @@ model Badge {
   @@index([memberId])
 }
 
+model Resource {
+  id           String   @id @default(cuid())
+  communityId  String
+  resourceId   String
+  name         String
+  metadata     Json?
+  archived     Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  community    Community @relation(fields: [communityId], references: [id])
+
+  @@unique([communityId, resourceId])
+  @@index([communityId])
+  @@index([archived])
+}
+
 model AccessPolicy {
   id          String   @id @default(cuid())
   communityId String
@@ -111,6 +128,7 @@ enum EventType {
   POLICY_EVALUATION
   OTHER
 }
+
 
 model AuditEvent {
   id          String   @id @default(uuid())
