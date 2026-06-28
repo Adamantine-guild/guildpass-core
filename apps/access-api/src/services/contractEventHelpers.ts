@@ -80,100 +80,108 @@ export async function applyContractEvent(
 ): Promise<void> {
   validateEvent(event);
 
-  if (event.type === 'MembershipMinted') {
-    const wallet = event.to.toLowerCase();
-    const expiresAt = new Date(event.expiresAt * 1000);
+  // Access-affecting writes must be atomic.
+  await prisma.$transaction(async (tx) => {
+    if (event.type === 'MembershipMinted') {
+      const wallet = event.to.toLowerCase();
+      const expiresAt = new Date(event.expiresAt * 1000);
 
-    // Ensure wallet exists
-    const walletRecord = await prisma.wallet.upsert({
-      where: { address: wallet },
-      update: {},
-      create: { address: wallet },
-    });
+      // Ensure wallet exists
+      const walletRecord = await tx.wallet.upsert({
+        where: { address: wallet },
+        update: {},
+        create: { address: wallet },
+      });
 
-    // Ensure community exists
-    await prisma.community.upsert({
-      where: { id: event.communityId },
-      update: {},
-      create: {
-        id: event.communityId,
-        name: `${event.communityId} Community`,
-      },
-    });
+      // Ensure community exists
+      await tx.community.upsert({
+        where: { id: event.communityId },
+        update: {},
+        create: {
+          id: event.communityId,
+          name: `${event.communityId} Community`,
+        },
+      });
 
-    // Ensure member exists in community
-    const member = await prisma.member.upsert({
-      where: {
-        communityId_walletId: {
+      // Ensure member exists in community
+      const member = await tx.member.upsert({
+        where: {
+          communityId_walletId: {
+            communityId: event.communityId,
+            walletId: walletRecord.id,
+          },
+        },
+        update: {},
+        create: {
           communityId: event.communityId,
           walletId: walletRecord.id,
         },
-      },
-      update: {},
-      create: {
-        communityId: event.communityId,
-        walletId: walletRecord.id,
-      },
-    });
+      });
 
-    // Create or update membership
-    // Note: If a member receives a second MembershipMinted for the same community,
-    // this updates their existing membership (replacing the tokenId and resetting state)
-    await prisma.membership.upsert({
-      where: { memberId: member.id },
-      update: {
-        tokenId: event.tokenId,
-        state: 'active',
-        expiresAt,
-        renewedAt: new Date(),
-      },
-      create: {
-        memberId: member.id,
-        tokenId: event.tokenId,
-        state: 'active',
-        expiresAt,
-      },
-    });
-  } else if (event.type === 'MembershipRenewed') {
-    // Find membership by tokenId and update expiry
-    const membership = await prisma.membership.findUnique({
-      where: { tokenId: event.tokenId },
-    });
+      // Create or update membership
+      // Note: If a member receives a second MembershipMinted for the same community,
+      // this updates their existing membership (replacing the tokenId and resetting state)
+      await tx.membership.upsert({
+        where: { memberId: member.id },
+        update: {
+          tokenId: event.tokenId,
+          state: 'active',
+          expiresAt,
+          renewedAt: new Date(),
+        },
+        create: {
+          memberId: member.id,
+          tokenId: event.tokenId,
+          state: 'active',
+          expiresAt,
+        },
+      });
+    } else if (event.type === 'MembershipRenewed') {
+      const membership = await tx.membership.findFirst({
+        where: {
+          tokenId: event.tokenId,
+        },
+      });
 
-    if (!membership) {
-      throw new Error(
-        `Cannot renew membership: tokenId ${event.tokenId} not found in database`,
-      );
+      if (!membership) {
+        throw new Error(
+          `Cannot renew membership: tokenId ${event.tokenId} not found in database`,
+        );
+      }
+
+      const newExpiresAt = new Date(event.newExpiresAt * 1000);
+      await tx.membership.update({
+        where: { id: membership.id },
+        data: {
+          expiresAt: newExpiresAt,
+          renewedAt: new Date(),
+        },
+      });
+    } else if (event.type === 'MembershipSuspended') {
+      const membership = await tx.membership.findFirst({
+        where: {
+          tokenId: event.tokenId,
+        },
+        include: { member: { select: { communityId: true } } },
+      });
+
+      if (!membership) {
+        throw new Error(
+          `Cannot suspend membership: tokenId ${event.tokenId} not found in database`,
+        );
+      }
+
+      await tx.membership.update({
+        where: { id: membership.id },
+        data: {
+          state: event.isSuspended ? 'suspended' : 'active',
+        },
+      });
     }
-
-    const newExpiresAt = new Date(event.newExpiresAt * 1000);
-    await prisma.membership.update({
-      where: { id: membership.id },
-      data: {
-        expiresAt: newExpiresAt,
-        renewedAt: new Date(),
-      },
-    });
-  } else if (event.type === 'MembershipSuspended') {
-    // Find membership by tokenId and update suspension state
-    const membership = await prisma.membership.findUnique({
-      where: { tokenId: event.tokenId },
-    });
-
-    if (!membership) {
-      throw new Error(
-        `Cannot suspend membership: tokenId ${event.tokenId} not found in database`,
-      );
-    }
-
-    await prisma.membership.update({
-      where: { id: membership.id },
-      data: {
-        state: event.isSuspended ? 'suspended' : 'active',
-      },
-    });
-  }
+  });
 }
+
+
 
 /**
  * Apply multiple contract events in order

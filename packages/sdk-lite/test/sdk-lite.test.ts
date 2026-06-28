@@ -1,5 +1,6 @@
 import { GuildPassApiError } from '../src/errors';
 import { GuildPassClient } from '../src/index';
+import { API_CONTRACT } from '../../shared-types/src/apiContract';
 
 /**
  * Tiny in-memory Response stub so tests don't depend on undici/node-fetch.
@@ -65,11 +66,7 @@ describe('GuildPassClient', () => {
         fetchImpl: fetchSpy as unknown as typeof fetch,
       });
 
-      await client.checkAccess({
-        memberId: 'm1',
-        action: 'read',
-        target: 'doc:42',
-      });
+      await client.checkAccess(API_CONTRACT.accessCheck.requestBody);
 
       expect(fetchSpy).toHaveBeenCalledTimes(1);
       const [calledUrl, calledInit] = fetchSpy.mock.calls[0]!;
@@ -79,7 +76,7 @@ describe('GuildPassClient', () => {
       expect(headers['content-type']).toBe('application/json');
       expect(calledInit.method).toBe('POST');
       expect(calledInit.body).toBe(
-        JSON.stringify({ memberId: 'm1', action: 'read', target: 'doc:42' }),
+        JSON.stringify(API_CONTRACT.accessCheck.requestBody),
       );
     });
 
@@ -92,11 +89,7 @@ describe('GuildPassClient', () => {
         token: 't',
         fetchImpl: fetchSpy as unknown as typeof fetch,
       });
-      await client.checkAccess({
-        memberId: 'm1',
-        action: 'read',
-        target: 'doc:1',
-      });
+      await client.checkAccess(API_CONTRACT.accessCheck.requestBody);
       const [calledUrl] = fetchSpy.mock.calls[0]!;
       expect(calledUrl).toBe('https://api.example.com/v1/access/check');
     });
@@ -110,15 +103,114 @@ describe('GuildPassClient', () => {
         baseUrl: 'https://api.example.com',
         fetchImpl: fetchSpy as unknown as typeof fetch,
       });
-      await client.checkAccess({
-        memberId: 'm',
-        action: 'a',
-        target: 't',
-      });
+      await client.checkAccess(API_CONTRACT.accessCheck.requestBody);
       const headers = (fetchSpy.mock.calls[0]![1].headers ??
         {}) as Record<string, string>;
       expect(headers.authorization).toBe('Bearer env-tok');
       delete process.env.GUILDPASS_TOKEN;
+    });
+  });
+
+  describe('API contract coverage', () => {
+    it('matches the membership lookup contract', async () => {
+      const fetchSpy = makeFetchStub((_url, _init) =>
+        new StubResponse({
+          status: API_CONTRACT.membershipsByWallet.successStatus,
+          body: JSON.stringify(API_CONTRACT.membershipsByWallet.successResponse),
+        }),
+      );
+      const client = new GuildPassClient({
+        baseUrl: 'https://api.example.com',
+        token: 't',
+        fetchImpl: fetchSpy as unknown as typeof fetch,
+      });
+
+      const result = await client.getMemberships(
+        API_CONTRACT.membershipsByWallet.successResponse.wallet,
+      );
+
+      expect(result).toEqual(API_CONTRACT.membershipsByWallet.successResponse);
+      const [calledUrl, calledInit] = fetchSpy.mock.calls[0]!;
+      expect(calledUrl).toBe(
+        `https://api.example.com${API_CONTRACT.membershipsByWallet.samplePath}`,
+      );
+      expect(calledInit.method).toBe(API_CONTRACT.membershipsByWallet.method);
+    });
+
+    it('matches the member profile lookup contract', async () => {
+      const fetchSpy = makeFetchStub((_url, _init) =>
+        new StubResponse({
+          status: API_CONTRACT.memberProfileByWallet.successStatus,
+          body: JSON.stringify(API_CONTRACT.memberProfileByWallet.successResponse),
+        }),
+      );
+      const client = new GuildPassClient({
+        baseUrl: 'https://api.example.com',
+        token: 't',
+        fetchImpl: fetchSpy as unknown as typeof fetch,
+      });
+
+      const result = await client.getMemberProfile(
+        '0x1234567890abcdef1234567890abcdef12345678',
+      );
+
+      expect(result).toEqual(API_CONTRACT.memberProfileByWallet.successResponse);
+      const [calledUrl, calledInit] = fetchSpy.mock.calls[0]!;
+      expect(calledUrl).toBe(
+        `https://api.example.com${API_CONTRACT.memberProfileByWallet.samplePath}`,
+      );
+      expect(calledInit.method).toBe(API_CONTRACT.memberProfileByWallet.method);
+    });
+
+    it('matches the access check contract', async () => {
+      const fetchSpy = makeFetchStub((_url, _init) =>
+        new StubResponse({
+          status: API_CONTRACT.accessCheck.successStatus,
+          body: JSON.stringify(API_CONTRACT.accessCheck.successResponse),
+        }),
+      );
+      const client = new GuildPassClient({
+        baseUrl: 'https://api.example.com',
+        token: 't',
+        fetchImpl: fetchSpy as unknown as typeof fetch,
+      });
+
+      const result = await client.checkAccess(API_CONTRACT.accessCheck.requestBody);
+
+      expect(result).toEqual(API_CONTRACT.accessCheck.successResponse);
+      const [calledUrl, calledInit] = fetchSpy.mock.calls[0]!;
+      expect(calledUrl).toBe(
+        `https://api.example.com${API_CONTRACT.accessCheck.samplePath}`,
+      );
+      expect(calledInit.method).toBe(API_CONTRACT.accessCheck.method);
+      expect(calledInit.body).toBe(
+        JSON.stringify(API_CONTRACT.accessCheck.requestBody),
+      );
+    });
+
+    it('matches the community member listing contract', async () => {
+      const fetchSpy = makeFetchStub((_url, _init) =>
+        new StubResponse({
+          status: API_CONTRACT.communityMembers.successStatus,
+          body: JSON.stringify(API_CONTRACT.communityMembers.successResponse),
+        }),
+      );
+      const client = new GuildPassClient({
+        baseUrl: 'https://api.example.com',
+        token: 't',
+        fetchImpl: fetchSpy as unknown as typeof fetch,
+      });
+
+      const result = await client.listCommunityMembers('community-1', {
+        role: 'admin',
+      });
+
+      expect(result).toEqual(API_CONTRACT.communityMembers.successResponse);
+      const [calledUrl, calledInit] = fetchSpy.mock.calls[0]!;
+      expect(calledUrl).toBe(
+        `https://api.example.com${API_CONTRACT.communityMembers.samplePathWithRole}`,
+      );
+      expect(calledInit.method).toBe(API_CONTRACT.communityMembers.method);
     });
   });
 
@@ -140,9 +232,9 @@ describe('GuildPassClient', () => {
 
       await expect(
         client.checkAccess({
-          memberId: 'm',
-          action: 'read',
-          target: 'secret',
+          wallet: '0x1234567890abcdef1234567890abcdef12345678',
+          communityId: 'community-1',
+          resource: 'secret',
         }),
       ).rejects.toMatchObject({
         name: 'GuildPassApiError',
@@ -169,7 +261,7 @@ describe('GuildPassClient', () => {
       });
 
       const err = (await client
-        .checkAccess({ memberId: 'm', action: 'a', target: 't' })
+        .checkAccess(API_CONTRACT.accessCheck.requestBody)
         .catch((e: unknown) => e)) as GuildPassApiError;
       expect(err).toBeInstanceOf(GuildPassApiError);
       expect(err.statusCode).toBe(502);
@@ -189,7 +281,7 @@ describe('GuildPassClient', () => {
       });
 
       const err = (await client
-        .checkAccess({ memberId: 'm', action: 'a', target: 't' })
+        .checkAccess(API_CONTRACT.accessCheck.requestBody)
         .catch((e: unknown) => e)) as GuildPassApiError;
       expect(err.statusCode).toBe(500);
       expect(err.responseBody).toBe('');
@@ -207,7 +299,7 @@ describe('GuildPassClient', () => {
       });
 
       const err = (await client
-        .checkAccess({ memberId: 'm', action: 'a', target: 't' })
+        .checkAccess(API_CONTRACT.accessCheck.requestBody)
         .catch((e: unknown) => e)) as GuildPassApiError;
       expect(err).toBeInstanceOf(GuildPassApiError);
       expect(err.statusCode).toBe(0);
@@ -225,7 +317,7 @@ describe('GuildPassClient', () => {
       });
 
       const err = (await client
-        .checkAccess({ memberId: 'm', action: 'a', target: 't' })
+        .checkAccess(API_CONTRACT.accessCheck.requestBody)
         .catch((e: unknown) => e)) as GuildPassApiError;
       expect(err.statusCode).toBe(204);
       expect(err.message).toContain('empty');
@@ -247,7 +339,7 @@ describe('GuildPassClient', () => {
       });
 
       const err = (await client
-        .checkAccess({ memberId: 'm', action: 'a', target: 't' })
+        .checkAccess(API_CONTRACT.accessCheck.requestBody)
         .catch((e: unknown) => e)) as GuildPassApiError;
       expect(err.statusCode).toBe(200);
       expect(err.message).toMatch(/non-JSON/);
@@ -268,7 +360,7 @@ describe('GuildPassClient', () => {
         fetchImpl: fetchSpy as unknown as typeof fetch,
       });
       const err = (await client
-        .checkAccess({ memberId: 'm', action: 'a', target: 't' })
+        .checkAccess(API_CONTRACT.accessCheck.requestBody)
         .catch((e: unknown) => e)) as GuildPassApiError;
       // Body is truncated at 500 chars + truncation marker regardless of payload size.
       expect(err.responseBody.length).toBeLessThanOrEqual(520);
@@ -282,7 +374,7 @@ describe('GuildPassClient', () => {
         () =>
           new StubResponse({
             status: 200,
-            body: '{"allowed":true,"role":"admin"}',
+            body: JSON.stringify(API_CONTRACT.accessCheck.successResponse),
           }),
       );
       const client = new GuildPassClient({
@@ -291,12 +383,8 @@ describe('GuildPassClient', () => {
         fetchImpl: fetchSpy as unknown as typeof fetch,
       });
 
-      const result = await client.checkAccess({
-        memberId: 'm',
-        action: 'a',
-        target: 't',
-      });
-      expect(result).toEqual({ allowed: true, role: 'admin' });
+      const result = await client.checkAccess(API_CONTRACT.accessCheck.requestBody);
+      expect(result).toEqual(API_CONTRACT.accessCheck.successResponse);
     });
   });
 

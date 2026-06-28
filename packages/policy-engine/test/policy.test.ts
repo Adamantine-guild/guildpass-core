@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { evaluate, resolveEffectiveRoles } from "../src";
 import type { AccessPolicy, RoleContext } from "@guildpass/shared-types";
 

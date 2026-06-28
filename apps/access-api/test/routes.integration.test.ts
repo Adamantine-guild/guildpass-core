@@ -1,4 +1,5 @@
 import Fastify, { type FastifyInstance } from 'fastify';
+import { API_CONTRACT } from '../../../packages/shared-types/src/apiContract';
 
 /**
  * Fastify route integration tests using app.inject().
@@ -86,23 +87,18 @@ describe('GET /health', () => {
 
 describe('GET /v1/memberships/:wallet', () => {
   test('returns memberships for a known wallet', async () => {
-    const mockData = {
-      wallet: '0x1234567890abcdef1234567890abcdef12345678',
-      communities: [
-        { communityId: 'community-1', state: 'active', expiresAt: null },
-      ],
-    };
+    const mockData = API_CONTRACT.membershipsByWallet.successResponse;
     const mock = createMockMemberService({
       getMembershipsByWallet: jest.fn().mockResolvedValue(mockData),
     });
     const app = await buildTestApp(mock);
 
     const response = await app.inject({
-      method: 'GET',
-      url: '/v1/memberships/0x1234567890abcdef1234567890abcdef12345678',
+      method: API_CONTRACT.membershipsByWallet.method,
+      url: API_CONTRACT.membershipsByWallet.samplePath,
     });
 
-    expect(response.statusCode).toBe(200);
+    expect(response.statusCode).toBe(API_CONTRACT.membershipsByWallet.successStatus);
     const body = response.json();
     expect(body.wallet).toBe(mockData.wallet);
     expect(body.communities).toHaveLength(1);
@@ -138,23 +134,18 @@ describe('GET /v1/memberships/:wallet', () => {
 
 describe('GET /v1/members/:wallet', () => {
   test('returns 200 with profile for found member', async () => {
-    const mockData = {
-      communityId: 'community-1',
-      profile: { id: 'p1', displayName: 'Alice', bio: 'Hello' },
-      membership: { state: 'active', expiresAt: null },
-      roles: ['admin'],
-    };
+    const mockData = API_CONTRACT.memberProfileByWallet.successResponse;
     const mock = createMockMemberService({
       getProfileByWallet: jest.fn().mockResolvedValue(mockData),
     });
     const app = await buildTestApp(mock);
 
     const response = await app.inject({
-      method: 'GET',
-      url: '/v1/members/0x1234567890abcdef1234567890abcdef12345678',
+      method: API_CONTRACT.memberProfileByWallet.method,
+      url: API_CONTRACT.memberProfileByWallet.samplePath,
     });
 
-    expect(response.statusCode).toBe(200);
+    expect(response.statusCode).toBe(API_CONTRACT.memberProfileByWallet.successStatus);
     const body = response.json();
     expect(body.profile.displayName).toBe('Alice');
     expect(body.roles).toEqual(['admin']);
@@ -182,27 +173,19 @@ describe('GET /v1/members/:wallet', () => {
 
 describe('POST /v1/access/check', () => {
   test('returns allowed=true when access is granted', async () => {
-    const mockResult = {
-      allowed: true,
-      code: 'ALLOW',
-      membershipState: 'active',
-    };
+    const mockResult = API_CONTRACT.accessCheck.successResponse;
     const mock = createMockMemberService({
       checkAccess: jest.fn().mockResolvedValue(mockResult),
     });
     const app = await buildTestApp(mock);
 
     const response = await app.inject({
-      method: 'POST',
-      url: '/v1/access/check',
-      payload: {
-        wallet: '0x1234567890abcdef1234567890abcdef12345678',
-        communityId: 'community-1',
-        resource: 'resource-1',
-      },
+      method: API_CONTRACT.accessCheck.method,
+      url: API_CONTRACT.accessCheck.samplePath,
+      payload: API_CONTRACT.accessCheck.requestBody,
     });
 
-    expect(response.statusCode).toBe(200);
+    expect(response.statusCode).toBe(API_CONTRACT.accessCheck.successStatus);
     const body = response.json();
     expect(body.allowed).toBe(true);
     expect(body.code).toBe('ALLOW');
@@ -258,33 +241,18 @@ describe('POST /v1/access/check', () => {
 
 describe('GET /v1/communities/:communityId/members', () => {
   test('returns member list for a community', async () => {
-    const mockData = {
-      members: [
-        {
-          wallet: '0x1111111111111111111111111111111111111111',
-          displayName: 'Alice',
-          state: 'active',
-          roles: ['admin'],
-        },
-        {
-          wallet: '0x2222222222222222222222222222222222222222',
-          displayName: 'Bob',
-          state: 'active',
-          roles: ['member'],
-        },
-      ],
-    };
+    const mockData = API_CONTRACT.communityMembers.successResponse;
     const mock = createMockMemberService({
       listMembersForAdmin: jest.fn().mockResolvedValue(mockData),
     });
     const app = await buildTestApp(mock);
 
     const response = await app.inject({
-      method: 'GET',
-      url: '/v1/communities/community-1/members',
+      method: API_CONTRACT.communityMembers.method,
+      url: API_CONTRACT.communityMembers.samplePath,
     });
 
-    expect(response.statusCode).toBe(200);
+    expect(response.statusCode).toBe(API_CONTRACT.communityMembers.successStatus);
     const body = response.json();
     expect(body.members).toHaveLength(2);
     expect(mock.listMembersForAdmin).toHaveBeenCalledWith('community-1', undefined);
@@ -299,8 +267,8 @@ describe('GET /v1/communities/:communityId/members', () => {
     const app = await buildTestApp(mock);
 
     const response = await app.inject({
-      method: 'GET',
-      url: '/v1/communities/community-1/members?role=admin',
+      method: API_CONTRACT.communityMembers.method,
+      url: API_CONTRACT.communityMembers.samplePathWithRole,
     });
 
     expect(response.statusCode).toBe(200);

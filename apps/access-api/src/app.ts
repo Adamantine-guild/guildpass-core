@@ -85,6 +85,12 @@ export async function buildApp(): Promise<FastifyInstance> {
   // Echo the correlation ID back to the caller on every response.
   app.addHook('onSend', async (req, reply) => {
     reply.header('x-correlation-id', req.id);
+    reply.header('x-guildpass-api-version', '1.0.0');
+
+    // Surface deprecation header if the route is marked as deprecated
+    if (req.routeOptions?.schema?.deprecated) {
+      reply.header('deprecation', 'true');
+    }
   });
 
   // -----------------------------------------------------------------------
@@ -170,13 +176,16 @@ export async function buildApp(): Promise<FastifyInstance> {
         response: {
           200: {
             type: 'object',
-            properties: { status: { type: 'string' } },
+            properties: {
+              status: { type: 'string' },
+              version: { type: 'string' },
+            },
           },
         },
       },
     },
     async (_req, reply) => {
-      return reply.send({ status: 'ok' });
+      return reply.send({ status: 'ok', version: '1.0.0' });
     },
   );
 

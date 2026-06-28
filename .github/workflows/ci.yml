@@ -1,0 +1,86 @@
+name: CI
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/ci.yml'
+      - 'apps/access-api/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'tsconfig.base.json'
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/ci.yml'
+      - 'apps/access-api/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'tsconfig.base.json'
+  workflow_dispatch:
+
+jobs:
+  prisma-validation:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/access_api_test
+      SHADOW_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/access_api_shadow
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Create Prisma test databases
+        run: |
+          psql postgresql://postgres:postgres@localhost:5432/postgres -c "CREATE DATABASE access_api_test;"
+          psql postgresql://postgres:postgres@localhost:5432/postgres -c "CREATE DATABASE access_api_shadow;"
+
+      - name: Validate Prisma schema
+        run: pnpm --filter access-api prisma:validate
+
+      - name: Generate Prisma client
+        run: pnpm --filter access-api prisma:generate
+
+      - name: Apply migrations on a clean database
+        run: pnpm --filter access-api prisma:migrate:deploy
+
+      - name: Check migration state against the shadow database
+        run: pnpm --filter access-api prisma:migrate:check
+
+      - name: Build workspace packages used by the API
+        run: pnpm --filter @guildpass/shared-types build && pnpm --filter @guildpass/policy-engine build
+
+      - name: Run access API tests
+        run: pnpm --filter access-api exec jest --runInBand --runTestsByPath test/version.test.ts

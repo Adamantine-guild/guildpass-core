@@ -1,7 +1,7 @@
 # @guildpass/sdk-lite
 
 Minimal, dependency-free TypeScript client for the [GuildPass API](https://github.com/Adamantine-guild/guildpass-core).
-Designed for scripts, bots, and CI jobs that only need the access-check endpoint and want zero transitive dependencies.
+Designed for scripts, bots, and CI jobs that need the core access API endpoints and want zero transitive dependencies.
 
 ## Install
 
@@ -21,13 +21,13 @@ const client = new GuildPassClient({
 });
 
 const result = await client.checkAccess({
-  memberId: 'm_123',
-  action: 'edit',
-  target: 'channel_42',
+  wallet: '0x1234567890abcdef1234567890abcdef12345678',
+  communityId: 'community-1',
+  resource: 'channel_42',
 });
 
 if (result.allowed) {
-  console.log(`Member ${result.memberId} may ${result.action} (role=${result.role})`);
+  console.log(`Access allowed with code ${result.code}`);
 } else {
   console.warn(`Denied: ${result.reason}`);
 }
@@ -41,7 +41,11 @@ All non-success responses (network errors, HTTP failures, empty bodies, non-JSON
 import { GuildPassClient, GuildPassApiError } from '@guildpass/sdk-lite';
 
 try {
-  await client.checkAccess({ memberId: 'm', action: 'a', target: 't' });
+  await client.checkAccess({
+    wallet: '0x1234567890abcdef1234567890abcdef12345678',
+    communityId: 'community-1',
+    resource: 'dashboard',
+  });
 } catch (err) {
   if (err instanceof GuildPassApiError) {
     console.error(`${err.statusCode} ${err.path}: ${err.message}`);
@@ -69,9 +73,21 @@ try {
 - `token` — optional. Defaults to `process.env.GUILDPASS_TOKEN`.
 - `fetchImpl` — optional. Override the global `fetch` (useful in tests, or on Node <18).
 
-### `client.checkAccess({ memberId, action, target })`
+### `client.getMemberships(wallet)`
 
-`POST /v1/access/check` → `{ allowed: boolean, reason?: string, role?: string }`.
+`GET /v1/memberships/:wallet` -> `{ wallet, communities }`.
+
+### `client.getMemberProfile(wallet)`
+
+`GET /v1/members/:wallet` -> `{ communityId, profile, membership, roles }`.
+
+### `client.checkAccess({ wallet, communityId, resource })`
+
+`POST /v1/access/check` -> `{ allowed: boolean, code?: string, membershipState?: string }`.
+
+### `client.listCommunityMembers(communityId, { role? })`
+
+`GET /v1/communities/:communityId/members` -> `{ members }`.
 
 Throws `GuildPassApiError` on any failure path (network, non-2xx, empty body, non-JSON body, JSON parse error).
 

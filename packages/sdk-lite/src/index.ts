@@ -2,8 +2,50 @@ import { GuildPassApiError } from './errors';
 
 export interface AccessCheckResult {
   allowed: boolean;
+  code?: string;
+  membershipState?: string;
   reason?: string;
-  role?: string;
+  reasons?: Array<{ code: string; message: string }>;
+  effectiveRoles?: string[];
+}
+
+export interface MembershipSummary {
+  wallet: string;
+  communities: Array<{
+    communityId: string;
+    state: string;
+    expiresAt: string | null;
+  }>;
+}
+
+export interface MemberProfileResult {
+  communityId: string;
+  profile: {
+    id: string;
+    displayName: string;
+    bio?: string;
+    avatarUrl?: string;
+  };
+  membership: {
+    state: string;
+    expiresAt: string | null;
+  };
+  roles: string[];
+}
+
+export interface AccessCheckInput {
+  wallet: string;
+  communityId: string;
+  resource: string;
+}
+
+export interface CommunityMembersResult {
+  members: Array<{
+    wallet: string;
+    displayName?: string;
+    state: string;
+    roles: string[];
+  }>;
 }
 
 export interface GuildPassClientOptions {
@@ -15,6 +57,9 @@ export interface GuildPassClientOptions {
 
   /** Override the global `fetch` (useful in tests and Node <18). */
   fetchImpl?: typeof fetch;
+
+  /** Optional API version constraint to check against response headers. */
+  expectedApiVersion?: string;
 }
 
 /** Maximum characters of a response body retained on a {@link GuildPassApiError}. */
@@ -24,10 +69,12 @@ export class GuildPassClient {
   private readonly baseUrl: string;
   private readonly token: string | undefined;
   private readonly fetchImpl: typeof fetch;
+  private readonly expectedApiVersion: string | undefined;
 
   constructor(opts: GuildPassClientOptions) {
     this.baseUrl = opts.baseUrl.replace(/\/+$/, '');
     this.token = opts.token ?? process.env.GUILDPASS_TOKEN;
+    this.expectedApiVersion = opts.expectedApiVersion;
     this.fetchImpl =
       opts.fetchImpl ??
       (typeof fetch !== 'undefined'
@@ -40,20 +87,61 @@ export class GuildPassClient {
   }
 
   /**
-   * Check whether a member is allowed to perform an action against a target.
+   * Fetch all membership communities for a wallet.
    *
    * @throws {GuildPassApiError} when the request fails, the response is not
    *   JSON, or a successful response carries an unexpected shape.
    */
-  async checkAccess(input: {
-    memberId: string;
-    action: string;
-    target: string;
-  }): Promise<AccessCheckResult> {
+  async getMemberships(wallet: string): Promise<MembershipSummary> {
+    return this._request<MembershipSummary>(
+      `/v1/memberships/${encodePathSegment(wallet)}`,
+      { method: 'GET' },
+    );
+  }
+
+  /**
+   * Fetch a member profile, membership snapshot, and roles for a wallet.
+   *
+   * @throws {GuildPassApiError} when the request fails, the response is not
+   *   JSON, or a successful response carries an unexpected shape.
+   */
+  async getMemberProfile(wallet: string): Promise<MemberProfileResult> {
+    return this._request<MemberProfileResult>(
+      `/v1/members/${encodePathSegment(wallet)}`,
+      { method: 'GET' },
+    );
+  }
+
+  /**
+   * Check whether a wallet may access a resource inside a community.
+   *
+   * @throws {GuildPassApiError} when the request fails, the response is not
+   *   JSON, or a successful response carries an unexpected shape.
+   */
+  async checkAccess(input: AccessCheckInput): Promise<AccessCheckResult> {
     return this._request<AccessCheckResult>('/v1/access/check', {
       method: 'POST',
       body: JSON.stringify(input),
     });
+  }
+
+  /**
+   * List members for a community, optionally filtering by role.
+   *
+   * @throws {GuildPassApiError} when the request fails, the response is not
+   *   JSON, or a successful response carries an unexpected shape.
+   */
+  async listCommunityMembers(
+    communityId: string,
+    options: { role?: string } = {},
+  ): Promise<CommunityMembersResult> {
+    const query = options.role
+      ? `?role=${encodeURIComponent(options.role)}`
+      : '';
+    return this._request<CommunityMembersResult>(
+      `/v1/communities/${encodePathSegment(communityId)}/members${query}`,
+      { method: 'GET' },
+    );
   }
 
   /**
@@ -82,6 +170,15 @@ export class GuildPassClient {
         }`,
         responseBody: '',
       });
+    }
+
+    if (this.expectedApiVersion) {
+      const apiVersion = res.headers.get('x-guildpass-api-version');
+      if (apiVersion && apiVersion !== this.expectedApiVersion) {
+        console.warn(
+          `[GuildPassClient] API version mismatch for ${path}. Expected ${this.expectedApiVersion}, got ${apiVersion}`,
+        );
+      }
     }
 
     if (!res.ok) {
@@ -171,6 +268,10 @@ function buildHttpErrorMessage(
     return `${base}: ${snippet}`;
   }
   return base;
+}
+
+function encodePathSegment(value: string): string {
+  return encodeURIComponent(value);
 }
 
 export { GuildPassApiError } from './errors';

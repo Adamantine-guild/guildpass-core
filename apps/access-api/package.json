@@ -11,7 +11,11 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint 'src/**/*.ts'",
     "prisma:generate": "prisma generate",
+    "prisma:validate": "prisma validate",
     "prisma:migrate": "prisma migrate dev",
+    "prisma:migrate:deploy": "prisma migrate deploy",
+    "prisma:migrate:check": "prisma migrate status",
+    "prisma:ci": "pnpm run prisma:validate && pnpm run prisma:generate && pnpm run prisma:migrate:deploy && pnpm run prisma:migrate:check",
     "seed": "ts-node prisma/seed.ts",
     "test": "jest --passWithNoTests"
   },

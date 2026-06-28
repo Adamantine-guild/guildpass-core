@@ -282,12 +282,68 @@ export function getMemberService(prismaClient: PrismaClient) {
         roles: m.roles.filter((r) => r.active).map((r) => r.role),
       };
     },
-    checkAccess,
+
+    async checkAccess(input: AccessCheckInput): Promise<AccessDecision> {
+      const wallet = input.wallet.toLowerCase();
+      const w = await db.wallet.findUnique({ where: { address: wallet } });
+      if (!w) {
+        return {
+          allowed: false,
+          code: "DENY",
+          reasons: [{ code: "NO_WALLET", message: "Wallet not known" }],
+          membershipState: "invited",
+          effectiveRoles: [],
+        };
+      }
+      const member = await db.member.findFirst({
+        where: { walletId: w.id, communityId: input.communityId },
+        include: { roles: true, membership: true },
+      });
+      if (!member) {
+        return {
+          allowed: false,
+          code: "DENY",
+          reasons: [
+            {
+              code: "NOT_MEMBER",
+              message: "Wallet is not a member of community",
+            },
+          ],
+          membershipState: "invited",
+          effectiveRoles: [],
+        };
+      }
+      const policy = await db.accessPolicy.findFirst({
+        where: { communityId: input.communityId, resource: input.resource },
+      });
+      const ruleType = policy ? policy.ruleType : "MEMBERS_ONLY";
+      const ctx: RoleContext = {
+        assignments: member.roles.map((r) => ({
+          role: r.role as any,
+          source: r.source as any,
+          active: r.active,
+        })),
+        membershipState: (member.membership?.state as any) ?? "invited",
+      };
+      const decision = evaluate(
+        {
+          id: policy?.id ?? "default",
+          communityId: input.communityId,
+          resource: input.resource,
+          ruleType: ruleType,
+          params: policy?.params as Record<string, any> | undefined,
+        },
+        ctx,
+      );
+      return decision;
+    },
     async listMembersForAdmin(
       communityId: string,
       role?: "admin" | "member" | "contributor",
     ) {
-      const members = await prismaClient.member.findMany({
+
+      // TODO: add auth to ensure requester is admin
+      const members = await db.member.findMany({
         where: { communityId },
         include: { wallet: true, membership: true, roles: true, profile: true },
       });

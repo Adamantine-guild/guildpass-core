@@ -54,6 +54,8 @@ model Membership {
   renewedAt  DateTime?
   createdAt  DateTime        @default(now())
   member     Member          @relation(fields: [memberId], references: [id])
+
+  @@index([state, expiresAt])
 }
 
 enum Role {
@@ -77,6 +79,16 @@ model RoleAssignment {
   member    Member     @relation(fields: [memberId], references: [id])
 }
 
+model Badge {
+  id       String   @id @default(cuid())
+  memberId String
+  label    String
+  issuedAt DateTime @default(now())
+  member   Member   @relation(fields: [memberId], references: [id])
+
+  @@index([memberId])
+}
+
 model AccessPolicy {
   id          String   @id @default(cuid())
   communityId String
@@ -85,6 +97,8 @@ model AccessPolicy {
   params      Json?
   community   Community @relation(fields: [communityId], references: [id])
   @@unique([communityId, resource])
+}
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -97,6 +111,7 @@ enum EventType {
   MEMBERSHIP_UPDATED
   MEMBERSHIP_DELETED
   POLICY_EVALUATION
+  MEMBERSHIP_RECONCILED
   OTHER
 }
 

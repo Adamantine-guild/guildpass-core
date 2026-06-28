@@ -103,36 +103,17 @@ export async function seedDatabase(prisma: PrismaClient) {
     },
   });
   // Memberships
-  await prisma.membership.create({
-    data: {
-      memberId: mAlice.id,
-      state: "active",
-      expiresAt: new Date(Date.now() + 30 * 24 * 3600 * 1000),
-    },
+  await upsertMembership(prisma, mAlice.id, {
+    state: "active",
+    expiresAt: new Date(Date.now() + 30 * 24 * 3600 * 1000),
   });
-  await prisma.membership.create({
-    data: {
-      memberId: mBob.id,
-      state: "expired",
-      expiresAt: new Date(Date.now() - 24 * 3600 * 1000),
-    },
+  await upsertMembership(prisma, mBob.id, {
+    state: "expired",
+    expiresAt: new Date(Date.now() - 24 * 3600 * 1000),
   });
-  // Roles
-  await prisma.roleAssignment.create({
-    data: {
-      memberId: mAlice.id,
-      role: "admin",
-      source: "manual",
-      active: true,
-    },
-  });
-  await prisma.roleAssignment.create({
-    data: {
-      memberId: mBob.id,
-      role: "contributor",
-      source: "manual",
-      active: true,
-    },
+  await upsertMembership(prisma, mBob.id, {
+    state: "expired",
+    expiresAt: new Date(Date.now() - 24 * 3600 * 1000),
   });
 
   // Role assignments (now idempotent via delete-then-create)
