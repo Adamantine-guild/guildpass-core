@@ -107,6 +107,23 @@ Responses include `allowed`/`denied` plus human-readable and machine-readable re
 
 ---
 
+## OpenAPI Specification
+
+A stable, machine-readable OpenAPI specification is generated for all public API routes to support SDKs and integrations.
+
+- **Specification File:** [docs/openapi.json](./docs/openapi.json)
+
+**For Contributors:**
+When adding or modifying routes in the Access API, you must update the checked-in specification. Run the following command from the root of the repository:
+
+```bash
+npm run -w access-api openapi:generate
+```
+
+CI will automatically verify that the OpenAPI specification is up-to-date with your code changes.
+
+---
+
 ## Data Model
 
 Prisma schema includes: `communities`, `wallets`, `members`, `memberships`, `roles`, `access policies`, `profiles`, `badges` (placeholder).

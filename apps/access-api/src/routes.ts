@@ -31,7 +31,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   // POST /v1/access/check — check access for wallet/resource
   app.post('/v1/access/check', async (request, reply) => {
     const body = request.body as {
-      wallet: string;
+      wallet: `0x${string}`;
       communityId: string;
       resource: string;
     };

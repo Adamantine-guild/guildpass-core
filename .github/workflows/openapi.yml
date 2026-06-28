@@ -1,0 +1,42 @@
+name: OpenAPI Validation
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  validate-openapi:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 9
+          
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+        
+      - name: Build packages
+        run: pnpm --filter "./packages/**" run build
+        
+      - name: Generate Prisma Client
+        run: pnpm --filter access-api run prisma:generate
+        
+      - name: Generate OpenAPI spec
+        run: pnpm --filter access-api run openapi:generate
+        
+      - name: Verify no changes
+        run: |
+          if [[ -n $(git status --porcelain docs/openapi.json) ]]; then
+            echo "Error: docs/openapi.json is out of date. Run 'pnpm --filter access-api run openapi:generate' (or npm run openapi:generate in apps/access-api) and commit the changes."
+            git diff docs/openapi.json
+            exit 1
+          fi

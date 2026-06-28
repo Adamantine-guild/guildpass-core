@@ -30,13 +30,13 @@ async function buildTestApp(mockService: ReturnType<typeof createMockMemberServi
   });
 
   // Register routes with mocked service
-  app.get('/v1/memberships/:wallet', async (request) => {
-    const { wallet } = request.params as { wallet: string };
+  app.get('/v1/communities/:communityId/memberships/:wallet', async (request) => {
+    const { wallet } = request.params as { communityId: string; wallet: string };
     return mockService.getMembershipsByWallet(wallet);
   });
 
-  app.get('/v1/members/:wallet', async (request, reply) => {
-    const { wallet } = request.params as { wallet: string };
+  app.get('/v1/communities/:communityId/members/:wallet', async (request, reply) => {
+    const { wallet } = request.params as { communityId: string; wallet: string };
     const result = await mockService.getProfileByWallet(wallet);
     if (!result) {
       return reply.status(404).send({ error: 'Member not found' });
@@ -122,7 +122,7 @@ describe('GET /v1/memberships/:wallet', () => {
 
     const response = await app.inject({
       method: 'GET',
-      url: '/v1/memberships/0x0000000000000000000000000000000000000000',
+      url: '/v1/communities/community-1/memberships/0x0000000000000000000000000000000000000000',
     });
 
     expect(response.statusCode).toBe(200);
@@ -161,7 +161,7 @@ describe('GET /v1/members/:wallet', () => {
 
     const response = await app.inject({
       method: 'GET',
-      url: '/v1/members/0x0000000000000000000000000000000000000000',
+      url: '/v1/communities/community-1/members/0x0000000000000000000000000000000000000000',
     });
 
     expect(response.statusCode).toBe(404);

@@ -1,8 +1,8 @@
 export const API_CONTRACT = {
   membershipsByWallet: {
     method: 'GET',
-    pathTemplate: '/v1/memberships/:wallet',
-    samplePath: '/v1/memberships/0x1234567890abcdef1234567890abcdef12345678',
+    pathTemplate: '/v1/communities/:communityId/memberships/:wallet',
+    samplePath: '/v1/communities/community-1/memberships/0x1234567890abcdef1234567890abcdef12345678',
     successStatus: 200,
     successResponse: {
       wallet: '0x1234567890abcdef1234567890abcdef12345678',
@@ -13,8 +13,8 @@ export const API_CONTRACT = {
   },
   memberProfileByWallet: {
     method: 'GET',
-    pathTemplate: '/v1/members/:wallet',
-    samplePath: '/v1/members/0x1234567890abcdef1234567890abcdef12345678',
+    pathTemplate: '/v1/communities/:communityId/members/:wallet',
+    samplePath: '/v1/communities/community-1/members/0x1234567890abcdef1234567890abcdef12345678',
     successStatus: 200,
     successResponse: {
       communityId: 'community-1',
