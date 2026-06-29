@@ -64,6 +64,7 @@ export interface RoleAssignment {
   role: Role;
   source: "manual" | "auto";
   active: boolean;
+  expiresAt?: string | Date | null;
 }
 
 export interface AssignRoleInput {

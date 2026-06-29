@@ -79,6 +79,7 @@ model RoleAssignment {
   role      Role
   source    RoleSource
   active    Boolean    @default(true)
+  expiresAt DateTime?
   createdAt DateTime   @default(now())
   member    Member     @relation(fields: [memberId], references: [id])
 }

@@ -42,13 +42,33 @@ function validatePolicy(
 
 export function resolveEffectiveRoles(ctx: RoleContext): Role[] {
   const roles: Role[] = [];
+  const now = new Date();
+
   for (const a of ctx.assignments) {
-    if (a.active) roles.push(a.role);
+    if (!a.active) continue;
+    if (a.expiresAt) {
+      const expiry = new Date(a.expiresAt);
+      if (expiry < now) continue;
+    }
+    roles.push(a.role);
   }
+
   if (ctx.membershipState === "active") {
     roles.push("member");
   }
-  return unique(roles);
+
+  // Role hierarchy implementation:
+  // admin -> contributor -> member
+  const effective: Role[] = [...roles];
+  if (roles.includes("admin")) {
+    effective.push("contributor");
+    effective.push("member");
+  }
+  if (roles.includes("contributor")) {
+    effective.push("member");
+  }
+
+  return unique(effective);
 }
 
 export function evaluate(

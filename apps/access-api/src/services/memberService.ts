@@ -4,6 +4,9 @@ import {
   AccessDecision,
   Role,
   RoleContext,
+  AssignRoleInput,
+  RemoveRoleInput,
+  RoleMutationResult,
 } from "@guildpass/shared-types";
 import { evaluate } from "@guildpass/policy-engine";
 import { logEvent } from "./auditService";
@@ -16,6 +19,16 @@ const prisma = new PrismaClient();
 
 function normaliseWallet(wallet: string): string {
   return wallet.toLowerCase();
+}
+
+function getNormalizedMembershipState(
+  state: string,
+  expiresAt?: Date | null,
+): string {
+  if (expiresAt && new Date(expiresAt) < new Date()) {
+    return "expired";
+  }
+  return state;
 }
 
 function accessDecisionCacheKey({
@@ -121,7 +134,6 @@ export function getMemberService(prismaClient: PrismaClient) {
         afterState: { evaluation: input.details ?? null },
       });
     } catch (err) {
-      // Never fail access because audit failed.
       // eslint-disable-next-line no-console
       console.error("Failed to log access audit event:", err);
     }
@@ -140,8 +152,8 @@ export function getMemberService(prismaClient: PrismaClient) {
       ...versions,
     });
 
-    const cached = await cacheService.getJSON<AccessDecision>(cacheKey);
-    if (cached) return cached;
+    const cached = await cacheService.getJSON<any>(cacheKey);
+    if (cached) return cached as unknown as AccessDecision;
 
     const w = await prismaClient.wallet.findUnique({
       where: { address: wallet },
@@ -203,13 +215,19 @@ export function getMemberService(prismaClient: PrismaClient) {
 
     const ruleType = policy ? policy.ruleType : "MEMBERS_ONLY";
 
+    const effectiveState = getNormalizedMembershipState(
+      (member.membership?.state as any) ?? "invited",
+      member.membership?.expiresAt,
+    );
+
     const ctx: RoleContext = {
       assignments: member.roles.map((r) => ({
         role: r.role as any,
         source: r.source as any,
         active: r.active,
+        expiresAt: r.expiresAt,
       })),
-      membershipState: (member.membership?.state as any) ?? "invited",
+      membershipState: effectiveState as any,
     };
 
     const decision = evaluate(
@@ -259,11 +277,12 @@ export function getMemberService(prismaClient: PrismaClient) {
         ),
         expiresAt: m.membership?.expiresAt?.toISOString() ?? null,
       }));
-      return { wallet: normalizedWallet, communities };
+      return { wallet: normaliseWallet(wallet), communities };
     },
     async getProfileByWallet(wallet: string) {
+      const normalised = normaliseWallet(wallet);
       const w = await prismaClient.wallet.findUnique({
-        where: { address: normaliseWallet(wallet) },
+        where: { address: normalised },
       });
       if (!w) return null;
       const m = await prismaClient.member.findFirst({
@@ -272,7 +291,7 @@ export function getMemberService(prismaClient: PrismaClient) {
       });
       if (!m) return null;
       return {
-        wallet: normalizedWallet,
+        wallet: normalised,
         communityId: m.communityId,
         profile: {
           id: m.profile?.id ?? "",
@@ -290,77 +309,13 @@ export function getMemberService(prismaClient: PrismaClient) {
       };
     },
 
-    async checkAccess(input: AccessCheckInput): Promise<AccessDecision> {
-      const wallet = input.wallet.toLowerCase();
-      const w = await db.wallet.findUnique({ where: { address: wallet } });
-      if (!w) {
-        return {
-          allowed: false,
-          code: "DENY",
-          reasons: [{ code: "NO_WALLET", message: "Wallet not known" }],
-          membershipState: "invited",
-          effectiveRoles: [],
-        };
-      }
-      const member = await db.member.findFirst({
-        where: { walletId: w.id, communityId: input.communityId },
-        include: { roles: true, membership: true },
-      });
-      if (!member) {
-        return {
-          allowed: false,
-          code: "DENY",
-          reasons: [
-            {
-              code: "NOT_MEMBER",
-              message: "Wallet is not a member of community",
-            },
-          ],
-          membershipState: "invited",
-          effectiveRoles: [],
-        };
-      }
-      const policy = await db.accessPolicy.findFirst({
-        where: { communityId: input.communityId, resource: input.resource },
-      });
-      const ruleType = policy ? policy.ruleType : "MEMBERS_ONLY";
-      const effectiveState = getNormalizedMembershipState(
-        member.membership?.state ?? "invited",
-        member.membership?.expiresAt,
-      );
-      const ctx: RoleContext = {
-        assignments: member.roles.map((r: any) => ({
-          role: r.role as any,
-          source: r.source as any,
-          active: r.active,
-        })),
-        membershipState: effectiveState as any,
-      };
-      const decision = evaluate(
-        {
-          id: policy?.id ?? "default",
-          communityId: input.communityId,
-          resource: input.resource,
-          ruleType: ruleType,
-          params: policy?.params as Record<string, any> | undefined,
-        },
-        ctx,
-      );
-      return decision;
-    },
+    checkAccess,
+
     async listMembersForAdmin(
       communityId: string,
-      role?: "admin" | "member" | "contributor",
+      role?: Role,
     ) {
-      // NOTE: list endpoint is intended for community admins.
-      // Enforcing requester-admin auth requires requester wallet identity, which is not provided here.
-      // This endpoint is for admin listing only; enforce auth here.
-      // NOTE: This service method receives only communityId + optional role, so
-      // requester auth is expected to be enforced by the route via a wrapper.
-      // (We keep listing open at service-layer to avoid breaking existing API.)
-      const members = await db.member.findMany({
-
-
+      const members = await prismaClient.member.findMany({
         where: { communityId },
         include: { wallet: true, membership: true, roles: true, profile: true },
       });
@@ -383,7 +338,93 @@ export function getMemberService(prismaClient: PrismaClient) {
       return { communityId, members: list };
     },
 
-    // Invalidation hooks (call from mutation/event handlers)
+    async assignMemberRole(input: AssignRoleInput): Promise<RoleMutationResult> {
+      const { requesterWallet, communityId, targetWallet, role } = input;
+      const validRoles: Role[] = ["admin", "member", "contributor"];
+      if (!validRoles.includes(role)) {
+        throw { statusCode: 400, message: "Invalid role" };
+      }
+
+      const requester = await prismaClient.wallet.findUnique({
+        where: { address: normaliseWallet(requesterWallet) },
+      });
+      if (!requester) throw { statusCode: 403, message: "Requester not found" };
+
+      const requesterMember = await prismaClient.member.findFirst({
+        where: { walletId: requester.id, communityId },
+        include: { roles: true },
+      });
+      const isRequesterAdmin = requesterMember?.roles.some(
+        (r) => r.role === "admin" && r.active,
+      );
+      if (!isRequesterAdmin) throw { statusCode: 403, message: "Not authorized" };
+
+      const target = await prismaClient.wallet.findUnique({
+        where: { address: normaliseWallet(targetWallet) },
+      });
+      if (!target) throw { statusCode: 404, message: "Target wallet not found" };
+
+      const targetMember = await prismaClient.member.findFirst({
+        where: { walletId: target.id, communityId },
+      });
+      if (!targetMember) throw { statusCode: 404, message: "Target not a member" };
+
+      const existing = await prismaClient.roleAssignment.findFirst({
+        where: { memberId: targetMember.id, role, active: true },
+      });
+      if (existing) {
+        return { communityId, wallet: targetWallet, role, assigned: false, removed: false, message: "Role already assigned" };
+      }
+
+      await prismaClient.roleAssignment.create({
+        data: {
+          memberId: targetMember.id,
+          role,
+          source: "manual",
+          active: true,
+        },
+      });
+
+      await bumpRoleVersion(communityId);
+      return { communityId, wallet: targetWallet, role, assigned: true, removed: false };
+    },
+
+    async removeMemberRole(input: RemoveRoleInput): Promise<RoleMutationResult> {
+      const { requesterWallet, communityId, targetWallet, role } = input;
+
+      const requester = await prismaClient.wallet.findUnique({
+        where: { address: normaliseWallet(requesterWallet) },
+      });
+      if (!requester) throw { statusCode: 403, message: "Requester not found" };
+
+      const requesterMember = await prismaClient.member.findFirst({
+        where: { walletId: requester.id, communityId },
+        include: { roles: true },
+      });
+      const isRequesterAdmin = requesterMember?.roles.some(
+        (r) => r.role === "admin" && r.active,
+      );
+      if (!isRequesterAdmin) throw { statusCode: 403, message: "Not authorized" };
+
+      const target = await prismaClient.wallet.findUnique({
+        where: { address: normaliseWallet(targetWallet) },
+      });
+      if (!target) throw { statusCode: 404, message: "Target wallet not found" };
+
+      const targetMember = await prismaClient.member.findFirst({
+        where: { walletId: target.id, communityId },
+      });
+      if (!targetMember) throw { statusCode: 404, message: "Target not a member" };
+
+      await prismaClient.roleAssignment.updateMany({
+        where: { memberId: targetMember.id, role, active: true },
+        data: { active: false },
+      });
+
+      await bumpRoleVersion(communityId);
+      return { communityId, wallet: targetWallet, role, assigned: false, removed: true };
+    },
+
     bumpMembershipVersion,
     bumpRoleVersion,
     bumpPolicyVersion,
@@ -393,11 +434,7 @@ export function getMemberService(prismaClient: PrismaClient) {
 
 export const memberService = getMemberService(prisma);
 
-// Backwards-compatible re-export of the invalidation hooks.
-// These are intended to be called by membership/role/policy mutation handlers.
 export const bumpMembershipVersion = memberService.bumpMembershipVersion;
 export const bumpRoleVersion = memberService.bumpRoleVersion;
 export const bumpPolicyVersion = memberService.bumpPolicyVersion;
 export const bumpResourceVersion = memberService.bumpResourceVersion;
-
-
