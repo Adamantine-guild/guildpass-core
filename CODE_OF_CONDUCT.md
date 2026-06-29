@@ -56,6 +56,6 @@ Community leaders will follow these Community Impact Guidelines in determining t
 **Impact**: Demonstrating a pattern of violation of community standards.  
 **Consequence**: A permanent ban from any sort of public interaction within the community.
 
-## Attribution
+## Attributions
 
 This Code of Conduct is adapted from the [Contributor Covenant](https://www.contributor-covenant.org), version 2.1, available at <https://www.contributor-covenant.org/version/2/1/code_of_conduct.html>.
