@@ -10,6 +10,7 @@ import { config } from './config';
 import { disconnectPrisma } from './services/prisma';
 import { createReconciliationWorker } from './workers/reconciliationWorker';
 import { createOutboxWorker } from './workers/outboxWorker';
+import { createIndexerWorker, ChainProvider } from './workers/indexerWorker';
 
 async function main() {
   const app = await buildApp();
@@ -24,6 +25,23 @@ async function main() {
     config.outboxWorkerBatchSize,
   );
   outboxWorker.start();
+
+  // Initialize IndexerWorker if a provider is available
+  // Note: In a real production environment, you would inject a real RPC-backed ChainProvider here.
+  // For now, we instantiate it only if explicitly needed or with a mock/stub if desired.
+  // Example stub for demonstration:
+  const stubProvider: ChainProvider = {
+    getLatestBlockNumber: async () => 0,
+    getBlock: async () => ({ number: 0, hash: '0x0', parentHash: '0x0' }),
+    getLogs: async () => [],
+  };
+
+  const indexerWorker = createIndexerWorker(
+    stubProvider,
+    config.indexerIntervalMs,
+    config.indexerFinalityWindow,
+  );
+  // indexerWorker.start(); // Keep disabled by default until provider is configured
 
   await app.listen({ port: config.port, host: '0.0.0.0' });
 
@@ -41,6 +59,7 @@ async function main() {
     try {
       worker.stop();
       outboxWorker.stop();
+      indexerWorker.stop();
       await disconnectPrisma();
       console.log('✅ Server and database connections closed cleanly.');
       process.exit(0);

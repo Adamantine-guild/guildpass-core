@@ -21,7 +21,9 @@ export interface DecodedMembershipMintedEvent {
   communityId: string;
   expiresAt: number; // unix timestamp
   blockNumber?: number;
+  blockHash?: string;
   transactionHash?: string;
+  logIndex?: number;
 }
 
 export interface DecodedMembershipRenewedEvent {
@@ -29,7 +31,9 @@ export interface DecodedMembershipRenewedEvent {
   tokenId: number;
   newExpiresAt: number; // unix timestamp
   blockNumber?: number;
+  blockHash?: string;
   transactionHash?: string;
+  logIndex?: number;
 }
 
 export interface DecodedMembershipSuspendedEvent {
@@ -37,7 +41,9 @@ export interface DecodedMembershipSuspendedEvent {
   tokenId: number;
   isSuspended: boolean;
   blockNumber?: number;
+  blockHash?: string;
   transactionHash?: string;
+  logIndex?: number;
 }
 
 export type DecodedContractEvent =
@@ -82,6 +88,23 @@ export async function applyContractEvent(
 
   // Access-affecting writes must be atomic.
   await prisma.$transaction(async (tx) => {
+    // Idempotency check: If transactionHash and logIndex are provided, check if already processed.
+    if (event.transactionHash && event.logIndex !== undefined) {
+      const alreadyProcessed = await tx.processedEvent.findUnique({
+        where: {
+          transactionHash_logIndex: {
+            transactionHash: event.transactionHash,
+            logIndex: event.logIndex,
+          },
+        },
+      });
+
+      if (alreadyProcessed) {
+        // Already processed, skip to maintain idempotency.
+        return;
+      }
+    }
+
     if (event.type === 'MembershipMinted') {
       const wallet = event.to.toLowerCase();
       const expiresAt = new Date(event.expiresAt * 1000);
@@ -175,6 +198,24 @@ export async function applyContractEvent(
         where: { id: membership.id },
         data: {
           state: event.isSuspended ? 'suspended' : 'active',
+        },
+      });
+    }
+
+    // Record the event as processed for reorg safety and idempotency.
+    if (
+      event.transactionHash &&
+      event.logIndex !== undefined &&
+      event.blockHash &&
+      event.blockNumber !== undefined
+    ) {
+      await tx.processedEvent.create({
+        data: {
+          transactionHash: event.transactionHash,
+          logIndex: event.logIndex,
+          blockHash: event.blockHash,
+          blockNumber: event.blockNumber,
+          eventType: event.type,
         },
       });
     }

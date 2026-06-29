@@ -51,6 +51,7 @@ enum MembershipState {
 model Membership {
   id        String          @id @default(cuid())
   memberId  String          @unique
+  tokenId   Int?            @unique
   state     MembershipState
   expiresAt DateTime?
   renewedAt DateTime?
@@ -58,6 +59,7 @@ model Membership {
   member    Member          @relation(fields: [memberId], references: [id])
 
   @@index([state, expiresAt])
+  @@index([tokenId])
 }
 
 enum Role {
@@ -182,4 +184,27 @@ model OutboxEvent {
   @@index([createdAt])
   @@index([nextRetryAt])
   @@index([status, nextRetryAt])
+}
+
+// --- Chain Indexer Reorg Safety & Idempotency ---
+
+model ProcessedEvent {
+  id              String   @id @default(uuid())
+  transactionHash String
+  logIndex        Int
+  blockHash       String
+  blockNumber     Int
+  eventType       String
+  processedAt     DateTime @default(now())
+
+  @@unique([transactionHash, logIndex])
+  @@index([blockHash])
+  @@index([blockNumber])
+}
+
+model IndexerState {
+  id               String   @id @default("singleton")
+  lastBlockNumber  Int
+  lastBlockHash    String
+  updatedAt        DateTime @updatedAt
 }
