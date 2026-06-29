@@ -49,6 +49,28 @@ const ConfigSchema = z.object({
     .int()
     .positive()
     .default(60_000),
+
+  // Rate limiting
+  rateLimitEnabled: z
+    .string()
+    .transform((v: string) => v !== 'false' && v !== '0')
+    .default('true'),
+  rateLimitWindowMs: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(60_000),
+  rateLimitDefaultMax: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(100),
+  rateLimitExpensiveMax: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(20),
+  redisUrl: z.string().optional(),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
@@ -64,6 +86,11 @@ function validateConfig(): Config {
     databaseUrl: process.env.DATABASE_URL,
     logLevel: process.env.LOG_LEVEL,
     reconciliationIntervalMs: process.env.RECONCILIATION_INTERVAL_MS,
+    rateLimitEnabled: process.env.RATE_LIMIT_ENABLED,
+    rateLimitWindowMs: process.env.RATE_LIMIT_WINDOW_MS,
+    rateLimitDefaultMax: process.env.RATE_LIMIT_DEFAULT_MAX,
+    rateLimitExpensiveMax: process.env.RATE_LIMIT_EXPENSIVE_MAX,
+    redisUrl: process.env.REDIS_URL,
   };
 
   const result = ConfigSchema.safeParse(envVars);

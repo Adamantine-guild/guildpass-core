@@ -19,6 +19,7 @@
 import Fastify, { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
+import rateLimit from '@fastify/rate-limit';
 
 import { buildPinoHttp } from './observability/logger';
 import { registry, metrics } from './observability/metrics';
@@ -130,13 +131,47 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(swaggerUi, { routePrefix: '/docs' });
 
   // -----------------------------------------------------------------------
-  // 4. Prometheus metrics endpoint
+  // 4. Rate limiting
+  //    Enabled by default; set RATE_LIMIT_ENABLED=false to disable.
+  //    Health endpoints opt-out via { config: { rateLimit: false } }.
+  //    Expensive endpoints declare a tighter ceiling in their route config.
+  // -----------------------------------------------------------------------
+  if (config.rateLimitEnabled) {
+    await app.register(rateLimit, {
+      global: true,
+      max: config.rateLimitDefaultMax,
+      timeWindow: config.rateLimitWindowMs,
+      keyGenerator: (req) => {
+        const forwarded = req.headers['x-forwarded-for'];
+        const ip = Array.isArray(forwarded)
+          ? forwarded[0]
+          : forwarded?.split(',')[0]?.trim();
+        return ip ?? req.ip;
+      },
+      errorResponseBuilder: (_req, context) => ({
+        statusCode: 429,
+        error: 'Too Many Requests',
+        message: `Rate limit exceeded. Retry after ${Math.ceil(context.ttl / 1000)} seconds.`,
+        retryAfter: Math.ceil(context.ttl / 1000),
+      }),
+      addHeaders: {
+        'x-ratelimit-limit': true,
+        'x-ratelimit-remaining': true,
+        'x-ratelimit-reset': true,
+        'retry-after': true,
+      },
+    });
+  }
+
+  // -----------------------------------------------------------------------
+  // 6. Prometheus metrics endpoint
   //    Secured by a simple pre-handler so it is never exposed publicly.
   //    Set METRICS_TOKEN to a non-empty string to enable bearer-token auth.
   // -----------------------------------------------------------------------
   app.get(
     '/metrics',
     {
+      config: { rateLimit: false },
       schema: {
         summary: 'Prometheus metrics scrape endpoint',
         tags: ['Observability'],
@@ -157,7 +192,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   );
 
   // -----------------------------------------------------------------------
-  // 5. Health endpoints
+  // 7. Health endpoints
   //
   //    GET /health/live  – liveness probe
   //      Answers: "Is the process alive and the event loop responsive?"
@@ -171,6 +206,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   app.get(
     '/health/live',
     {
+      config: { rateLimit: false },
       schema: {
         summary: 'Liveness probe – is the process alive?',
         tags: ['Health'],
@@ -193,6 +229,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   app.get(
     '/health/ready',
     {
+      config: { rateLimit: false },
       schema: {
         summary: 'Readiness probe – can we serve traffic?',
         tags: ['Health'],
@@ -233,7 +270,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   );
 
   // -----------------------------------------------------------------------
-  // 6. Business routes
+  // 8. Business routes
   // -----------------------------------------------------------------------
   registerRoutes(app);
 
