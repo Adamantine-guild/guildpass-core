@@ -84,6 +84,15 @@ export interface GuildPassClientOptions {
 /** Maximum characters of a response body retained on a {@link GuildPassApiError}. */
 const MAX_RESPONSE_BODY_CHARS = 500;
 
+/** Shape of the standardised API error envelope. */
+interface ApiErrorEnvelope {
+  error: string;
+  code: string;
+  message: string;
+  statusCode: number;
+  details?: string | Record<string, unknown>;
+}
+
 export class GuildPassClient {
   private readonly baseUrl: string;
   private readonly token: string | undefined;
@@ -245,11 +254,14 @@ export class GuildPassClient {
         body.length > MAX_RESPONSE_BODY_CHARS
           ? `${body.slice(0, MAX_RESPONSE_BODY_CHARS)}…[truncated]`
           : body;
+      const { message, code, details } = parseErrorEnvelope(body);
       throw new GuildPassApiError({
         statusCode: res.status,
         path,
-        message: buildHttpErrorMessage(res.status, res.statusText, body),
+        message: message ?? buildHttpErrorMessage(res.status, res.statusText, body),
         responseBody: truncated,
+        code: code ?? String(res.status),
+        details,
       });
     }
 
@@ -291,6 +303,29 @@ async function safeReadText(res: Response): Promise<string> {
   } catch {
     return '';
   }
+}
+
+/** Attempt to parse the standardised API error envelope from a response body. */
+function parseErrorEnvelope(body: string): {
+  message?: string;
+  code?: string;
+  details?: string | Record<string, unknown>;
+} {
+  try {
+    const parsed = JSON.parse(body) as Partial<ApiErrorEnvelope>;
+    // Only trust the envelope when both `error` and `message` are present
+    // (avoids treating unrelated JSON as an error envelope).
+    if (typeof parsed.error === 'string' && typeof parsed.message === 'string') {
+      return {
+        message: parsed.message,
+        code: parsed.error,
+        details: parsed.details,
+      };
+    }
+  } catch {
+    // Not JSON — caller will fall back to raw-body message building.
+  }
+  return {};
 }
 
 function buildHttpErrorMessage(

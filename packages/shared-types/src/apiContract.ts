@@ -10,6 +10,9 @@ export const API_CONTRACT = {
         { communityId: 'community-1', state: 'active', expiresAt: null },
       ],
     },
+    errorResponse: {
+      404: { error: 'NOT_FOUND', code: 'NOT_FOUND', message: 'Wallet not found', statusCode: 404 },
+    },
   },
   memberProfileByWallet: {
     method: 'GET',
@@ -21,6 +24,10 @@ export const API_CONTRACT = {
       profile: { id: 'p1', displayName: 'Alice', bio: 'Hello' },
       membership: { state: 'active', expiresAt: null },
       roles: ['admin'],
+    },
+    errorResponse: {
+      400: { error: 'VALIDATION_ERROR', code: 'VALIDATION_ERROR', message: 'Validation failed', statusCode: 400, details: 'wallet query parameter is required' },
+      404: { error: 'NOT_FOUND', code: 'NOT_FOUND', message: 'Member not found', statusCode: 404 },
     },
   },
   accessCheck: {
@@ -37,6 +44,9 @@ export const API_CONTRACT = {
       allowed: true,
       code: 'ALLOW',
       membershipState: 'active',
+    },
+    errorResponse: {
+      400: { error: 'VALIDATION_ERROR', code: 'VALIDATION_ERROR', message: 'Validation failed', statusCode: 400, details: 'Missing required fields: wallet' },
     },
   },
   communityMembers: {
@@ -60,6 +70,9 @@ export const API_CONTRACT = {
           roles: ['member'],
         },
       ],
+    },
+    errorResponse: {
+      404: { error: 'NOT_FOUND', code: 'NOT_FOUND', message: 'Community not found', statusCode: 404 },
     },
   },
   assignMemberRole: {
@@ -94,3 +107,22 @@ export const API_CONTRACT = {
 } as const;
 
 export type ApiContract = typeof API_CONTRACT;
+
+/**
+ * Standardised error envelope returned by every access-api endpoint.
+ *
+ * SDK consumers: catch `GuildPassApiError` to access these fields programmatically.
+ * API consumers: check `error`/`code` for machine-readable error classification.
+ */
+export interface ApiErrorResponse {
+  /** Machine-readable error identifier (e.g. `NOT_FOUND`, `VALIDATION_ERROR`). */
+  error: string;
+  /** HTTP status phrase (e.g. `NOT_FOUND`). Mirrors `error` for backward compatibility. */
+  code: string;
+  /** Human-readable description suitable for developer logs or UI hints. */
+  message: string;
+  /** HTTP status code (e.g. 404). */
+  statusCode: number;
+  /** Optional machine- or human-readable detail payload. */
+  details?: string | Record<string, unknown>;
+}

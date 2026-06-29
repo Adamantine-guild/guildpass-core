@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { getMemberService, MemberServiceError } from './services/memberService';
 import { getPrisma } from './services/prisma';
+import { notFound, validationError } from './errors';
 
 function getRequesterWallet(request: FastifyRequest): string {
   const header = request.headers['x-wallet'] ?? request.headers['x-user-wallet'] ?? request.headers['x-requester-wallet'];
@@ -44,7 +45,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     const { communityId, wallet } = request.params as { communityId: string; wallet: string };
     const result = await memberService.getProfileByWallet(wallet, communityId);
     if (!result) {
-      return reply.status(404).send({ error: 'Member not found' });
+      return reply.status(404).send(notFound('Member not found'));
     }
     return result;
   });
@@ -94,9 +95,9 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       resource: string;
     };
     if (!body?.wallet || !body?.communityId || !body?.resource) {
-      return reply.status(400).send({
-        error: 'Missing required fields: wallet, communityId, resource',
-      });
+      return reply.status(400).send(
+        validationError('Missing required fields: wallet, communityId, resource'),
+      );
     }
     const result = await memberService.checkAccess(body as import('@guildpass/shared-types').AccessCheckInput);
     return result;

@@ -24,6 +24,7 @@ import { buildPinoHttp } from './observability/logger';
 import { registry, metrics } from './observability/metrics';
 import { registerRoutes } from './routes';
 import { getPrisma } from './services/prisma';
+import { unauthorized } from './errors';
 
 // --------------------------------------------------------------------------
 // Helper: normalise a Fastify route URL into a stable label
@@ -146,7 +147,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       if (metricsToken) {
         const auth = _req.headers.authorization ?? '';
         if (auth !== `Bearer ${metricsToken}`) {
-          return reply.code(401).send({ error: 'Unauthorized' });
+          return reply.code(401).send(unauthorized('Invalid or missing metrics token'));
         }
       }
       const output = await registry.metrics();
