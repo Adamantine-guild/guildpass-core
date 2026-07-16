@@ -190,6 +190,8 @@ Role resolution combines:
 - Backend role assignments
 - Room for future manual override rules (TODO)
 
+**Full spec** (policy semantics, exact role-resolution algorithm, precedence between membership-derived and backend-assigned roles, worked examples): [`packages/policy-engine/README.md`](./packages/policy-engine/README.md).
+
 ---
 
 ## Testing
