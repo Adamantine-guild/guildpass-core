@@ -8,9 +8,14 @@
  * Design notes:
  *   - Idempotent: marks events as delivered only when the handler succeeds.
  *   - Retry with exponential backoff via markOutboxFailed.
+ *   - Events that exhaust their retry budget are captured in the
+ *     dead-letter store (recordDeadLetter) instead of being silently
+ *     pruned once their 7-day retention window passes.
  *   - Does NOT mutate domain state — it only reads/writes the outbox table.
  *   - The default handler is a no-op that logs the event.  Replace it with
- *     your own integration (e.g. NATS, Kafka, HTTP webhook) in production.
+ *     your own integration (e.g. NATS, Kafka, HTTP webhook) in production —
+ *     see createWebhookHandler in ../handlers/webhookHandler.ts for a
+ *     production-ready HMAC-signed webhook implementation.
  */
 
 import { PrismaClient } from "@prisma/client";
@@ -22,6 +27,7 @@ import {
   markOutboxFailed,
   pruneDeliveredOutboxEvents,
 } from "../services/outboxService";
+import { recordDeadLetter } from "../services/deadLetterService";
 
 // ---------------------------------------------------------------------------
 // Pluggable delivery handler
@@ -107,8 +113,30 @@ export async function processOutboxBatch(
       );
 
       try {
-        await markOutboxFailed(db as any, event.id, errorMessage);
+        const { permanentlyFailed, retryCount } = await markOutboxFailed(db as any, event.id, errorMessage);
         failed++;
+
+        if (permanentlyFailed) {
+          try {
+            await recordDeadLetter(db as any, {
+              id: event.id,
+              eventType: event.eventType,
+              entityId: event.entityId,
+              entityType: event.entityType,
+              communityId: event.communityId,
+              payload: event.payload,
+              lastError: errorMessage,
+              retryCount,
+            });
+          } catch (deadLetterErr) {
+            // eslint-disable-next-line no-console
+            console.error(
+              `[outboxWorker] Failed to dead-letter event ${event.id}:`,
+              deadLetterErr,
+            );
+            errors++;
+          }
+        }
       } catch (updateErr) {
         // eslint-disable-next-line no-console
         console.error(

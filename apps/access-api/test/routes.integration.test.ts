@@ -40,6 +40,8 @@ function createMockMemberService(overrides: Record<string, jest.Mock> = {}) {
     listMembersForAdmin: overrides.listMembersForAdmin ?? jest.fn(),
     assignMemberRole: overrides.assignMemberRole ?? jest.fn(),
     removeMemberRole: overrides.removeMemberRole ?? jest.fn(),
+    createAccessOverride: overrides.createAccessOverride ?? jest.fn(),
+    revokeAccessOverride: overrides.revokeAccessOverride ?? jest.fn(),
   };
 }
 
@@ -130,6 +132,63 @@ async function buildTestApp(mockService: ReturnType<typeof createMockMemberServi
         communityId,
         targetWallet: wallet,
         role,
+      });
+    } catch (err: any) {
+      return reply.status(err?.statusCode ?? 500).send({ error: err?.message ?? 'Internal server error' });
+    }
+  });
+
+  // POST /v1/communities/:communityId/overrides — create or update an access override for a wallet/resource
+  app.post('/v1/communities/:communityId/overrides', async (request, reply) => {
+    const { communityId } = request.params as { communityId: string };
+    const body = request.body as {
+      wallet?: string;
+      resource?: string;
+      effect?: string;
+      reason?: string;
+      expiresAt?: string | null;
+    };
+    if (!body?.wallet || !body?.resource || !body?.effect) {
+      return reply.status(400).send({
+        error: 'VALIDATION_ERROR',
+        message: 'Missing required fields: wallet, resource, effect',
+      });
+    }
+    const requesterWalletHeader = request.headers['x-wallet'] ?? request.headers['x-user-wallet'] ?? request.headers['x-requester-wallet'];
+    const requesterWallet = Array.isArray(requesterWalletHeader)
+      ? requesterWalletHeader[0] ?? ''
+      : (requesterWalletHeader as string | undefined) ?? '';
+
+    try {
+      return await mockService.createAccessOverride({
+        requesterWallet,
+        communityId,
+        wallet: body.wallet,
+        resource: body.resource,
+        effect: body.effect,
+        reason: body.reason,
+        expiresAt: body.expiresAt ?? null,
+      });
+    } catch (err: any) {
+      return reply.status(err?.statusCode ?? 500).send({ error: err?.message ?? 'Internal server error' });
+    }
+  });
+
+  // DELETE /v1/communities/:communityId/overrides/:wallet/:resource — revoke an access override
+  app.delete('/v1/communities/:communityId/overrides/:wallet/:resource', async (request, reply) => {
+    const { communityId, wallet, resource } = request.params as { communityId: string; wallet: string; resource: string };
+    const requesterWalletHeader = request.headers['x-wallet'] ?? request.headers['x-user-wallet'] ?? request.headers['x-requester-wallet'];
+    const requesterWallet = Array.isArray(requesterWalletHeader)
+      ? requesterWalletHeader[0] ?? ''
+      : (requesterWalletHeader as string | undefined) ?? '';
+
+    try {
+      return await mockService.revokeAccessOverride({
+        requesterWallet,
+        communityId,
+        wallet,
+        resource,
+        effect: 'DENY',
       });
     } catch (err: any) {
       return reply.status(err?.statusCode ?? 500).send({ error: err?.message ?? 'Internal server error' });
@@ -404,6 +463,109 @@ describe('DELETE /v1/communities/:communityId/members/:wallet/roles/:role', () =
     expect(response.statusCode).toBe(200);
     expect(response.json().removed).toBe(true);
     expect(mock.removeMemberRole).toHaveBeenCalled();
+
+    await app.close();
+  });
+});
+
+describe('POST /v1/communities/:communityId/overrides', () => {
+  test('creates or updates a manual access override', async () => {
+    const mockResponse = {
+      communityId: 'community-1',
+      wallet: '0xwallet1234567890abcdef1234567890abcdef12',
+      resource: 'dashboard',
+      effect: 'ALLOW',
+      created: true,
+      removed: false,
+    };
+    const mock = createMockMemberService({
+      createAccessOverride: jest.fn().mockResolvedValue(mockResponse),
+    });
+    const app = await buildTestApp(mock);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/communities/community-1/overrides',
+      headers: {
+        'x-wallet': '0xrequester0000000000000000000000000000000000',
+      },
+      payload: {
+        wallet: '0xwallet1234567890abcdef1234567890abcdef12',
+        resource: 'dashboard',
+        effect: 'ALLOW',
+        reason: 'VIP Client',
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.created).toBe(true);
+    expect(body.effect).toBe('ALLOW');
+    expect(mock.createAccessOverride).toHaveBeenCalledWith({
+      requesterWallet: '0xrequester0000000000000000000000000000000000',
+      communityId: 'community-1',
+      wallet: '0xwallet1234567890abcdef1234567890abcdef12',
+      resource: 'dashboard',
+      effect: 'ALLOW',
+      reason: 'VIP Client',
+      expiresAt: null,
+    });
+
+    await app.close();
+  });
+
+  test('returns 400 when missing required fields', async () => {
+    const mock = createMockMemberService();
+    const app = await buildTestApp(mock);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/communities/community-1/overrides',
+      payload: {
+        wallet: '0xwallet1234567890abcdef1234567890abcdef12',
+      },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error).toBe('VALIDATION_ERROR');
+
+    await app.close();
+  });
+});
+
+describe('DELETE /v1/communities/:communityId/overrides/:wallet/:resource', () => {
+  test('revokes a manual access override', async () => {
+    const mockResponse = {
+      communityId: 'community-1',
+      wallet: '0xwallet1234567890abcdef1234567890abcdef12',
+      resource: 'dashboard',
+      effect: 'DENY',
+      created: false,
+      removed: true,
+    };
+    const mock = createMockMemberService({
+      revokeAccessOverride: jest.fn().mockResolvedValue(mockResponse),
+    });
+    const app = await buildTestApp(mock);
+
+    const response = await app.inject({
+      method: 'DELETE',
+      url: '/v1/communities/community-1/overrides/0xwallet1234567890abcdef1234567890abcdef12/dashboard',
+      headers: {
+        'x-wallet': '0xrequester0000000000000000000000000000000000',
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.removed).toBe(true);
+    expect(mock.revokeAccessOverride).toHaveBeenCalledWith({
+      requesterWallet: '0xrequester0000000000000000000000000000000000',
+      communityId: 'community-1',
+      wallet: '0xwallet1234567890abcdef1234567890abcdef12',
+      resource: 'dashboard',
+      effect: 'DENY',
+    });
 
     await app.close();
   });

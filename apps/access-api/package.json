@@ -18,6 +18,7 @@
     "prisma:migrate:check": "prisma migrate status",
     "prisma:ci": "pnpm run prisma:validate && pnpm run prisma:generate && pnpm run prisma:migrate:deploy && pnpm run prisma:migrate:check",
     "seed": "ts-node prisma/seed.ts",
+    "backfill:outbox-correlation-id": "ts-node scripts/backfillOutboxCorrelationId.ts",
     "test": "jest --passWithNoTests"
   },
   "dependencies": {

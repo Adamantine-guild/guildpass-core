@@ -113,21 +113,29 @@ export async function markOutboxDelivered(
   });
 }
 
+export interface MarkOutboxFailedResult {
+  /** True once retries are exhausted and the event is now permanently failed. */
+  permanentlyFailed: boolean;
+  /** The retryCount value just written, so callers don't need to re-derive it. */
+  retryCount: number;
+}
+
 /**
  * Mark an outbox event as failed.
  * If retries remain, increment the count and schedule the next retry.
- * Otherwise set to permanent failure.
+ * Otherwise set to permanent failure and report it so the caller can
+ * route the event into the dead-letter store.
  */
 export async function markOutboxFailed(
   db: PrismaLikeClient,
   eventId: string,
   errorMessage: string,
-): Promise<void> {
+): Promise<MarkOutboxFailedResult> {
   const existing = await db.outboxEvent.findMany({
     where: { id: eventId },
   });
 
-  if (!existing || existing.length === 0) return;
+  if (!existing || existing.length === 0) return { permanentlyFailed: false, retryCount: 0 };
   const event = existing[0];
 
   const nextCount = (event.retryCount ?? 0) + 1;
@@ -141,17 +149,19 @@ export async function markOutboxFailed(
         nextRetryAt: computeNextRetryAt(nextCount),
       },
     });
-  } else {
-    await db.outboxEvent.update({
-      where: { id: eventId },
-      data: {
-        status: "failed",
-        retryCount: nextCount,
-        lastError: errorMessage,
-        nextRetryAt: null,
-      },
-    });
+    return { permanentlyFailed: false, retryCount: nextCount };
   }
+
+  await db.outboxEvent.update({
+    where: { id: eventId },
+    data: {
+      status: "failed",
+      retryCount: nextCount,
+      lastError: errorMessage,
+      nextRetryAt: null,
+    },
+  });
+  return { permanentlyFailed: true, retryCount: nextCount };
 }
 
 // ---------------------------------------------------------------------------

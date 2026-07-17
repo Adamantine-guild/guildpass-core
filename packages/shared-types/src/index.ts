@@ -40,6 +40,39 @@ export interface AccessPolicy {
   params?: AccessPolicyParams;
 }
 
+export type AccessOverrideEffect = "ALLOW" | "DENY";
+
+export interface AccessOverride {
+  id?: string;
+  wallet: WalletAddress | string;
+  communityId: string;
+  resource: string;
+  effect: AccessOverrideEffect;
+  expiresAt?: string | Date | null;
+  reason?: string | null;
+  createdAt?: string | Date;
+}
+
+export interface AccessOverrideMutationInput {
+  requesterWallet: WalletAddress;
+  communityId: string;
+  wallet: WalletAddress;
+  resource: string;
+  effect: AccessOverrideEffect;
+  reason?: string;
+  expiresAt?: string | Date | null;
+}
+
+export interface AccessOverrideMutationResult {
+  communityId: string;
+  wallet: WalletAddress;
+  resource: string;
+  effect: AccessOverrideEffect;
+  created: boolean;
+  removed: boolean;
+  message?: string;
+}
+
 export interface MemberProfile {
   id: string;
   displayName: string;
@@ -93,6 +126,10 @@ export interface RoleMutationResult {
 export interface RoleContext {
   assignments: RoleAssignment[];
   membershipState: MembershipState;
+  wallet?: WalletAddress | string;
+  communityId?: string;
+  resource?: string;
+  overrides?: AccessOverride[];
 }
 
 export interface PolicyEngine {
@@ -141,7 +178,9 @@ export type OutboxEventType =
   | "POLICY_CREATED"
   | "POLICY_UPDATED"
   | "POLICY_DELETED"
-  | "ACCESS_DECISION";
+  | "ACCESS_DECISION"
+  | "ACCESS_OVERRIDE_CREATED"
+  | "ACCESS_OVERRIDE_REVOKED";
 
 export type OutboxEventStatus = "pending" | "delivered" | "failed";
 
@@ -164,6 +203,37 @@ export interface OutboxEventDto {
 export interface OutboxDispatchResult {
   eventId: string;
   status: OutboxEventStatus;
+}
+
+// --- Webhook Delivery ---
+
+export interface WebhookSubscriptionDto {
+  id?: string;
+  communityId: string;
+  url: string;
+  /** Never included in read responses — write-only. */
+  secret?: string;
+  eventTypes: OutboxEventType[];
+  active?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export type DeadLetterStatus = "pending" | "retried" | "resolved";
+
+export interface DeadLetterEventDto {
+  id: string;
+  originalEventId: string;
+  eventType: string;
+  entityId?: string | null;
+  entityType?: string | null;
+  communityId?: string | null;
+  payload?: Record<string, unknown>;
+  failureReason: string;
+  retryCount: number;
+  status: DeadLetterStatus;
+  createdAt: string;
+  resolvedAt?: string | null;
 }
 
 export * from "./apiContract";

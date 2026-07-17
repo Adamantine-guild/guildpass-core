@@ -77,6 +77,76 @@ describe("policy engine", () => {
     expect(d.reasons.some((r) => r.code === "RULE_PUBLIC")).toBe(true);
   });
 
+  test("ALLOW overrides short-circuit standard policy resolution", () => {
+    const p = policy("ADMINS_ONLY");
+    const d = evaluate(p, {
+      assignments: [],
+      membershipState: "expired",
+      wallet: "0xabc",
+      communityId: "c1",
+      resource: "res",
+      overrides: [
+        {
+          wallet: "0xabc",
+          communityId: "c1",
+          resource: "res",
+          effect: "ALLOW",
+          reason: "temporary grant",
+        },
+      ],
+    });
+    expect(d.allowed).toBe(true);
+    expect(d.code).toBe("ALLOW");
+    expect(d.reasons.some((r) => r.code === "OVERRIDE_ALLOW")).toBe(true);
+  });
+
+  test("DENY overrides short-circuit standard policy resolution", () => {
+    const p = policy("PUBLIC");
+    const d = evaluate(p, {
+      assignments: [],
+      membershipState: "active",
+      wallet: "0xabc",
+      communityId: "c1",
+      resource: "res",
+      overrides: [
+        {
+          wallet: "0xabc",
+          communityId: "c1",
+          resource: "res",
+          effect: "DENY",
+          reason: "temporary ban",
+        },
+      ],
+    });
+    expect(d.allowed).toBe(false);
+    expect(d.code).toBe("DENY");
+    expect(d.reasons.some((r) => r.code === "OVERRIDE_DENY")).toBe(true);
+  });
+
+  test("Expired overrides are ignored", () => {
+    const p = policy("PUBLIC");
+    const d = evaluate(p, {
+      assignments: [],
+      membershipState: "expired",
+      wallet: "0xabc",
+      communityId: "c1",
+      resource: "res",
+      overrides: [
+        {
+          wallet: "0xabc",
+          communityId: "c1",
+          resource: "res",
+          effect: "DENY",
+          expiresAt: new Date(Date.now() - 1000).toISOString(),
+          reason: "expired",
+        },
+      ],
+    });
+    expect(d.allowed).toBe(true);
+    expect(d.code).toBe("ALLOW");
+    expect(d.reasons.some((r) => r.code === "RULE_PUBLIC")).toBe(true);
+  });
+
   test("resolveEffectiveRoles adds member when active", () => {
     const roles = resolveEffectiveRoles(ctxAdmin);
     expect(roles).toContain("member");

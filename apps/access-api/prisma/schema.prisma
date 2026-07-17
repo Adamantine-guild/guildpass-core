@@ -4,12 +4,13 @@ datasource db {
 }
 
 model Community {
-  id        String         @id
-  name      String
-  members   Member[]
-  policies  AccessPolicy[]
-  resources Resource[]
-  createdAt DateTime       @default(now())
+  id          String            @id
+  name        String
+  members     Member[]
+  policies    AccessPolicy[]
+  resources   Resource[]
+  overrides   AccessOverride[]
+  createdAt   DateTime          @default(now())
 }
 
 model Wallet {
@@ -122,6 +123,28 @@ model AccessPolicy {
   @@unique([communityId, resource])
 }
 
+enum AccessOverrideEffect {
+  ALLOW
+  DENY
+}
+
+model AccessOverride {
+  id          String                @id @default(cuid())
+  wallet      String
+  communityId String
+  resource    String
+  effect      AccessOverrideEffect
+  reason      String?
+  expiresAt   DateTime?
+  createdAt   DateTime              @default(now())
+  community   Community             @relation(fields: [communityId], references: [id])
+
+  @@unique([communityId, wallet, resource])
+  @@index([communityId])
+  @@index([wallet])
+  @@index([resource])
+}
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -181,35 +204,31 @@ enum OutboxEventStatus {
 }
 
 model OutboxEvent {
-  id          String            @id @default(uuid())
-  eventType   String // e.g. "MEMBERSHIP_CREATED", "ROLE_ASSIGNED", "RESOURCE_CREATED"
-  entityId    String? // ID of the entity that changed (memberId, resourceId, etc.)
-  entityType  String? // e.g. "Member", "RoleAssignment", "Resource", "AccessPolicy"
-  communityId String? // community context
-  payload     Json              @default("{}")
-  status      OutboxEventStatus @default(pending)
-  retryCount  Int               @default(0)
-  maxRetries  Int               @default(5)
-  lastError   String?
-  
-  // Correlation ID linking to audit events
+  id            String            @id @default(uuid())
+  eventType     String // e.g. "MEMBERSHIP_CREATED", "ROLE_ASSIGNED", "RESOURCE_CREATED"
+  entityId      String? // ID of the entity that changed (memberId, resourceId, etc.)
+  entityType    String? // e.g. "Member", "RoleAssignment", "Resource", "AccessPolicy"
+  communityId   String? // community context
+  // Groups outbox events emitted by the same originating request/mutation so
+  // consumers can correlate related events (e.g. a role change plus its
+  // downstream access re-evaluation). Nullable additive column — see the
+  // "Simple case" worked example in CONTRIBUTING.md's migration guide.
   correlationId String?
-  
-  // On-chain event metadata (when outbox event originated from blockchain state change)
-  chainId     Int?
-  txHash      String?
-  blockNumber Int?
-  logIndex    Int?
-  
-  createdAt   DateTime          @default(now())
-  deliveredAt DateTime?
-  nextRetryAt DateTime?
+  payload       Json              @default("{}")
+  status        OutboxEventStatus @default(pending)
+  retryCount    Int               @default(0)
+  maxRetries    Int               @default(5)
+  lastError     String?
+  createdAt     DateTime          @default(now())
+  deliveredAt   DateTime?
+  nextRetryAt   DateTime?
 
   @@index([status])
   @@index([communityId])
   @@index([eventType])
   @@index([createdAt])
   @@index([nextRetryAt])
+  @@index([correlationId])
   @@index([status, nextRetryAt])
   @@index([correlationId])
 }
@@ -237,79 +256,55 @@ model IndexerState {
   updatedAt        DateTime @updatedAt
 }
 
-// --- Constitutional Governance Engine ---
+// --- Webhook Delivery (outbox handler) ---
 
-model GovernanceRule {
-  id          String   @id @default(uuid())
-  name        String
-  description String
+// A community's subscription to outbox events, delivered as signed HTTP
+// webhooks by createWebhookHandler (src/handlers/webhookHandler.ts).
+model WebhookSubscription {
+  id          String   @id @default(cuid())
   communityId String
-  resource    String
-  ast         Json // JSON-serialized RuleNode AST
+  url         String
+  // Shared secret used to HMAC-SHA256 sign delivered payloads. Treat as a
+  // credential: never log it, and prefer a secrets manager over plaintext
+  // storage in production deployments.
+  secret      String
+  // Event types this subscription receives, e.g. "MEMBERSHIP_CREATED".
+  // Empty array means "all event types" for this community.
+  eventTypes  String[]
   active      Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  community Community @relation(fields: [communityId], references: [id])
-
   @@index([communityId])
-  @@index([resource])
   @@index([active])
-  @@unique([communityId, resource, name])
 }
 
-enum ApprovalRequestStatus {
+enum DeadLetterStatus {
   pending
-  approved
-  rejected
-  expired
+  retried
+  resolved
 }
 
-model ApprovalRequest {
-  id              String                @id @default(uuid())
-  communityId     String
-  resource        String
-  requesterWallet String
-  ruleId          String
-  status          ApprovalRequestStatus @default(pending)
-  expiresAt       DateTime?
-  createdAt       DateTime              @default(now())
-  updatedAt       DateTime              @updatedAt
+// Outbox events that exhausted the outbox's own retry/backoff budget
+// (OutboxEvent.status = "failed") land here instead of being silently
+// pruned, so they remain inspectable and manually retriable via the admin
+// dead-letter routes.
+model DeadLetterEvent {
+  id              String           @id @default(uuid())
+  originalEventId String
+  eventType       String
+  entityId        String?
+  entityType      String?
+  communityId     String?
+  payload         Json             @default("{}")
+  failureReason   String
+  retryCount      Int
+  status          DeadLetterStatus @default(pending)
+  createdAt       DateTime         @default(now())
+  resolvedAt      DateTime?
 
-  approvals Approval[]
-
-  @@index([communityId])
-  @@index([requesterWallet])
-  @@index([ruleId])
   @@index([status])
-  @@index([createdAt])
-}
-
-model Approval {
-  id              String          @id @default(uuid())
-  requestId       String
-  approverWallet  String
-  approverRole    String // admin, contributor, member
-  approved        Boolean // true = approved, false = rejected
-  timestamp       DateTime        @default(now())
-  signature       String? // Optional cryptographic signature
-
-  request ApprovalRequest @relation(fields: [requestId], references: [id])
-
-  @@index([requestId])
-  @@index([approverWallet])
-  @@unique([requestId, approverWallet])
-}
-
-model ContributionScore {
-  id          String   @id @default(uuid())
-  walletId    String
-  communityId String
-  totalScore  Int      @default(0)
-  breakdown   Json? // { commits: 10, reviews: 5, proposals: 2 }
-  updatedAt   DateTime @updatedAt
-
-  @@unique([walletId, communityId])
   @@index([communityId])
-  @@index([totalScore])
+  @@index([createdAt])
+  @@index([originalEventId])
 }

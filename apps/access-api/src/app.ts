@@ -26,6 +26,7 @@ import { registry, metrics } from './observability/metrics';
 import { registerRoutes } from './routes';
 import { getPrisma } from './services/prisma';
 import { unauthorized } from './errors';
+import { config } from './config';
 
 // --------------------------------------------------------------------------
 // Helper: normalise a Fastify route URL into a stable label

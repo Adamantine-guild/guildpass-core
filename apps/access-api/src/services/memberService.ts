@@ -2,6 +2,9 @@ import { PrismaClient } from "@prisma/client";
 import {
   AccessCheckInput,
   AccessDecision,
+  AccessOverride,
+  AccessOverrideMutationInput,
+  AccessOverrideMutationResult,
   Role,
   RoleContext,
   AssignRoleInput,
@@ -10,12 +13,23 @@ import {
 } from "@guildpass/shared-types";
 import { evaluate } from "@guildpass/policy-engine";
 import { logEvent } from "./auditService";
+import { logOutboxEventTx } from "./outboxService";
 
 import { config } from "../config";
 import { createDefaultCacheService } from "./redisCacheService";
 import type { CacheService } from "./cacheService";
 
 const prisma = new PrismaClient();
+
+export class MemberServiceError extends Error {
+  statusCode: number;
+
+  constructor(message: string, statusCode: number = 500) {
+    super(message);
+    this.name = 'MemberServiceError';
+    this.statusCode = statusCode;
+  }
+}
 
 function normaliseWallet(wallet: string): string {
   return wallet.toLowerCase();
@@ -39,6 +53,7 @@ function accessDecisionCacheKey({
   roleVersion,
   policyVersion,
   resourceVersion,
+  overrideVersion,
 }: {
   communityId: string;
   wallet: string;
@@ -47,6 +62,7 @@ function accessDecisionCacheKey({
   roleVersion: number | null;
   policyVersion: number | null;
   resourceVersion: number | null;
+  overrideVersion: number | null;
 }): string {
   return [
     "accessDecision",
@@ -57,6 +73,7 @@ function accessDecisionCacheKey({
     `rv:${roleVersion ?? 0}`,
     `pv:${policyVersion ?? 0}`,
     `rsv:${resourceVersion ?? 0}`,
+    `ov:${overrideVersion ?? 0}`,
   ].join("|");
 }
 
@@ -72,6 +89,9 @@ function policyVersionKey(communityId: string) {
 function resourceVersionKey(communityId: string) {
   return `accessDecisionVersion:resource|c:${communityId}`;
 }
+function overrideVersionKey(communityId: string) {
+  return `accessDecisionVersion:override|c:${communityId}`;
+}
 
 export function getMemberService(prismaClient: PrismaClient) {
   const cacheService: CacheService = createDefaultCacheService(
@@ -83,12 +103,13 @@ export function getMemberService(prismaClient: PrismaClient) {
   const decisionTtlSeconds = config.accessDecisionCacheTtlSeconds;
 
   async function getVersionedKeyParts(communityId: string) {
-    const [membershipVersion, roleVersion, policyVersion, resourceVersion] =
+    const [membershipVersion, roleVersion, policyVersion, resourceVersion, overrideVersion] =
       await Promise.all([
         cacheService.getIncr(membershipVersionKey(communityId)),
         cacheService.getIncr(roleVersionKey(communityId)),
         cacheService.getIncr(policyVersionKey(communityId)),
         cacheService.getIncr(resourceVersionKey(communityId)),
+        cacheService.getIncr(overrideVersionKey(communityId)),
       ]);
 
     return {
@@ -96,6 +117,7 @@ export function getMemberService(prismaClient: PrismaClient) {
       roleVersion,
       policyVersion,
       resourceVersion,
+      overrideVersion,
     };
   }
 
@@ -110,6 +132,9 @@ export function getMemberService(prismaClient: PrismaClient) {
   }
   async function bumpResourceVersion(communityId: string) {
     await cacheService.incr(resourceVersionKey(communityId), versionTtlSeconds);
+  }
+  async function bumpOverrideVersion(communityId: string) {
+    await cacheService.incr(overrideVersionKey(communityId), versionTtlSeconds);
   }
 
   async function auditAccess(input: {
@@ -163,6 +188,56 @@ export function getMemberService(prismaClient: PrismaClient) {
 
     const cached = await cacheService.getJSON<any>(cacheKey);
     if (cached) return cached as unknown as AccessDecision;
+
+    const policy = await prismaClient.accessPolicy.findFirst({
+      where: { communityId, resource },
+    });
+
+    const ruleType = policy ? policy.ruleType : "MEMBERS_ONLY";
+    const overrides = await prismaClient.accessOverride.findMany({
+      where: { communityId, resource, wallet },
+    });
+
+    const basePolicy = {
+      id: policy?.id ?? "default",
+      communityId,
+      resource,
+      ruleType,
+      params: policy?.params as Record<string, any> | undefined,
+    };
+
+    if (overrides.length > 0) {
+      const ctx: RoleContext = {
+        assignments: [],
+        membershipState: "invited",
+        wallet,
+        communityId,
+        resource,
+        overrides: overrides.map((override: AccessOverride) => ({
+          id: override.id,
+          wallet: override.wallet,
+          communityId: override.communityId,
+          resource: override.resource,
+          effect: override.effect as any,
+          expiresAt: override.expiresAt,
+          reason: override.reason,
+        })),
+      };
+      const decision = evaluate(basePolicy, ctx);
+      const reasonCode = decision.reasons?.[0]?.code ?? null;
+      const allowedDecision = decision.allowed ? "ALLOW" : "DENY";
+      await auditAccess({
+        walletId: wallet,
+        communityId,
+        resource,
+        policyRule: policy?.ruleType ?? null,
+        decision: allowedDecision,
+        reasonCode,
+        details: (decision as any).details ?? null,
+      });
+      await cacheService.setJSON(cacheKey, decision, decisionTtlSeconds);
+      return decision;
+    }
 
     const w = await prismaClient.wallet.findUnique({
       where: { address: wallet },
@@ -220,12 +295,6 @@ export function getMemberService(prismaClient: PrismaClient) {
       return decision;
     }
 
-    const policy = await prismaClient.accessPolicy.findFirst({
-      where: { communityId, resource },
-    });
-
-    const ruleType = policy ? policy.ruleType : "MEMBERS_ONLY";
-
     const effectiveState = getNormalizedMembershipState(
       (member.membership?.state as any) ?? "invited",
       member.membership?.expiresAt,
@@ -256,18 +325,21 @@ export function getMemberService(prismaClient: PrismaClient) {
         expiresAt: r.expiresAt,
       })),
       membershipState: effectiveState as any,
+      wallet,
+      communityId,
+      resource,
+      overrides: overrides.map((override: AccessOverride) => ({
+        id: override.id,
+        wallet: override.wallet,
+        communityId: override.communityId,
+        resource: override.resource,
+        effect: override.effect as any,
+        expiresAt: override.expiresAt,
+        reason: override.reason,
+      })),
     };
 
-    const decision = evaluate(
-      {
-        id: policy?.id ?? "default",
-        communityId,
-        resource,
-        ruleType,
-        params: policy?.params as Record<string, any> | undefined,
-      },
-      ctx,
-    );
+    const decision = evaluate(basePolicy, ctx);
 
     const reasonCode = decision.reasons?.[0]?.code ?? null;
     const allowedDecision = decision.allowed ? "ALLOW" : "DENY";
@@ -291,13 +363,13 @@ export function getMemberService(prismaClient: PrismaClient) {
   }
 
   return {
-    async getMembershipsByWallet(wallet: string) {
+    async getMembershipsByWallet(wallet: string, communityId?: string) {
       const w = await prismaClient.wallet.findUnique({
         where: { address: normaliseWallet(wallet) },
       });
       if (!w) return { wallet, communities: [] };
       const members = await prismaClient.member.findMany({
-        where: { walletId: w.id },
+        where: { walletId: w.id, ...(communityId ? { communityId } : {}) },
         include: { membership: true },
       });
       const communities = members.map((m: any) => ({
@@ -310,14 +382,14 @@ export function getMemberService(prismaClient: PrismaClient) {
       }));
       return { wallet: normaliseWallet(wallet), communities };
     },
-    async getProfileByWallet(wallet: string) {
+    async getProfileByWallet(wallet: string, communityId?: string) {
       const normalised = normaliseWallet(wallet);
       const w = await prismaClient.wallet.findUnique({
         where: { address: normalised },
       });
       if (!w) return null;
       const m = await prismaClient.member.findFirst({
-        where: { walletId: w.id },
+        where: { walletId: w.id, ...(communityId ? { communityId } : {}) },
         include: { profile: true, membership: true, roles: true },
       });
       if (!m) return null;
@@ -420,6 +492,140 @@ export function getMemberService(prismaClient: PrismaClient) {
       return { communityId, wallet: targetWallet, role, assigned: true, removed: false };
     },
 
+    async createAccessOverride(input: AccessOverrideMutationInput): Promise<AccessOverrideMutationResult> {
+      const {
+        requesterWallet,
+        communityId,
+        wallet,
+        resource,
+        effect,
+        reason,
+        expiresAt,
+      } = input;
+      const normalizedWallet = normaliseWallet(wallet);
+      const normalizedRequesterWallet = normaliseWallet(requesterWallet);
+      if (!normalizedWallet || !resource || !["ALLOW", "DENY"].includes(effect)) {
+        throw { statusCode: 400, message: "Invalid override payload" };
+      }
+
+      const requester = await prismaClient.wallet.findUnique({
+        where: { address: normalizedRequesterWallet },
+      });
+      if (!requester) throw { statusCode: 403, message: "Requester not found" };
+
+      const requesterMember = await prismaClient.member.findFirst({
+        where: { walletId: requester.id, communityId },
+        include: { roles: true },
+      });
+      const isRequesterAdmin = requesterMember?.roles.some(
+        (r) => r.role === "admin" && r.active,
+      );
+      if (!isRequesterAdmin) throw { statusCode: 403, message: "Not authorized" };
+
+      const parsedExpiresAt = expiresAt ? new Date(expiresAt) : null;
+      const result = await prismaClient.$transaction(async (tx: any) => {
+        const existing = await tx.accessOverride.findFirst({
+          where: { communityId, wallet: normalizedWallet, resource },
+        });
+
+        let overrideRecord: any;
+        if (existing) {
+          overrideRecord = await tx.accessOverride.update({
+            where: { id: existing.id },
+            data: {
+              effect,
+              reason: reason ?? null,
+              expiresAt: parsedExpiresAt,
+            },
+          });
+        } else {
+          overrideRecord = await tx.accessOverride.create({
+            data: {
+              wallet: normalizedWallet,
+              communityId,
+              resource,
+              effect,
+              reason: reason ?? null,
+              expiresAt: parsedExpiresAt,
+            },
+          });
+        }
+
+        await logOutboxEventTx(tx, {
+          eventType: "ACCESS_OVERRIDE_CREATED",
+          entityId: overrideRecord.id,
+          entityType: "AccessOverride",
+          communityId,
+          payload: {
+            wallet: normalizedWallet,
+            resource,
+            effect,
+            reason: reason ?? null,
+            expiresAt: parsedExpiresAt?.toISOString() ?? null,
+          },
+        });
+
+        return overrideRecord;
+      });
+
+      await bumpOverrideVersion(communityId);
+      return {
+        communityId,
+        wallet: normalizedWallet as any,
+        resource,
+        effect,
+        created: true,
+        removed: false,
+      };
+    },
+
+    async revokeAccessOverride(input: AccessOverrideMutationInput): Promise<AccessOverrideMutationResult> {
+      const { requesterWallet, communityId, wallet, resource } = input;
+      const normalizedWallet = normaliseWallet(wallet);
+      const normalizedRequesterWallet = normaliseWallet(requesterWallet);
+      if (!normalizedWallet || !resource) {
+        throw { statusCode: 400, message: "Invalid revoke payload" };
+      }
+
+      const requester = await prismaClient.wallet.findUnique({
+        where: { address: normalizedRequesterWallet },
+      });
+      if (!requester) throw { statusCode: 403, message: "Requester not found" };
+
+      const requesterMember = await prismaClient.member.findFirst({
+        where: { walletId: requester.id, communityId },
+        include: { roles: true },
+      });
+      const isRequesterAdmin = requesterMember?.roles.some(
+        (r) => r.role === "admin" && r.active,
+      );
+      if (!isRequesterAdmin) throw { statusCode: 403, message: "Not authorized" };
+
+      const existing = await prismaClient.accessOverride.findFirst({
+        where: { communityId, wallet: normalizedWallet, resource },
+      });
+      if (!existing) {
+        return { communityId, wallet: normalizedWallet as any, resource, effect: "DENY", created: false, removed: false, message: "Override not found" };
+      }
+
+      await prismaClient.$transaction(async (tx: any) => {
+        await tx.accessOverride.delete({ where: { id: existing.id } });
+        await logOutboxEventTx(tx, {
+          eventType: "ACCESS_OVERRIDE_REVOKED",
+          entityId: existing.id,
+          entityType: "AccessOverride",
+          communityId,
+          payload: {
+            wallet: normalizedWallet,
+            resource,
+          },
+        });
+      });
+
+      await bumpOverrideVersion(communityId);
+      return { communityId, wallet: normalizedWallet as any, resource, effect: "DENY", created: false, removed: true };
+    },
+
     async removeMemberRole(input: RemoveRoleInput): Promise<RoleMutationResult> {
       const { requesterWallet, communityId, targetWallet, role } = input;
 
@@ -460,6 +666,7 @@ export function getMemberService(prismaClient: PrismaClient) {
     bumpRoleVersion,
     bumpPolicyVersion,
     bumpResourceVersion,
+    bumpOverrideVersion,
   };
 }
 
@@ -469,3 +676,4 @@ export const bumpMembershipVersion = memberService.bumpMembershipVersion;
 export const bumpRoleVersion = memberService.bumpRoleVersion;
 export const bumpPolicyVersion = memberService.bumpPolicyVersion;
 export const bumpResourceVersion = memberService.bumpResourceVersion;
+export const bumpOverrideVersion = memberService.bumpOverrideVersion;

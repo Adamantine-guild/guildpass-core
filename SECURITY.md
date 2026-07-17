@@ -38,6 +38,10 @@ Smart contract vulnerabilities are treated as **critical**. In-scope issues incl
 - Incorrect event emission that breaks off-chain indexing
 - Denial of service vectors in public-facing functions
 
+A completed review of `MembershipNFT.sol` against these categories —
+findings, fixes, and regression tests — is documented in
+[contracts/SECURITY_REVIEW_MembershipNFT.md](./contracts/SECURITY_REVIEW_MembershipNFT.md).
+
 ### API Security
 
 In-scope:
