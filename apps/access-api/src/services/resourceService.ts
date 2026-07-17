@@ -106,7 +106,7 @@ export function getResourceService(prisma: PrismaClient) {
 
       return {
         communityId: normalizedCommunityId,
-        resources: resources.map((r: Resource) => ({
+        resources: resources.map((r) => ({
           resourceId: r.resourceId,
           name: r.name,
           metadata: r.metadata,

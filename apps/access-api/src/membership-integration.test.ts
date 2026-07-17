@@ -153,7 +153,7 @@ describe('Membership Integration: Contract Events → API Access', () => {
         data: {
           communityId: event.communityId,
           resource: 'dashboard',
-          rule: 'MEMBERS_ONLY',
+          ruleType: 'MEMBERS_ONLY',
         },
       });
 
@@ -223,7 +223,7 @@ describe('Membership Integration: Contract Events → API Access', () => {
         data: {
           communityId: event.communityId,
           resource: 'dashboard',
-          rule: 'MEMBERS_ONLY',
+          ruleType: 'MEMBERS_ONLY',
         },
       });
 
@@ -296,7 +296,7 @@ describe('Membership Integration: Contract Events → API Access', () => {
         data: {
           communityId: event.communityId,
           resource: 'dashboard',
-          rule: 'MEMBERS_ONLY',
+          ruleType: 'MEMBERS_ONLY',
         },
       });
 
@@ -386,7 +386,7 @@ describe('Membership Integration: Contract Events → API Access', () => {
         data: {
           communityId: initialEvent.communityId,
           resource: 'dashboard',
-          rule: 'MEMBERS_ONLY',
+          ruleType: 'MEMBERS_ONLY',
         },
       });
 
@@ -426,7 +426,7 @@ describe('Membership Integration: Contract Events → API Access', () => {
         data: {
           communityId: event.communityId,
           resource: 'about',
-          rule: 'PUBLIC',
+          ruleType: 'PUBLIC',
         },
       });
 
@@ -496,7 +496,7 @@ describe('Membership Integration: Contract Events → API Access', () => {
         data: {
           communityId: event.communityId,
           resource: 'admin-panel',
-          rule: 'ADMINS_ONLY',
+          ruleType: 'ADMINS_ONLY',
         },
       });
 

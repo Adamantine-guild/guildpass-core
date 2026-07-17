@@ -1,6 +1,7 @@
 import {
   AccessDecision,
   AccessPolicy,
+  AccessOverride,
   DecisionReason,
   RoleContext,
   Role,
@@ -13,6 +14,41 @@ function unique<T>(arr: T[]): T[] {
 
 function isPlainObject(value: unknown): value is Record<string, any> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function normaliseWallet(value?: string): string | undefined {
+  return value ? value.toLowerCase() : undefined;
+}
+
+function findActiveOverride(
+  ctx: RoleContext,
+  policy: AccessPolicy,
+): AccessOverride | null {
+  const wallet = normaliseWallet(ctx.wallet?.toString());
+  const communityId = ctx.communityId ?? policy.communityId;
+  const resource = ctx.resource ?? policy.resource;
+
+  if (!wallet || !communityId || !resource) {
+    return null;
+  }
+
+  const now = new Date();
+  const overrides = ctx.overrides ?? [];
+
+  for (const override of overrides) {
+    const overrideWallet = normaliseWallet(override.wallet?.toString());
+    if (!overrideWallet) continue;
+    if (overrideWallet !== wallet) continue;
+    if (override.communityId !== communityId) continue;
+    if (override.resource !== resource) continue;
+    if (override.expiresAt) {
+      const expiry = new Date(override.expiresAt);
+      if (expiry < now) continue;
+    }
+    return override;
+  }
+
+  return null;
 }
 
 function validatePolicy(
@@ -83,6 +119,23 @@ export function evaluate(
     code: `MEMBERSHIP_${ctx.membershipState.toUpperCase()}`,
     message: `Membership is ${ctx.membershipState}`,
   });
+
+  const override = findActiveOverride(ctx, policy);
+  if (override) {
+    reasons.push({
+      code: override.effect === "ALLOW" ? "OVERRIDE_ALLOW" : "OVERRIDE_DENY",
+      message: override.reason
+        ? `Override applied: ${override.reason}`
+        : `Override applied as ${override.effect}`,
+    });
+    return {
+      allowed: override.effect === "ALLOW",
+      code: override.effect === "ALLOW" ? "ALLOW" : "DENY",
+      reasons,
+      effectiveRoles: roles,
+      membershipState: ctx.membershipState,
+    };
+  }
 
   const validation = validatePolicy(policy);
   if (!validation.valid) {

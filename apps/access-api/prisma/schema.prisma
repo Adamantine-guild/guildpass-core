@@ -4,12 +4,13 @@ datasource db {
 }
 
 model Community {
-  id        String         @id
-  name      String
-  members   Member[]
-  policies  AccessPolicy[]
-  resources Resource[]
-  createdAt DateTime       @default(now())
+  id          String            @id
+  name        String
+  members     Member[]
+  policies    AccessPolicy[]
+  resources   Resource[]
+  overrides   AccessOverride[]
+  createdAt   DateTime          @default(now())
 }
 
 model Wallet {
@@ -120,6 +121,28 @@ model AccessPolicy {
   community   Community @relation(fields: [communityId], references: [id])
 
   @@unique([communityId, resource])
+}
+
+enum AccessOverrideEffect {
+  ALLOW
+  DENY
+}
+
+model AccessOverride {
+  id          String                @id @default(cuid())
+  wallet      String
+  communityId String
+  resource    String
+  effect      AccessOverrideEffect
+  reason      String?
+  expiresAt   DateTime?
+  createdAt   DateTime              @default(now())
+  community   Community             @relation(fields: [communityId], references: [id])
+
+  @@unique([communityId, wallet, resource])
+  @@index([communityId])
+  @@index([wallet])
+  @@index([resource])
 }
 
 generator client {

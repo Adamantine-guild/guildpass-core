@@ -58,10 +58,10 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
     try {
       const result = await memberService.assignMemberRole({
-        requesterWallet,
+        requesterWallet: requesterWallet as import('@guildpass/shared-types').WalletAddress,
         communityId,
-        targetWallet: wallet,
-        role: body?.role ?? '',
+        targetWallet: wallet as import('@guildpass/shared-types').WalletAddress,
+        role: (body?.role ?? '') as import('@guildpass/shared-types').Role,
       });
       return reply.status(200).send(result);
     } catch (error) {
@@ -76,10 +76,60 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
     try {
       const result = await memberService.removeMemberRole({
-        requesterWallet,
+        requesterWallet: requesterWallet as import('@guildpass/shared-types').WalletAddress,
         communityId,
-        targetWallet: wallet,
-        role,
+        targetWallet: wallet as import('@guildpass/shared-types').WalletAddress,
+        role: role as import('@guildpass/shared-types').Role,
+      });
+      return reply.status(200).send(result);
+    } catch (error) {
+      return sendRoleMutationError(reply, error);
+    }
+  });
+
+  // POST /v1/communities/:communityId/overrides — create or update an access override for a wallet/resource
+  app.post('/v1/communities/:communityId/overrides', async (request: FastifyRequest, reply: FastifyReply) => {
+    const { communityId } = request.params as { communityId: string };
+    const body = request.body as {
+      wallet?: string;
+      resource?: string;
+      effect?: string;
+      reason?: string;
+      expiresAt?: string | null;
+    };
+    if (!body?.wallet || !body?.resource || !body?.effect) {
+      return reply.status(400).send(
+        validationError('Missing required fields: wallet, resource, effect'),
+      );
+    }
+    const requesterWallet = getRequesterWallet(request);
+    try {
+      const result = await memberService.createAccessOverride({
+        requesterWallet: requesterWallet as import('@guildpass/shared-types').WalletAddress,
+        communityId,
+        wallet: body.wallet as import('@guildpass/shared-types').WalletAddress,
+        resource: body.resource,
+        effect: body.effect as 'ALLOW' | 'DENY',
+        reason: body.reason,
+        expiresAt: body.expiresAt ?? null,
+      });
+      return reply.status(200).send(result);
+    } catch (error) {
+      return sendRoleMutationError(reply, error);
+    }
+  });
+
+  // DELETE /v1/communities/:communityId/overrides/:wallet/:resource — revoke an access override
+  app.delete('/v1/communities/:communityId/overrides/:wallet/:resource', async (request: FastifyRequest, reply: FastifyReply) => {
+    const { communityId, wallet, resource } = request.params as { communityId: string; wallet: string; resource: string };
+    const requesterWallet = getRequesterWallet(request);
+    try {
+      const result = await memberService.revokeAccessOverride({
+        requesterWallet: requesterWallet as import('@guildpass/shared-types').WalletAddress,
+        communityId,
+        wallet: wallet as import('@guildpass/shared-types').WalletAddress,
+        resource,
+        effect: 'DENY',
       });
       return reply.status(200).send(result);
     } catch (error) {

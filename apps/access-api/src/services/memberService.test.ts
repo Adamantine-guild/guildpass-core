@@ -22,6 +22,20 @@ const mockPrisma = {
     create: jest.fn(),
     updateMany: jest.fn(),
   },
+  accessOverride: {
+    findFirst: jest.fn(),
+    findMany: jest.fn(),
+    create: jest.fn(),
+    update: jest.fn(),
+    delete: jest.fn(),
+  },
+  outboxEvent: {
+    create: jest.fn(),
+  },
+  auditEvent: {
+    create: jest.fn(),
+  },
+  $transaction: jest.fn((callback) => callback(mockPrisma)),
 } as unknown as PrismaClient;
 
 describe('getMemberService - Membership State Normalization', () => {
@@ -29,6 +43,10 @@ describe('getMemberService - Membership State Normalization', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    (mockPrisma.accessOverride.findMany as jest.Mock).mockResolvedValue([]);
+    (mockPrisma.accessOverride.findFirst as jest.Mock).mockResolvedValue(null);
+    (mockPrisma.outboxEvent.create as jest.Mock).mockResolvedValue({ id: 'outbox-event-id' });
+    (mockPrisma.auditEvent.create as jest.Mock).mockResolvedValue({ id: 'audit-event-id' });
     memberService = getMemberService(mockPrisma);
   });
 
@@ -341,7 +359,7 @@ describe('getMemberService - Membership State Normalization', () => {
         id: 'policy-1',
         communityId: 'community-1',
         resource: 'resource-1',
-        rule: 'MEMBERS_ONLY',
+        ruleType: 'MEMBERS_ONLY',
       };
 
       (mockPrisma.wallet.findUnique as jest.Mock).mockResolvedValue(mockWallet);
@@ -373,7 +391,7 @@ describe('getMemberService - Membership State Normalization', () => {
         id: 'policy-1',
         communityId: 'community-1',
         resource: 'resource-1',
-        rule: 'PUBLIC',
+        ruleType: 'PUBLIC',
       };
 
       (mockPrisma.wallet.findUnique as jest.Mock).mockResolvedValue(mockWallet);
@@ -405,7 +423,7 @@ describe('getMemberService - Membership State Normalization', () => {
         id: 'policy-1',
         communityId: 'community-1',
         resource: 'resource-1',
-        rule: 'MEMBERS_ONLY',
+        ruleType: 'MEMBERS_ONLY',
       };
 
       (mockPrisma.wallet.findUnique as jest.Mock).mockResolvedValue(mockWallet);
@@ -435,7 +453,7 @@ describe('getMemberService - Membership State Normalization', () => {
         id: 'policy-1',
         communityId: 'community-1',
         resource: 'resource-1',
-        rule: 'MEMBERS_ONLY',
+        ruleType: 'MEMBERS_ONLY',
       };
 
       (mockPrisma.wallet.findUnique as jest.Mock).mockResolvedValue(mockWallet);
@@ -623,7 +641,7 @@ describe('getMemberService - Membership State Normalization', () => {
           requesterWallet: '0x1111111111111111111111111111111111111111',
           communityId: 'community-1',
           targetWallet: '0x2222222222222222222222222222222222222222',
-          role: 'owner',
+          role: 'owner' as any,
         }),
       ).rejects.toMatchObject({ statusCode: 400 });
     });
@@ -715,7 +733,7 @@ describe('getMemberService - Membership State Normalization', () => {
         id: 'policy-1',
         communityId: 'community-1',
         resource: 'resource-1',
-        rule: 'PUBLIC',
+        ruleType: 'PUBLIC',
       };
 
       (mockPrisma.wallet.findUnique as jest.Mock).mockResolvedValue(mockWallet);
@@ -777,7 +795,7 @@ describe('getMemberService - Membership State Normalization', () => {
         id: 'policy-1',
         communityId: 'community-1',
         resource: 'resource-1',
-        rule: 'MEMBERS_ONLY',
+        ruleType: 'MEMBERS_ONLY',
       });
 
       const result3 = await memberService.checkAccess({
@@ -790,6 +808,252 @@ describe('getMemberService - Membership State Normalization', () => {
       expect(result1.communities[0].state).toBe('expired');
       expect(result2!.membership.state).toBe('expired');
       expect(result3.membershipState).toBe('expired');
+    });
+  });
+
+  describe('Manual Access Overrides', () => {
+    const requesterWallet = '0xrequester0000000000000000000000000000000000';
+    const targetWallet = '0xwallet1234567890abcdef1234567890abcdef12';
+    const communityId = 'community-1';
+    const resource = 'dashboard';
+
+    test('createAccessOverride rejects non-admin requesters with 403', async () => {
+      (mockPrisma.wallet.findUnique as jest.Mock).mockResolvedValueOnce({ id: 'req-wallet-id' });
+      (mockPrisma.member.findFirst as jest.Mock).mockResolvedValueOnce({
+        id: 'req-member-id',
+        roles: [{ role: 'member', active: true }], // not admin
+      });
+
+      await expect(
+        memberService.createAccessOverride({
+          requesterWallet,
+          communityId,
+          wallet: targetWallet,
+          resource,
+          effect: 'ALLOW',
+          reason: 'Special client',
+        })
+      ).rejects.toMatchObject({ statusCode: 403 });
+    });
+
+    test('createAccessOverride creates a new override if none exists', async () => {
+      (mockPrisma.wallet.findUnique as jest.Mock).mockResolvedValueOnce({ id: 'req-wallet-id' });
+      (mockPrisma.member.findFirst as jest.Mock).mockResolvedValueOnce({
+        id: 'req-member-id',
+        roles: [{ role: 'admin', active: true }],
+      });
+      (mockPrisma.accessOverride.findFirst as jest.Mock).mockResolvedValueOnce(null);
+      (mockPrisma.accessOverride.create as jest.Mock).mockResolvedValueOnce({
+        id: 'override-1',
+        wallet: targetWallet.toLowerCase(),
+        communityId,
+        resource,
+        effect: 'ALLOW',
+        reason: 'Special client',
+        expiresAt: null,
+      });
+
+      const result = await memberService.createAccessOverride({
+        requesterWallet,
+        communityId,
+        wallet: targetWallet,
+        resource,
+        effect: 'ALLOW',
+        reason: 'Special client',
+      });
+
+      expect(result.created).toBe(true);
+      expect(mockPrisma.accessOverride.create).toHaveBeenCalled();
+    });
+
+    test('createAccessOverride updates an existing override', async () => {
+      (mockPrisma.wallet.findUnique as jest.Mock).mockResolvedValueOnce({ id: 'req-wallet-id' });
+      (mockPrisma.member.findFirst as jest.Mock).mockResolvedValueOnce({
+        id: 'req-member-id',
+        roles: [{ role: 'admin', active: true }],
+      });
+      (mockPrisma.accessOverride.findFirst as jest.Mock).mockResolvedValueOnce({
+        id: 'existing-id',
+      });
+      (mockPrisma.accessOverride.update as jest.Mock).mockResolvedValueOnce({
+        id: 'existing-id',
+        wallet: targetWallet.toLowerCase(),
+        communityId,
+        resource,
+        effect: 'DENY',
+        reason: 'Updated reason',
+        expiresAt: null,
+      });
+
+      const result = await memberService.createAccessOverride({
+        requesterWallet,
+        communityId,
+        wallet: targetWallet,
+        resource,
+        effect: 'DENY',
+        reason: 'Updated reason',
+      });
+
+      expect(result.created).toBe(true);
+      expect(mockPrisma.accessOverride.update).toHaveBeenCalled();
+    });
+
+    test('revokeAccessOverride rejects non-admin requesters with 403', async () => {
+      (mockPrisma.wallet.findUnique as jest.Mock).mockResolvedValueOnce({ id: 'req-wallet-id' });
+      (mockPrisma.member.findFirst as jest.Mock).mockResolvedValueOnce({
+        id: 'req-member-id',
+        roles: [{ role: 'member', active: true }],
+      });
+
+      await expect(
+        memberService.revokeAccessOverride({
+          requesterWallet,
+          communityId,
+          wallet: targetWallet,
+          resource,
+          effect: 'DENY',
+        })
+      ).rejects.toMatchObject({ statusCode: 403 });
+    });
+
+    test('revokeAccessOverride deletes override if it exists', async () => {
+      (mockPrisma.wallet.findUnique as jest.Mock).mockResolvedValueOnce({ id: 'req-wallet-id' });
+      (mockPrisma.member.findFirst as jest.Mock).mockResolvedValueOnce({
+        id: 'req-member-id',
+        roles: [{ role: 'admin', active: true }],
+      });
+      (mockPrisma.accessOverride.findFirst as jest.Mock).mockResolvedValueOnce({
+        id: 'existing-id',
+      });
+
+      const result = await memberService.revokeAccessOverride({
+        requesterWallet,
+        communityId,
+        wallet: targetWallet,
+        resource,
+        effect: 'DENY',
+      });
+
+      expect(result.removed).toBe(true);
+      expect(mockPrisma.accessOverride.delete).toHaveBeenCalledWith({
+        where: { id: 'existing-id' },
+      });
+    });
+
+    test('checkAccess allows access when active ALLOW override is present', async () => {
+      const mockWallet = { id: 'wallet-1', address: targetWallet.toLowerCase() };
+      const mockMember = {
+        roles: [],
+        membership: {
+          state: 'active',
+          expiresAt: new Date(Date.now() - 10000), // expired!
+        },
+      };
+      (mockPrisma.wallet.findUnique as jest.Mock).mockResolvedValueOnce(mockWallet);
+      (mockPrisma.member.findFirst as jest.Mock).mockResolvedValueOnce(mockMember);
+      (mockPrisma.accessPolicy.findFirst as jest.Mock).mockResolvedValueOnce({
+        id: 'policy-1',
+        communityId,
+        resource,
+        ruleType: 'MEMBERS_ONLY',
+      });
+      (mockPrisma.accessOverride.findMany as jest.Mock).mockResolvedValueOnce([
+        {
+          id: 'override-1',
+          wallet: targetWallet.toLowerCase(),
+          communityId,
+          resource,
+          effect: 'ALLOW',
+          expiresAt: null,
+        },
+      ]);
+
+      const result = await memberService.checkAccess({
+        wallet: targetWallet,
+        communityId,
+        resource,
+      });
+
+      expect(result.allowed).toBe(true);
+      expect(result.code).toBe('ALLOW');
+      expect(result.reasons[result.reasons.length - 1].code).toBe('OVERRIDE_ALLOW');
+    });
+
+    test('checkAccess denies access when active DENY override is present', async () => {
+      const mockWallet = { id: 'wallet-1', address: targetWallet.toLowerCase() };
+      const mockMember = {
+        roles: [],
+        membership: {
+          state: 'active',
+          expiresAt: null, // active!
+        },
+      };
+      (mockPrisma.wallet.findUnique as jest.Mock).mockResolvedValueOnce(mockWallet);
+      (mockPrisma.member.findFirst as jest.Mock).mockResolvedValueOnce(mockMember);
+      (mockPrisma.accessPolicy.findFirst as jest.Mock).mockResolvedValueOnce({
+        id: 'policy-1',
+        communityId,
+        resource,
+        ruleType: 'MEMBERS_ONLY',
+      });
+      (mockPrisma.accessOverride.findMany as jest.Mock).mockResolvedValueOnce([
+        {
+          id: 'override-1',
+          wallet: targetWallet.toLowerCase(),
+          communityId,
+          resource,
+          effect: 'DENY',
+          expiresAt: null,
+        },
+      ]);
+
+      const result = await memberService.checkAccess({
+        wallet: targetWallet,
+        communityId,
+        resource,
+      });
+
+      expect(result.allowed).toBe(false);
+      expect(result.code).toBe('DENY');
+      expect(result.reasons[result.reasons.length - 1].code).toBe('OVERRIDE_DENY');
+    });
+
+    test('checkAccess ignores expired override', async () => {
+      const mockWallet = { id: 'wallet-1', address: targetWallet.toLowerCase() };
+      const mockMember = {
+        roles: [],
+        membership: {
+          state: 'active',
+          expiresAt: new Date(Date.now() - 10000), // expired!
+        },
+      };
+      (mockPrisma.wallet.findUnique as jest.Mock).mockResolvedValueOnce(mockWallet);
+      (mockPrisma.member.findFirst as jest.Mock).mockResolvedValueOnce(mockMember);
+      (mockPrisma.accessPolicy.findFirst as jest.Mock).mockResolvedValueOnce({
+        id: 'policy-1',
+        communityId,
+        resource,
+        ruleType: 'MEMBERS_ONLY',
+      });
+      (mockPrisma.accessOverride.findMany as jest.Mock).mockResolvedValueOnce([
+        {
+          id: 'override-1',
+          wallet: targetWallet.toLowerCase(),
+          communityId,
+          resource,
+          effect: 'ALLOW',
+          expiresAt: new Date(Date.now() - 5000),
+        },
+      ]);
+
+      const result = await memberService.checkAccess({
+        wallet: targetWallet,
+        communityId,
+        resource,
+      });
+
+      expect(result.allowed).toBe(false);
+      expect(result.code).toBe('DENY');
     });
   });
 });
