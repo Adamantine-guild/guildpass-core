@@ -238,3 +238,56 @@ model IndexerState {
   lastBlockHash    String
   updatedAt        DateTime @updatedAt
 }
+
+// --- Webhook Delivery (outbox handler) ---
+
+// A community's subscription to outbox events, delivered as signed HTTP
+// webhooks by createWebhookHandler (src/handlers/webhookHandler.ts).
+model WebhookSubscription {
+  id          String   @id @default(cuid())
+  communityId String
+  url         String
+  // Shared secret used to HMAC-SHA256 sign delivered payloads. Treat as a
+  // credential: never log it, and prefer a secrets manager over plaintext
+  // storage in production deployments.
+  secret      String
+  // Event types this subscription receives, e.g. "MEMBERSHIP_CREATED".
+  // Empty array means "all event types" for this community.
+  eventTypes  String[]
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([communityId])
+  @@index([active])
+}
+
+enum DeadLetterStatus {
+  pending
+  retried
+  resolved
+}
+
+// Outbox events that exhausted the outbox's own retry/backoff budget
+// (OutboxEvent.status = "failed") land here instead of being silently
+// pruned, so they remain inspectable and manually retriable via the admin
+// dead-letter routes.
+model DeadLetterEvent {
+  id              String           @id @default(uuid())
+  originalEventId String
+  eventType       String
+  entityId        String?
+  entityType      String?
+  communityId     String?
+  payload         Json             @default("{}")
+  failureReason   String
+  retryCount      Int
+  status          DeadLetterStatus @default(pending)
+  createdAt       DateTime         @default(now())
+  resolvedAt      DateTime?
+
+  @@index([status])
+  @@index([communityId])
+  @@index([createdAt])
+  @@index([originalEventId])
+}

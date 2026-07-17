@@ -2,6 +2,12 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { getMemberService, MemberServiceError } from './services/memberService';
 import { getPrisma } from './services/prisma';
 import { notFound, validationError } from './errors';
+import {
+  listDeadLetterEvents,
+  retryDeadLetterEvent,
+  DeadLetterNotFoundError,
+  DeadLetterAlreadyResolvedError,
+} from './services/deadLetterService';
 
 function getRequesterWallet(request: FastifyRequest): string {
   const header = request.headers['x-wallet'] ?? request.headers['x-user-wallet'] ?? request.headers['x-requester-wallet'];
@@ -177,6 +183,61 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       }
       return requesterMembers;
     } catch (error) {
+      if (error instanceof MemberServiceError) {
+        return reply.status(error.statusCode).send({ error: error.message });
+      }
+      return reply.status(500).send({ error: 'Internal server error' });
+    }
+  });
+
+  async function requireCommunityAdmin(
+    communityId: string,
+    requesterWallet: string,
+  ): Promise<boolean> {
+    const admins = await memberService.listMembersForAdmin(communityId, 'admin');
+    return admins.members.some(
+      (m: any) => m.wallet?.toLowerCase?.() === requesterWallet.toLowerCase(),
+    );
+  }
+
+  // GET /v1/communities/:communityId/dead-letter-events — inspect webhook
+  // deliveries that exhausted the outbox's retry budget
+  app.get('/v1/communities/:communityId/dead-letter-events', async (request: FastifyRequest, reply: FastifyReply) => {
+    const { communityId } = request.params as { communityId: string };
+    const { status } = request.query as { status?: 'pending' | 'retried' | 'resolved' };
+    const requesterWallet = getRequesterWallet(request);
+    try {
+      if (!(await requireCommunityAdmin(communityId, requesterWallet))) {
+        return reply.status(403).send({ error: 'Forbidden' });
+      }
+      const events = await listDeadLetterEvents(getPrisma(), { communityId, status });
+      return { events };
+    } catch (error) {
+      if (error instanceof MemberServiceError) {
+        return reply.status(error.statusCode).send({ error: error.message });
+      }
+      return reply.status(500).send({ error: 'Internal server error' });
+    }
+  });
+
+  // POST /v1/communities/:communityId/dead-letter-events/:id/retry — re-enqueue
+  // a dead-lettered event as a fresh pending OutboxEvent
+  app.post('/v1/communities/:communityId/dead-letter-events/:id/retry', async (request: FastifyRequest, reply: FastifyReply) => {
+    const { communityId, id } = request.params as { communityId: string; id: string };
+    const requesterWallet = getRequesterWallet(request);
+    try {
+      if (!(await requireCommunityAdmin(communityId, requesterWallet))) {
+        return reply.status(403).send({ error: 'Forbidden' });
+      }
+      const result = await retryDeadLetterEvent(getPrisma(), id);
+      return reply.status(200).send(result);
+    } catch (error) {
+      if (error instanceof DeadLetterNotFoundError) {
+        return reply.status(404).send(notFound(error.message));
+      }
+      if (error instanceof DeadLetterAlreadyResolvedError) {
+        return reply.status(409).send({ error: error.message });
+      }
       if (error instanceof MemberServiceError) {
         return reply.status(error.statusCode).send({ error: error.message });
       }

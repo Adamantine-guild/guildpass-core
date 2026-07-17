@@ -205,4 +205,35 @@ export interface OutboxDispatchResult {
   status: OutboxEventStatus;
 }
 
+// --- Webhook Delivery ---
+
+export interface WebhookSubscriptionDto {
+  id?: string;
+  communityId: string;
+  url: string;
+  /** Never included in read responses — write-only. */
+  secret?: string;
+  eventTypes: OutboxEventType[];
+  active?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export type DeadLetterStatus = "pending" | "retried" | "resolved";
+
+export interface DeadLetterEventDto {
+  id: string;
+  originalEventId: string;
+  eventType: string;
+  entityId?: string | null;
+  entityType?: string | null;
+  communityId?: string | null;
+  payload?: Record<string, unknown>;
+  failureReason: string;
+  retryCount: number;
+  status: DeadLetterStatus;
+  createdAt: string;
+  resolvedAt?: string | null;
+}
+
 export * from "./apiContract";

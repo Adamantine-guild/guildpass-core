@@ -265,7 +265,7 @@ describe("markOutboxFailed", () => {
 
     await expect(
       markOutboxFailed(db, "nonexistent", "error"),
-    ).resolves.toBeUndefined();
+    ).resolves.toEqual({ permanentlyFailed: false, retryCount: 0 });
   });
 });
 

@@ -171,6 +171,72 @@ const worker = createOutboxWorker(10_000, myHandler);
 worker.start();
 ```
 
+### Production Webhook Handler
+
+`createWebhookHandler` (`apps/access-api/src/handlers/webhookHandler.ts`) is a
+ready-to-use `OutboxEventHandler` that delivers events as signed HTTP
+webhooks to every active `WebhookSubscription` registered for a community,
+filtered by event type:
+
+```typescript
+import { createOutboxWorker } from './workers/outboxWorker';
+import { createWebhookHandler } from './handlers/webhookHandler';
+
+const worker = createOutboxWorker(10_000, createWebhookHandler());
+worker.start();
+```
+
+A `WebhookSubscription` row (`communityId`, `url`, `secret`, `eventTypes[]`)
+registers where a community's events should be delivered. An empty
+`eventTypes` array means "all event types".
+
+#### Webhook Signature Verification
+
+Every delivered request is HMAC-SHA256 signed with the subscription's
+per-community secret, and includes anti-replay fields:
+
+| Header | Description |
+| ------ | ----------- |
+| `X-GuildPass-Signature` | `hex(HMAC_SHA256(secret, "${timestamp}.${nonce}.${body}"))` |
+| `X-GuildPass-Timestamp` | Unix epoch milliseconds when the request was signed |
+| `X-GuildPass-Nonce` | Random UUID, unique per delivery attempt |
+
+To verify a webhook on the receiving side:
+
+1. Recompute the HMAC from your stored secret, the received timestamp,
+   nonce, and raw request body, and compare it to `X-GuildPass-Signature`
+   using a constant-time comparison (never `===` on secrets/signatures).
+2. Reject the request if `X-GuildPass-Timestamp` is older than your
+   tolerance window (5 minutes recommended) — this bounds how long a
+   captured request could be replayed.
+3. Reject the request if you've already processed `X-GuildPass-Nonce`
+   (e.g. check-and-set it in Redis with a TTL matching your tolerance
+   window) — the timestamp check alone does not prevent replay *within*
+   the tolerance window.
+
+`verifyWebhookSignature` in `webhookHandler.ts` is a reference
+implementation of steps 1–2 (nonce tracking is necessarily your
+application's responsibility, since it requires storage this library
+doesn't own).
+
+If **any** subscription delivery for an event fails (non-2xx response,
+timeout, network error), the whole event is re-queued through the outbox's
+existing exponential-backoff retry — the handler does not partially retry
+just the failed subscriptions. Webhook consumers should therefore be
+idempotent per `(event.id, X-GuildPass-Nonce)`.
+
+#### Dead-Letter Store
+
+An event that exhausts the outbox's `maxRetries` (default 5) is no longer
+just marked `failed` and pruned after 7 days — it's captured in
+`DeadLetterEvent` with its failure reason and retry count, inspectable and
+manually retriable via:
+
+| Method | Path | Description |
+| ------ | ---- | ----------- |
+| GET | `/v1/communities/:communityId/dead-letter-events` | List dead-lettered events for a community, optionally filtered by `?status=` |
+| POST | `/v1/communities/:communityId/dead-letter-events/:id/retry` | Re-enqueue a dead-lettered event as a fresh pending `OutboxEvent` |
+
 ### Observability
 
 | Metric | Type | Labels |

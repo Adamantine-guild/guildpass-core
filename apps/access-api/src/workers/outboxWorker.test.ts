@@ -71,6 +71,9 @@ function makePrismaWithEvents(pendingEvents: any[] = []) {
       count: jest.fn(async () => 0),
       create: jest.fn(),
     },
+    deadLetterEvent: {
+      create: jest.fn(async (args: any) => ({ id: "dl-1", ...args.data })),
+    },
     _updated: updated,
   } as any;
 }
