@@ -101,9 +101,9 @@ export async function getAuditTraceByCorrelationId(
     orderBy: { createdAt: 'asc' },
   });
 
-  // Extract on-chain origin (if any)
+  // Extract originating on-chain event (first event with blockchain metadata)
   const originatingEvent = auditEvents.find(
-    (e) => e.txHash && e.blockNumber && e.logIndex !== null,
+    (e) => e.txHash && e.blockNumber !== null && e.logIndex !== null,
   );
 
   const originatingOnChainEvent: OnChainEventTrace | null = originatingEvent
@@ -116,69 +116,70 @@ export async function getAuditTraceByCorrelationId(
     : null;
 
   // Map audit events to trace format
-  const databaseMutations: AuditEventTrace[] = auditEvents.map((event) => ({
-    id: event.id,
-    eventType: event.eventType,
-    walletId: event.walletId,
-    communityId: event.communityId,
-    resource: event.resource,
-    policyRule: event.policyRule,
-    decision: event.decision,
-    reasonCode: event.reasonCode,
-    beforeState: event.beforeState,
-    afterState: event.afterState,
-    membershipStateVersion: event.membershipStateVersion,
-    roleStateVersion: event.roleStateVersion,
-    createdAt: event.createdAt,
+  const databaseMutations: AuditEventTrace[] = auditEvents.map((e) => ({
+    id: e.id,
+    eventType: e.eventType,
+    walletId: e.walletId,
+    communityId: e.communityId,
+    resource: e.resource,
+    policyRule: e.policyRule,
+    decision: e.decision,
+    reasonCode: e.reasonCode,
+    beforeState: e.beforeState,
+    afterState: e.afterState,
+    membershipStateVersion: e.membershipStateVersion,
+    roleStateVersion: e.roleStateVersion,
+    createdAt: e.createdAt,
     onChainEvent: {
-      chainId: event.chainId,
-      txHash: event.txHash,
-      blockNumber: event.blockNumber,
-      logIndex: event.logIndex,
+      chainId: e.chainId,
+      txHash: e.txHash,
+      blockNumber: e.blockNumber,
+      logIndex: e.logIndex,
     },
   }));
 
   // Map outbox events to trace format
-  const outboxEventsTrace: OutboxEventTrace[] = outboxEvents.map((event) => ({
-    id: event.id,
-    eventType: event.eventType,
-    entityId: event.entityId,
-    entityType: event.entityType,
-    communityId: event.communityId,
-    payload: event.payload,
-    status: event.status,
-    createdAt: event.createdAt,
-    deliveredAt: event.deliveredAt,
+  const outboxEventTraces: OutboxEventTrace[] = outboxEvents.map((e) => ({
+    id: e.id,
+    eventType: e.eventType,
+    entityId: e.entityId,
+    entityType: e.entityType,
+    communityId: e.communityId,
+    payload: e.payload,
+    status: e.status,
+    createdAt: e.createdAt,
+    deliveredAt: e.deliveredAt,
     onChainEvent: {
-      chainId: event.chainId,
-      txHash: event.txHash,
-      blockNumber: event.blockNumber,
-      logIndex: event.logIndex,
+      chainId: e.chainId,
+      txHash: e.txHash,
+      blockNumber: e.blockNumber,
+      logIndex: e.logIndex,
     },
   }));
 
-  // Extract access decisions
+  // Extract access decisions (ACCESS_CHECK events)
   const accessDecisions: AccessDecisionTrace[] = auditEvents
     .filter((e) => e.eventType === 'ACCESS_CHECK')
-    .map((event) => ({
-      decision: event.decision,
-      resource: event.resource,
-      policyRule: event.policyRule,
-      reasonCode: event.reasonCode,
-      membershipState: event.membershipStateVersion
-        ? JSON.parse(event.membershipStateVersion)
+    .map((e) => ({
+      decision: e.decision,
+      resource: e.resource,
+      policyRule: e.policyRule,
+      reasonCode: e.reasonCode,
+      membershipState: e.membershipStateVersion
+        ? JSON.parse(e.membershipStateVersion)
         : null,
-      roleState: event.roleStateVersion ? JSON.parse(event.roleStateVersion) : null,
-      auditEvent: databaseMutations.find((m) => m.id === event.id)!,
+      roleState: e.roleStateVersion ? JSON.parse(e.roleStateVersion) : null,
+      auditEvent: databaseMutations.find((m) => m.id === e.id)!,
     }));
 
+  // Build summary
   const eventTypes = [...new Set(auditEvents.map((e) => e.eventType))];
 
   return {
     correlationId,
     originatingOnChainEvent,
     databaseMutations,
-    outboxEvents: outboxEventsTrace,
+    outboxEvents: outboxEventTraces,
     accessDecisions,
     summary: {
       totalEvents: auditEvents.length + outboxEvents.length,
@@ -191,10 +192,10 @@ export async function getAuditTraceByCorrelationId(
 /**
  * Query audit traces by transaction hash
  *
- * Finds all correlation IDs associated with a specific on-chain transaction
- * and returns complete traces for each.
+ * Finds all correlation IDs associated with a specific blockchain transaction,
+ * then returns complete traces for each.
  *
- * @param txHash - Transaction hash from blockchain
+ * @param txHash - Transaction hash
  * @param prisma - Optional PrismaClient instance
  * @returns Array of complete audit traces
  */
@@ -222,13 +223,13 @@ export async function getAuditTracesByTxHash(
 }
 
 /**
- * Query audit traces by wallet and community
+ * Query audit traces by wallet address
  *
- * Useful for investigating a specific member's activity
+ * Finds recent audit traces involving a specific wallet in a community.
  *
  * @param walletId - Wallet address
  * @param communityId - Community ID
- * @param limit - Maximum number of traces to return
+ * @param limit - Maximum number of traces to return (default: 50)
  * @param prisma - Optional PrismaClient instance
  * @returns Array of complete audit traces
  */
@@ -238,17 +239,16 @@ export async function getAuditTracesByWallet(
   limit: number = 50,
   prisma: PrismaClient = getPrisma(),
 ): Promise<AuditTraceResult[]> {
-  // Find recent correlation IDs for this wallet/community
+  // Find recent correlation IDs for this wallet and community
   const auditEvents = await prisma.auditEvent.findMany({
-    where: {
+    where: { 
       walletId: walletId.toLowerCase(),
-      communityId,
-      correlationId: { not: null },
+      communityId: communityId,
     },
-    select: { correlationId: true },
-    distinct: ['correlationId'],
     orderBy: { createdAt: 'desc' },
     take: limit,
+    select: { correlationId: true },
+    distinct: ['correlationId'],
   });
 
   const correlationIds = auditEvents
@@ -264,24 +264,79 @@ export async function getAuditTracesByWallet(
 }
 
 /**
- * Verify audit trail integrity
+ * Format audit trace as human-readable text
  *
- * Checks that audit events are append-only (no updates/deletes)
- * by comparing expected vs actual record counts
- *
- * @param correlationId - Correlation ID to verify
- * @param expectedEventCount - Expected number of events
- * @param prisma - Optional PrismaClient instance
- * @returns True if integrity is maintained
+ * @param trace - Audit trace result
+ * @returns Formatted string representation
  */
-export async function verifyAuditTrailIntegrity(
-  correlationId: string,
-  expectedEventCount: number,
-  prisma: PrismaClient = getPrisma(),
-): Promise<boolean> {
-  const auditEvents = await prisma.auditEvent.count({
-    where: { correlationId },
-  });
+export function formatAuditTrace(trace: AuditTraceResult): string {
+  const lines: string[] = [];
 
-  return auditEvents >= expectedEventCount;
+  lines.push(`=== Audit Trace: ${trace.correlationId} ===`);
+  lines.push('');
+
+  // Summary
+  lines.push('Summary:');
+  lines.push(`  Total Events: ${trace.summary.totalEvents}`);
+  lines.push(`  Has On-Chain Origin: ${trace.summary.hasOnChainOrigin}`);
+  lines.push(`  Event Types: ${trace.summary.eventTypes.join(', ')}`);
+  lines.push('');
+
+  // Originating on-chain event
+  if (trace.originatingOnChainEvent) {
+    lines.push('Originating On-Chain Event:');
+    lines.push(`  Chain ID: ${trace.originatingOnChainEvent.chainId}`);
+    lines.push(`  Transaction Hash: ${trace.originatingOnChainEvent.txHash}`);
+    lines.push(`  Block Number: ${trace.originatingOnChainEvent.blockNumber}`);
+    lines.push(`  Log Index: ${trace.originatingOnChainEvent.logIndex}`);
+    lines.push('');
+  }
+
+  // Database mutations
+  if (trace.databaseMutations.length > 0) {
+    lines.push('Database Mutations:');
+    trace.databaseMutations.forEach((mutation, i) => {
+      lines.push(`  [${i + 1}] ${mutation.eventType} (${mutation.id})`);
+      lines.push(`      Wallet: ${mutation.walletId || 'N/A'}`);
+      lines.push(`      Community: ${mutation.communityId || 'N/A'}`);
+      lines.push(`      Resource: ${mutation.resource || 'N/A'}`);
+      lines.push(`      Created At: ${mutation.createdAt.toISOString()}`);
+      if (mutation.onChainEvent.txHash) {
+        lines.push(`      On-Chain: ${mutation.onChainEvent.txHash}`);
+      }
+    });
+    lines.push('');
+  }
+
+  // Outbox events
+  if (trace.outboxEvents.length > 0) {
+    lines.push('Outbox Events:');
+    trace.outboxEvents.forEach((event, i) => {
+      lines.push(`  [${i + 1}] ${event.eventType} (${event.id})`);
+      lines.push(`      Entity: ${event.entityType} (${event.entityId})`);
+      lines.push(`      Status: ${event.status}`);
+      lines.push(`      Created At: ${event.createdAt.toISOString()}`);
+    });
+    lines.push('');
+  }
+
+  // Access decisions
+  if (trace.accessDecisions.length > 0) {
+    lines.push('Access Decisions:');
+    trace.accessDecisions.forEach((decision, i) => {
+      lines.push(`  [${i + 1}] ${decision.decision} - ${decision.resource}`);
+      lines.push(`      Policy Rule: ${decision.policyRule || 'N/A'}`);
+      lines.push(`      Reason: ${decision.reasonCode || 'N/A'}`);
+      if (decision.membershipState) {
+        lines.push(
+          `      Membership State: ${JSON.stringify(decision.membershipState)}`,
+        );
+      }
+      if (decision.roleState) {
+        lines.push(`      Role State: ${JSON.stringify(decision.roleState)}`);
+      }
+    });
+  }
+
+  return lines.join('\n');
 }

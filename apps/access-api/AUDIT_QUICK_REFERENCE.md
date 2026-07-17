@@ -1,41 +1,35 @@
 # Audit Chain of Custody - Quick Reference
 
-## For Developers
+## API Endpoints
 
-### Query Complete Audit Trail
-
-```typescript
-// By correlation ID (from an audit event or access check)
+### Query by Correlation ID
+```bash
 GET /admin/audit/trace/:correlationId
+```
 
-// Example Response:
+**Example:**
+```bash
+curl http://localhost:3000/admin/audit/trace/access_community-1_0xalice_dashboard_1234567890
+```
+
+**Response:**
+```json
 {
-  "correlationId": "0xabc...def_5_1721189760000",
+  "correlationId": "access_community-1_0xalice_dashboard_1234567890",
   "originatingOnChainEvent": {
     "chainId": 1,
-    "txHash": "0xabc...def",
+    "txHash": "0xabcd...",
     "blockNumber": 12345678,
     "logIndex": 5
   },
-  "databaseMutations": [
-    {
-      "id": "uuid",
-      "eventType": "MEMBERSHIP_CREATED",
-      "walletId": "0xalice...",
-      "communityId": "guild-dev",
-      "beforeState": null,
-      "afterState": { "tokenId": 123, "state": "active" },
-      "createdAt": "2026-07-17T00:00:00.000Z",
-      "onChainEvent": { /* metadata */ }
-    }
-  ],
-  "outboxEvents": [ /* ... */ ],
+  "databaseMutations": [...],
+  "outboxEvents": [...],
   "accessDecisions": [
     {
       "decision": "ALLOW",
       "resource": "dashboard",
-      "membershipState": { /* snapshot */ },
-      "roleState": [ /* snapshot */ ]
+      "membershipState": {...},
+      "roleState": [...]
     }
   ],
   "summary": {
@@ -47,261 +41,342 @@ GET /admin/audit/trace/:correlationId
 ```
 
 ### Query by Transaction Hash
-
-```typescript
-// Find all audit trails for a specific blockchain transaction
+```bash
 GET /admin/audit/trace/tx/:txHash
+```
 
-// Example: GET /admin/audit/trace/tx/0xabc...def
+**Example:**
+```bash
+curl http://localhost:3000/admin/audit/trace/tx/0xabcdef1234567890...
+```
+
+**Response:**
+```json
 {
-  "txHash": "0xabc...def",
-  "traces": [ /* array of complete traces */ ],
+  "txHash": "0xabcdef1234567890...",
+  "traces": [
+    { /* complete trace 1 */ },
+    { /* complete trace 2 */ }
+  ],
   "count": 2
 }
 ```
 
 ### Query by Wallet
+```bash
+GET /admin/audit/trace/wallet/:wallet?communityId=xxx&limit=50
+```
 
-```typescript
-// Get recent audit trails for a wallet in a community
-GET /admin/audit/trace/wallet/:wallet?communityId=guild-dev&limit=50
+**Example:**
+```bash
+curl "http://localhost:3000/admin/audit/trace/wallet/0xalice123...?communityId=community-1&limit=50"
+```
 
-// Example: GET /admin/audit/trace/wallet/0xalice...?communityId=guild-dev
+**Response:**
+```json
 {
-  "wallet": "0xalice...",
-  "communityId": "guild-dev",
-  "traces": [ /* array of traces */ ],
-  "count": 5
+  "wallet": "0xalice123...",
+  "communityId": "community-1",
+  "traces": [
+    { /* recent trace 1 */ },
+    { /* recent trace 2 */ },
+    ...
+  ],
+  "count": 15
 }
 ```
 
-## For Operations
+## Database Schema Quick Reference
 
-### Investigating an Access Denial
+### AuditEvent
 
-1. **Get correlation ID from logs:**
-   ```
-   Look for: "Access denied for wallet 0xalice..."
-   Extract: correlationId from the log entry
-   ```
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | UUID | Unique identifier |
+| `eventType` | Enum | Type of event (ACCESS_CHECK, MEMBERSHIP_CREATED, etc.) |
+| `correlationId` | String | Links related events |
+| `chainId` | Int? | Blockchain network ID |
+| `txHash` | String? | Transaction hash |
+| `blockNumber` | Int? | Block number |
+| `logIndex` | Int? | Event index in block |
+| `walletId` | String? | Wallet address |
+| `communityId` | String? | Community identifier |
+| `resource` | String? | Resource being accessed |
+| `decision` | String? | ALLOW or DENY |
+| `membershipStateVersion` | String? | JSON snapshot of membership |
+| `roleStateVersion` | String? | JSON snapshot of roles |
+| `beforeState` | Json? | State before mutation |
+| `afterState` | Json? | State after mutation |
+| `createdAt` | DateTime | When event was logged |
 
-2. **Query audit trail:**
-   ```bash
-   curl http://api/admin/audit/trace/{correlationId}
-   ```
+**Indexes:**
+- `correlationId` - For querying related events
+- `txHash` - For querying by blockchain transaction
+- `walletId` - For querying by user
+- `communityId` - For querying by community
 
-3. **Examine decision:**
-   ```json
-   {
-     "accessDecisions": [{
-       "decision": "DENY",
-       "reasonCode": "MEMBERSHIP_EXPIRED",
-       "membershipState": {
-         "state": "active",
-         "expiresAt": "2026-06-01T00:00:00.000Z",
-         "effectiveState": "expired"
-       }
-     }]
-   }
-   ```
+### OutboxEvent
 
-### Tracing a Blockchain Event
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | UUID | Unique identifier |
+| `eventType` | String | Type of integration event |
+| `correlationId` | String? | Links to audit events |
+| `chainId` | Int? | Blockchain network ID |
+| `txHash` | String? | Transaction hash |
+| `blockNumber` | Int? | Block number |
+| `logIndex` | Int? | Event index in block |
+| `entityId` | String? | ID of affected entity |
+| `entityType` | String? | Type of entity |
+| `communityId` | String? | Community identifier |
+| `payload` | Json | Event payload |
+| `status` | Enum | pending/delivered/failed |
+| `createdAt` | DateTime | When event was created |
+| `deliveredAt` | DateTime? | When event was delivered |
 
-1. **Get transaction hash from blockchain explorer**
+## Code Examples
 
-2. **Query audit trail:**
-   ```bash
-   curl http://api/admin/audit/trace/tx/0xabc...def
-   ```
+### Applying Contract Event with Metadata
 
-3. **Verify processing:**
-   - Check `originatingOnChainEvent` has correct metadata
-   - Check `databaseMutations` shows state changes
-   - Check `outboxEvents` for downstream integrations
+```typescript
+import { applyContractEvent, DecodedMembershipMintedEvent } from './services/contractEventHelpers';
 
-### Auditing a User's Activity
+const mintEvent: DecodedMembershipMintedEvent = {
+  type: 'MembershipMinted',
+  to: '0xalice...',
+  tokenId: 123,
+  communityId: 'community-1',
+  expiresAt: Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60,
+  // Blockchain metadata
+  chainId: 1,
+  txHash: '0xabcd...',
+  blockNumber: 12345678,
+  logIndex: 5,
+};
 
-```bash
-# Get last 50 audit events for a wallet
-curl "http://api/admin/audit/trace/wallet/0xalice...?communityId=guild-dev&limit=50"
-
-# Examine each trace to see:
-# - What on-chain events affected this wallet
-# - What state changes occurred
-# - What access decisions were made
+await applyContractEvent(prisma, mintEvent);
+// Creates: Membership, AuditEvent, OutboxEvent with full metadata
 ```
 
-## Key Concepts
+### Querying Audit Trace
 
-### Correlation ID
-- **Format:** `{txHash}_{logIndex}_{timestamp}` or `access_{communityId}_{wallet}_{resource}_{timestamp}`
-- **Purpose:** Links all events in a single logical operation
-- **Scope:** One correlation ID per blockchain event processing or access check
+```typescript
+import { getAuditTraceByCorrelationId } from './services/auditTraceService';
 
-### On-Chain Event Metadata
-- **chainId:** Ethereum mainnet = 1, Polygon = 137, etc.
-- **txHash:** Unique transaction identifier
-- **blockNumber:** Block height
-- **logIndex:** Event index within transaction
+const trace = await getAuditTraceByCorrelationId('correlation-id-here');
 
-### State Snapshots
-- **membershipStateVersion:** JSON of membership at decision time
-- **roleStateVersion:** JSON array of roles at decision time
-- **Purpose:** Reproduce exact decision-making context
+if (trace) {
+  console.log('Originating Event:', trace.originatingOnChainEvent);
+  console.log('Database Mutations:', trace.databaseMutations.length);
+  console.log('Access Decisions:', trace.accessDecisions.length);
+  console.log('Has On-Chain Origin:', trace.summary.hasOnChainOrigin);
+}
+```
+
+### Logging Access Decision with State Snapshot
+
+```typescript
+import { logEvent } from './services/auditService';
+
+await logEvent({
+  eventType: 'ACCESS_CHECK',
+  walletId: '0xalice...',
+  communityId: 'community-1',
+  resource: 'dashboard',
+  decision: 'ALLOW',
+  reasonCode: 'HAS_ACTIVE_MEMBERSHIP',
+  correlationId: 'access_community-1_0xalice_dashboard_1234567890',
+  membershipStateVersion: JSON.stringify({
+    id: 'mem-123',
+    tokenId: 42,
+    state: 'active',
+    expiresAt: '2024-02-15T00:00:00Z',
+    effectiveState: 'active',
+  }),
+  roleStateVersion: JSON.stringify([
+    {
+      id: 'role-456',
+      role: 'admin',
+      source: 'manual',
+      active: true,
+    },
+  ]),
+});
+```
+
+## Correlation ID Patterns
+
+### On-Chain Event Correlation IDs
+
+Format: `{txHash}_{logIndex}_{timestamp}`
+
+Example: `0xabcd1234_5_1234567890`
+
+**Used for:**
+- Membership minted events
+- Membership renewed events
+- Membership suspended events
+
+### Access Check Correlation IDs
+
+Format: `access_{communityId}_{wallet}_{resource}_{timestamp}`
+
+Example: `access_community-1_0xalice_dashboard_1234567890`
+
+**Used for:**
+- Access check decisions
+- Policy evaluations
 
 ## Common Queries
 
-### "Why was this access denied?"
+### Find all events from a blockchain transaction
 
-```sql
--- Find the access check audit event
-SELECT * FROM "AuditEvent"
-WHERE eventType = 'ACCESS_CHECK'
-  AND walletId = '0xalice...'
-  AND decision = 'DENY'
-ORDER BY createdAt DESC
-LIMIT 1;
-
--- Then query the API with the correlationId
+```typescript
+const traces = await getAuditTracesByTxHash('0xabcd...');
+traces.forEach(trace => {
+  console.log('Correlation ID:', trace.correlationId);
+  console.log('Events:', trace.summary.eventTypes);
+});
 ```
 
-### "What blockchain event created this membership?"
+### Find recent activity for a wallet
 
-```sql
--- Find membership creation audit event
-SELECT * FROM "AuditEvent"
-WHERE eventType = 'MEMBERSHIP_CREATED'
-  AND walletId = '0xalice...'
-  AND txHash IS NOT NULL;
+```typescript
+const traces = await getAuditTracesByWallet(
+  '0xalice...',
+  'community-1',
+  50 // limit
+);
 ```
 
-### "Show me all events from transaction X"
+### Verify access decision state
 
-```sql
-SELECT * FROM "AuditEvent"
-WHERE txHash = '0xabc...def'
-ORDER BY createdAt ASC;
+```typescript
+const trace = await getAuditTraceByCorrelationId(correlationId);
+const decision = trace.accessDecisions[0];
+
+console.log('Decision:', decision.decision);
+console.log('Membership State:', decision.membershipState);
+console.log('Role State:', decision.roleState);
 ```
-
-## Troubleshooting
-
-### Missing On-Chain Metadata
-
-**Problem:** Old audit events don't have txHash/blockNumber
-**Reason:** Events created before audit chain implementation
-**Solution:** Only new events will have metadata (by design)
-
-### Correlation ID Not Found
-
-**Problem:** GET /admin/audit/trace/:correlationId returns 404
-**Reason:** 
-- Correlation ID doesn't exist
-- Event processing failed
-- Typo in correlation ID
-
-**Solution:**
-```bash
-# Search by transaction hash instead
-curl http://api/admin/audit/trace/tx/{txHash}
-
-# Or search by wallet
-curl "http://api/admin/audit/trace/wallet/{wallet}?communityId={communityId}"
-```
-
-### Multiple Traces for Same Event
-
-**Problem:** Transaction has multiple correlation IDs
-**Reason:** Normal - one txHash can affect multiple members
-**Solution:** Each member gets their own correlation ID
 
 ## Testing
 
-### Local Testing
+### Run Integration Tests
 
 ```bash
-# Run integration tests
 cd apps/access-api
 npm test -- membership-integration.test.ts
-
-# Look for:
-# ✓ should create complete audit trail from on-chain event to access decision
-# ✓ should maintain append-only audit integrity
-# ✓ should link multiple access decisions to same originating event
 ```
 
-### Manual Testing
+### Key Test Scenarios
 
-```bash
-# 1. Process a mint event (via test or indexer)
-# 2. Check audit event was created
-curl http://api/admin/audit/trace/tx/0x{txHash}
+1. **Complete Audit Trail**: Mint event → Access decision → Query trace
+2. **Append-Only Integrity**: Verify idempotency
+3. **Multiple Decisions**: Multiple access checks from same origin
+4. **Transaction Query**: Find all traces by txHash
+5. **Wallet Query**: Find all traces for wallet
 
-# 3. Make an access check
-curl -X POST http://api/v1/access/check \
-  -H "Content-Type: application/json" \
-  -d '{"wallet":"0xalice...","communityId":"guild-dev","resource":"dashboard"}'
+## Troubleshooting
 
-# 4. Get correlation ID from response or database
-# 5. Query full trace
-curl http://api/admin/audit/trace/{correlationId}
-```
+### Missing Blockchain Metadata
 
-## Performance Notes
+**Problem:** AuditEvent has null chainId/txHash/blockNumber
 
-- Correlation ID queries: Fast (indexed)
-- Transaction hash queries: Fast (indexed)
-- Wallet queries: Limited to 50 by default
-- State snapshots: Stored as JSON, parsed on read
-
-## Security Notes
-
-⚠️ **Admin endpoints are currently unprotected**
-
-Before production:
-1. Add authentication middleware
-2. Restrict to internal network
-3. Implement audit logging of audit queries
-4. Set up rate limiting
-
-## Schema Quick Reference
-
+**Solution:** Ensure contract events include full metadata:
 ```typescript
-// AuditEvent
-{
-  id: string;
-  eventType: EventType;
-  correlationId?: string;        // NEW: Links related events
-  chainId?: number;              // NEW: Blockchain network
-  txHash?: string;               // NEW: Transaction hash
-  blockNumber?: number;          // NEW: Block height
-  logIndex?: number;             // NEW: Log position
-  membershipStateVersion?: string; // NEW: Membership snapshot (JSON)
-  roleStateVersion?: string;      // NEW: Roles snapshot (JSON)
+const event: DecodedMembershipMintedEvent = {
+  type: 'MembershipMinted',
   // ... other fields
-}
-
-// OutboxEvent
-{
-  id: string;
-  eventType: string;
-  correlationId?: string;        // NEW: Links to audit events
-  chainId?: number;              // NEW: Blockchain network
-  txHash?: string;               // NEW: Transaction hash
-  blockNumber?: number;          // NEW: Block height
-  logIndex?: number;             // NEW: Log position
-  // ... other fields
-}
+  chainId: 1,          // Required
+  txHash: '0x...',     // Required
+  blockNumber: 123456, // Required
+  logIndex: 5,         // Required
+};
 ```
 
-## Migration Status
+### Missing State Snapshots
 
-✅ Schema updated (prisma/schema.prisma)
-✅ Migration created (20260717_add_audit_chain_of_custody)
-⏳ Migration not yet applied (run: `npx prisma migrate deploy`)
+**Problem:** Access decision has null membershipStateVersion
 
-## Support Resources
+**Solution:** Ensure checkAccess() captures state before logging:
+```typescript
+const membershipStateSnapshot = member.membership ? {
+  id: member.membership.id,
+  tokenId: member.membership.tokenId,
+  state: member.membership.state,
+  expiresAt: member.membership.expiresAt?.toISOString(),
+  effectiveState,
+} : null;
 
-1. **Full Documentation:** AUDIT_CHAIN_OF_CUSTODY.md
-2. **Implementation Details:** IMPLEMENTATION_SUMMARY.md
-3. **Code Examples:** src/membership-integration.test.ts
-4. **Service Code:** src/services/auditTraceService.ts
+await auditAccess({
+  // ... other fields
+  membershipState: membershipStateSnapshot,
+  roleState: roleStateSnapshot,
+});
+```
+
+### Trace Not Found
+
+**Problem:** GET /admin/audit/trace/:correlationId returns 404
+
+**Possible causes:**
+1. Correlation ID is incorrect
+2. Event hasn't been logged yet
+3. Database not synced
+
+**Solution:**
+```bash
+# Check if audit event exists
+SELECT * FROM "AuditEvent" WHERE "correlationId" = 'your-correlation-id';
+
+# Check if correlation ID format is correct
+# On-chain: txHash_logIndex_timestamp
+# Access: access_communityId_wallet_resource_timestamp
+```
+
+## Performance Considerations
+
+### Indexing Strategy
+
+The schema includes indexes on:
+- `correlationId` - Fast correlation queries
+- `txHash` - Fast transaction queries
+- `walletId` - Fast wallet queries
+- `communityId` - Fast community queries
+
+### Query Optimization
+
+For large datasets:
+1. Always specify `communityId` when querying by wallet
+2. Use `limit` parameter to restrict result size
+3. Consider pagination for API consumers
+4. Index `createdAt` for time-range queries
+
+### Retention Policy
+
+Consider implementing retention policies:
+```sql
+-- Example: Delete audit events older than 1 year
+DELETE FROM "AuditEvent"
+WHERE "createdAt" < NOW() - INTERVAL '1 year'
+  AND "eventType" != 'ACCESS_CHECK'; -- Keep access checks longer
+```
+
+## Security Checklist
+
+- [ ] Add admin authentication to audit endpoints
+- [ ] Implement rate limiting on trace queries
+- [ ] Log all admin audit queries
+- [ ] Encrypt sensitive fields at rest
+- [ ] Implement retention policies
+- [ ] Add alerting for suspicious query patterns
+- [ ] Review audit logs regularly
+- [ ] Document data access policies
+
+## Resources
+
+- Full documentation: `AUDIT_CHAIN_OF_CUSTODY.md`
+- Implementation details: `IMPLEMENTATION_SUMMARY.md`
+- Architecture diagrams: `AUDIT_ARCHITECTURE.md`
+- Integration tests: `membership-integration.test.ts`
