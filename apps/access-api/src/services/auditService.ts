@@ -36,6 +36,13 @@ export type AuditEventInput = {
   reasonCode?: string | null;
   beforeState?: any | null;
   afterState?: any | null;
+  correlationId?: string | null;
+  chainId?: number | null;
+  txHash?: string | null;
+  blockNumber?: number | null;
+  logIndex?: number | null;
+  membershipStateVersion?: string | null;
+  roleStateVersion?: string | null;
 };
 
 /**
@@ -70,6 +77,13 @@ export async function logEventTx(db: PrismaLikeClient, event: AuditEventInput) {
         reasonCode: event.reasonCode ?? null,
         beforeState: event.beforeState ?? null,
         afterState: event.afterState ?? null,
+        correlationId: event.correlationId ?? null,
+        chainId: event.chainId ?? null,
+        txHash: event.txHash ?? null,
+        blockNumber: event.blockNumber ?? null,
+        logIndex: event.logIndex ?? null,
+        membershipStateVersion: event.membershipStateVersion ?? null,
+        roleStateVersion: event.roleStateVersion ?? null,
       },
     }),
   ];
@@ -87,12 +101,19 @@ export async function logEventTx(db: PrismaLikeClient, event: AuditEventInput) {
           entityId: event.walletId ?? null,
           entityType: "AccessDecision",
           communityId: event.communityId ?? null,
+          correlationId: event.correlationId ?? null,
+          chainId: event.chainId ?? null,
+          txHash: event.txHash ?? null,
+          blockNumber: event.blockNumber ?? null,
+          logIndex: event.logIndex ?? null,
           payload: {
             walletId: event.walletId ?? null,
             resource: event.resource ?? null,
             policyRule: event.policyRule ?? null,
             decision: event.decision ?? null,
             reasonCode: event.reasonCode ?? null,
+            membershipStateVersion: event.membershipStateVersion ?? null,
+            roleStateVersion: event.roleStateVersion ?? null,
           },
           status: "pending",
           retryCount: 0,

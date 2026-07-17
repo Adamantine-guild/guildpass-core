@@ -120,6 +120,9 @@ export function getMemberService(prismaClient: PrismaClient) {
     decision: "ALLOW" | "DENY";
     reasonCode?: string | null;
     details?: any;
+    correlationId?: string | null;
+    membershipState?: any;
+    roleState?: any;
   }) {
     try {
       await logEvent({
@@ -130,6 +133,9 @@ export function getMemberService(prismaClient: PrismaClient) {
         policyRule: input.policyRule ?? null,
         decision: input.decision,
         reasonCode: input.reasonCode ?? null,
+        correlationId: input.correlationId ?? null,
+        membershipStateVersion: input.membershipState ? JSON.stringify(input.membershipState) : null,
+        roleStateVersion: input.roleState ? JSON.stringify(input.roleState) : null,
         beforeState: null,
         afterState: { evaluation: input.details ?? null },
       });
@@ -143,6 +149,9 @@ export function getMemberService(prismaClient: PrismaClient) {
     const wallet = normaliseWallet(input.wallet);
     const communityId = input.communityId;
     const resource = input.resource;
+
+    // Generate correlation ID for this access check
+    const correlationId = `access_${communityId}_${wallet}_${resource}_${Date.now()}`;
 
     const versions = await getVersionedKeyParts(communityId);
     const cacheKey = accessDecisionCacheKey({
@@ -174,6 +183,7 @@ export function getMemberService(prismaClient: PrismaClient) {
         policyRule: null,
         decision: "DENY",
         reasonCode: decision.reasons?.[0]?.code ?? null,
+        correlationId,
       });
       await cacheService.setJSON(cacheKey, decision, decisionTtlSeconds);
       return decision;
@@ -204,6 +214,7 @@ export function getMemberService(prismaClient: PrismaClient) {
         policyRule: null,
         decision: "DENY",
         reasonCode: decision.reasons?.[0]?.code ?? null,
+        correlationId,
       });
       await cacheService.setJSON(cacheKey, decision, decisionTtlSeconds);
       return decision;
@@ -219,6 +230,23 @@ export function getMemberService(prismaClient: PrismaClient) {
       (member.membership?.state as any) ?? "invited",
       member.membership?.expiresAt,
     );
+
+    // Capture state snapshot for audit trail
+    const membershipStateSnapshot = member.membership ? {
+      id: member.membership.id,
+      tokenId: member.membership.tokenId,
+      state: member.membership.state,
+      expiresAt: member.membership.expiresAt?.toISOString(),
+      effectiveState,
+    } : null;
+
+    const roleStateSnapshot = member.roles.map((r) => ({
+      id: r.id,
+      role: r.role,
+      source: r.source,
+      active: r.active,
+      expiresAt: r.expiresAt?.toISOString(),
+    }));
 
     const ctx: RoleContext = {
       assignments: member.roles.map((r) => ({
@@ -252,6 +280,9 @@ export function getMemberService(prismaClient: PrismaClient) {
       decision: allowedDecision,
       reasonCode,
       details: (decision as any).details ?? null,
+      correlationId,
+      membershipState: membershipStateSnapshot,
+      roleState: roleStateSnapshot,
     });
 
     await cacheService.setJSON(cacheKey, decision, decisionTtlSeconds);

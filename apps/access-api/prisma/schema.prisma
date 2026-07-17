@@ -149,11 +149,27 @@ model AuditEvent {
   reasonCode  String? // machine-readable code for decision
   beforeState Json?
   afterState  Json?
+  
+  // Correlation ID for linking related events across the system
+  correlationId String?
+  
+  // On-chain event metadata (when audit event originated from blockchain)
+  chainId         Int?
+  txHash          String?
+  blockNumber     Int?
+  logIndex        Int?
+  
+  // Snapshot of state versions at time of access decision
+  membershipStateVersion String? // JSON snapshot of membership state used
+  roleStateVersion       String? // JSON snapshot of roles used
+  
   createdAt   DateTime  @default(now())
 
   @@index([walletId])
   @@index([communityId])
   @@index([createdAt])
+  @@index([correlationId])
+  @@index([txHash])
 }
 
 // --- Integration Event Outbox ---
@@ -175,6 +191,16 @@ model OutboxEvent {
   retryCount  Int               @default(0)
   maxRetries  Int               @default(5)
   lastError   String?
+  
+  // Correlation ID linking to audit events
+  correlationId String?
+  
+  // On-chain event metadata (when outbox event originated from blockchain state change)
+  chainId     Int?
+  txHash      String?
+  blockNumber Int?
+  logIndex    Int?
+  
   createdAt   DateTime          @default(now())
   deliveredAt DateTime?
   nextRetryAt DateTime?
@@ -185,6 +211,7 @@ model OutboxEvent {
   @@index([createdAt])
   @@index([nextRetryAt])
   @@index([status, nextRetryAt])
+  @@index([correlationId])
 }
 
 // --- Chain Indexer Reorg Safety & Idempotency ---
@@ -208,4 +235,81 @@ model IndexerState {
   lastBlockNumber  Int
   lastBlockHash    String
   updatedAt        DateTime @updatedAt
+}
+
+// --- Constitutional Governance Engine ---
+
+model GovernanceRule {
+  id          String   @id @default(uuid())
+  name        String
+  description String
+  communityId String
+  resource    String
+  ast         Json // JSON-serialized RuleNode AST
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  community Community @relation(fields: [communityId], references: [id])
+
+  @@index([communityId])
+  @@index([resource])
+  @@index([active])
+  @@unique([communityId, resource, name])
+}
+
+enum ApprovalRequestStatus {
+  pending
+  approved
+  rejected
+  expired
+}
+
+model ApprovalRequest {
+  id              String                @id @default(uuid())
+  communityId     String
+  resource        String
+  requesterWallet String
+  ruleId          String
+  status          ApprovalRequestStatus @default(pending)
+  expiresAt       DateTime?
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  approvals Approval[]
+
+  @@index([communityId])
+  @@index([requesterWallet])
+  @@index([ruleId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model Approval {
+  id              String          @id @default(uuid())
+  requestId       String
+  approverWallet  String
+  approverRole    String // admin, contributor, member
+  approved        Boolean // true = approved, false = rejected
+  timestamp       DateTime        @default(now())
+  signature       String? // Optional cryptographic signature
+
+  request ApprovalRequest @relation(fields: [requestId], references: [id])
+
+  @@index([requestId])
+  @@index([approverWallet])
+  @@unique([requestId, approverWallet])
+}
+
+model ContributionScore {
+  id          String   @id @default(uuid())
+  walletId    String
+  communityId String
+  totalScore  Int      @default(0)
+  breakdown   Json? // { commits: 10, reviews: 5, proposals: 2 }
+  updatedAt   DateTime @updatedAt
+
+  @@unique([walletId, communityId])
+  @@index([communityId])
+  @@index([totalScore])
 }
