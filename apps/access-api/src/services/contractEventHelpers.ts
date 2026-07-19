@@ -24,6 +24,7 @@ export interface DecodedMembershipMintedEvent {
   blockNumber?: number;
   blockHash?: string;
   transactionHash?: string;
+  txHash?: string;
   logIndex?: number;
 }
 
@@ -35,6 +36,7 @@ export interface DecodedMembershipRenewedEvent {
   blockNumber?: number;
   blockHash?: string;
   transactionHash?: string;
+  txHash?: string;
   logIndex?: number;
 }
 
@@ -46,6 +48,7 @@ export interface DecodedMembershipSuspendedEvent {
   blockNumber?: number;
   blockHash?: string;
   transactionHash?: string;
+  txHash?: string;
   logIndex?: number;
 }
 
@@ -91,17 +94,19 @@ export async function applyContractEvent(
 ): Promise<void> {
   validateEvent(event);
 
+  const txHash = event.transactionHash ?? event.txHash;
+
   // Generate correlation ID to link all related events
-  const correlationId = `${event.transactionHash || 'unknown'}_${event.logIndex ?? 0}_${Date.now()}`;
+  const correlationId = `${txHash || 'unknown'}_${event.logIndex ?? 0}_${Date.now()}`;
 
   // Access-affecting writes must be atomic.
   await prisma.$transaction(async (tx) => {
     // Idempotency check: If transactionHash and logIndex are provided, check if already processed.
-    if (event.transactionHash && event.logIndex !== undefined) {
+    if (txHash && event.logIndex !== undefined) {
       const alreadyProcessed = await tx.processedEvent.findUnique({
         where: {
           transactionHash_logIndex: {
-            transactionHash: event.transactionHash,
+            transactionHash: txHash,
             logIndex: event.logIndex,
           },
         },
@@ -181,14 +186,14 @@ export async function applyContractEvent(
           communityId: event.communityId,
           correlationId,
           chainId: event.chainId ?? null,
-          txHash: event.transactionHash ?? null,
+          txHash: txHash ?? null,
           blockNumber: event.blockNumber ?? null,
           logIndex: event.logIndex ?? null,
-          beforeState: existingMembership ? {
+          beforeState: (existingMembership ? {
             tokenId: existingMembership.tokenId,
             state: existingMembership.state,
             expiresAt: existingMembership.expiresAt?.toISOString(),
-          } : null,
+          } : null) as any,
           afterState: {
             tokenId: updatedMembership.tokenId,
             state: updatedMembership.state,
@@ -206,7 +211,7 @@ export async function applyContractEvent(
           communityId: event.communityId,
           correlationId,
           chainId: event.chainId ?? null,
-          txHash: event.transactionHash ?? null,
+          txHash: txHash ?? null,
           blockNumber: event.blockNumber ?? null,
           logIndex: event.logIndex ?? null,
           payload: {
@@ -263,7 +268,7 @@ export async function applyContractEvent(
           communityId: membership.member.communityId,
           correlationId,
           chainId: event.chainId ?? null,
-          txHash: event.transactionHash ?? null,
+          txHash: txHash ?? null,
           blockNumber: event.blockNumber ?? null,
           logIndex: event.logIndex ?? null,
           beforeState,
@@ -285,7 +290,7 @@ export async function applyContractEvent(
           communityId: membership.member.communityId,
           correlationId,
           chainId: event.chainId ?? null,
-          txHash: event.transactionHash ?? null,
+          txHash: txHash ?? null,
           blockNumber: event.blockNumber ?? null,
           logIndex: event.logIndex ?? null,
           payload: {
@@ -333,7 +338,7 @@ export async function applyContractEvent(
           communityId: membership.member.communityId,
           correlationId,
           chainId: event.chainId ?? null,
-          txHash: event.transactionHash ?? null,
+          txHash: txHash ?? null,
           blockNumber: event.blockNumber ?? null,
           logIndex: event.logIndex ?? null,
           beforeState,
@@ -354,7 +359,7 @@ export async function applyContractEvent(
           communityId: membership.member.communityId,
           correlationId,
           chainId: event.chainId ?? null,
-          txHash: event.transactionHash ?? null,
+          txHash: txHash ?? null,
           blockNumber: event.blockNumber ?? null,
           logIndex: event.logIndex ?? null,
           payload: {
@@ -371,14 +376,14 @@ export async function applyContractEvent(
 
     // Record the event as processed for reorg safety and idempotency.
     if (
-      event.transactionHash &&
+      txHash &&
       event.logIndex !== undefined &&
       event.blockHash &&
       event.blockNumber !== undefined
     ) {
       await tx.processedEvent.create({
         data: {
-          transactionHash: event.transactionHash,
+          transactionHash: txHash,
           logIndex: event.logIndex,
           blockHash: event.blockHash,
           blockNumber: event.blockNumber,

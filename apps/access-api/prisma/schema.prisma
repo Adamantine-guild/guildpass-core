@@ -10,6 +10,7 @@ model Community {
   policies    AccessPolicy[]
   resources   Resource[]
   overrides   AccessOverride[]
+  rules       GovernanceRule[]
   createdAt   DateTime          @default(now())
 }
 
@@ -214,6 +215,13 @@ model OutboxEvent {
   // downstream access re-evaluation). Nullable additive column — see the
   // "Simple case" worked example in CONTRIBUTING.md's migration guide.
   correlationId String?
+
+  // On-chain event metadata (when outbox event originated from blockchain)
+  chainId       Int?
+  txHash        String?
+  blockNumber   Int?
+  logIndex      Int?
+
   payload       Json              @default("{}")
   status        OutboxEventStatus @default(pending)
   retryCount    Int               @default(0)
@@ -228,7 +236,6 @@ model OutboxEvent {
   @@index([eventType])
   @@index([createdAt])
   @@index([nextRetryAt])
-  @@index([correlationId])
   @@index([status, nextRetryAt])
   @@index([correlationId])
 }
@@ -254,6 +261,79 @@ model IndexerState {
   lastBlockNumber  Int
   lastBlockHash    String
   updatedAt        DateTime @updatedAt
+}
+
+model GovernanceRule {
+  id          String   @id @default(uuid())
+  name        String
+  description String
+  communityId String
+  resource    String
+  ast         Json
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  community Community @relation(fields: [communityId], references: [id])
+
+  @@unique([communityId, resource, name])
+  @@index([communityId])
+  @@index([resource])
+  @@index([active])
+}
+
+enum ApprovalRequestStatus {
+  pending
+  approved
+  rejected
+  expired
+}
+
+model ApprovalRequest {
+  id              String                @id @default(uuid())
+  communityId     String
+  resource        String
+  requesterWallet String
+  ruleId          String
+  status          ApprovalRequestStatus @default(pending)
+  expiresAt       DateTime?
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  approvals       Approval[]
+
+  @@index([communityId])
+  @@index([requesterWallet])
+  @@index([ruleId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model Approval {
+  id             String          @id @default(uuid())
+  requestId      String
+  approverWallet String
+  approverRole   String
+  approved       Boolean
+  timestamp      DateTime        @default(now())
+  signature      String?
+  request        ApprovalRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@unique([requestId, approverWallet])
+  @@index([requestId])
+  @@index([approverWallet])
+}
+
+model ContributionScore {
+  id         String   @id @default(uuid())
+  walletId   String
+  communityId String
+  totalScore Int      @default(0)
+  breakdown  Json?
+  updatedAt  DateTime @updatedAt
+
+  @@unique([walletId, communityId])
+  @@index([communityId])
+  @@index([totalScore])
 }
 
 // --- Webhook Delivery (outbox handler) ---

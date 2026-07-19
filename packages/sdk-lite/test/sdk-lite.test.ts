@@ -126,6 +126,7 @@ describe('GuildPassClient', () => {
       });
 
       const result = await client.getMemberships(
+        'community-1',
         API_CONTRACT.membershipsByWallet.successResponse.wallet,
       );
 
@@ -151,6 +152,7 @@ describe('GuildPassClient', () => {
       });
 
       const result = await client.getMemberProfile(
+        'community-1',
         '0x1234567890abcdef1234567890abcdef12345678',
       );
 

@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { getMemberService, MemberServiceError } from './services/memberService';
 import { getPrisma } from './services/prisma';
-import { notFound, validationError } from './errors';
+import { notFound, validationError, validationErrorWithReason } from './errors';
 import {
   listDeadLetterEvents,
   retryDeadLetterEvent,
@@ -60,14 +60,29 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   app.post('/v1/communities/:communityId/members/:wallet/roles', async (request: FastifyRequest, reply: FastifyReply) => {
     const { communityId, wallet } = request.params as { communityId: string; wallet: string };
     const body = request.body as { role?: string };
+    const role = body?.role ?? '';
     const requesterWallet = getRequesterWallet(request);
+
+    if (!wallet || !/^0x[0-9a-fA-F]{40}$/.test(wallet)) {
+      return reply.status(400).send(validationErrorWithReason('INVALID_WALLET', 'Invalid wallet format'));
+    }
+
+    const community = await prisma.community.findUnique({ where: { id: communityId } });
+    if (!community) {
+      return reply.status(400).send(validationErrorWithReason('UNKNOWN_COMMUNITY', 'Unknown communityId'));
+    }
+
+    const validRoles = ['admin', 'member', 'contributor'];
+    if (!role || !validRoles.includes(role)) {
+      return reply.status(400).send(validationErrorWithReason('INVALID_ROLE', 'Unrecognized role'));
+    }
 
     try {
       const result = await memberService.assignMemberRole({
         requesterWallet: requesterWallet as import('@guildpass/shared-types').WalletAddress,
         communityId,
         targetWallet: wallet as import('@guildpass/shared-types').WalletAddress,
-        role: (body?.role ?? '') as import('@guildpass/shared-types').Role,
+        role: role as import('@guildpass/shared-types').Role,
       });
       return reply.status(200).send(result);
     } catch (error) {
@@ -79,6 +94,20 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   app.delete('/v1/communities/:communityId/members/:wallet/roles/:role', async (request: FastifyRequest, reply: FastifyReply) => {
     const { communityId, wallet, role } = request.params as { communityId: string; wallet: string; role: string };
     const requesterWallet = getRequesterWallet(request);
+
+    if (!wallet || !/^0x[0-9a-fA-F]{40}$/.test(wallet)) {
+      return reply.status(400).send(validationErrorWithReason('INVALID_WALLET', 'Invalid wallet format'));
+    }
+
+    const community = await prisma.community.findUnique({ where: { id: communityId } });
+    if (!community) {
+      return reply.status(400).send(validationErrorWithReason('UNKNOWN_COMMUNITY', 'Unknown communityId'));
+    }
+
+    const validRoles = ['admin', 'member', 'contributor'];
+    if (!role || !validRoles.includes(role)) {
+      return reply.status(400).send(validationErrorWithReason('INVALID_ROLE', 'Unrecognized role'));
+    }
 
     try {
       const result = await memberService.removeMemberRole({

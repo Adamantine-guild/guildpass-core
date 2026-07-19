@@ -5,6 +5,7 @@
  * Manages rule providers and coordinates their execution.
  */
 
+declare const require: any;
 import type { AccessPolicy, RoleContext, AccessDecision, DecisionReason, Role } from '@guildpass/shared-types';
 import type { RuleProvider, EvaluationContext, ResolutionConfig } from './types';
 import { resolveConflicts, buildDecisionReasons, DEFAULT_RESOLUTION_CONFIG } from './resolution';

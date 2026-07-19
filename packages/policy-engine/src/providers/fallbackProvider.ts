@@ -18,6 +18,22 @@ export class FallbackProvider implements RuleProvider {
   evaluate(context: EvaluationContext): EvaluationResult {
     const { policy } = context;
 
+    // Check if the ruleType is handled by StaticPolicyProvider
+    const handledRuleTypes = [
+      'PUBLIC',
+      'MEMBERS_ONLY',
+      'ADMINS_ONLY',
+      'CONTRIBUTORS_OR_ADMINS'
+    ];
+
+    if (handledRuleTypes.includes(policy.ruleType)) {
+      return {
+        result: 'ABSTAIN',
+        explanation: `Handled rule type: ${policy.ruleType}`,
+        code: 'RULE_HANDLED',
+      };
+    }
+
     // This provider should only be reached if all other providers abstained
     // which likely means an unknown/unhandled rule type
     return {

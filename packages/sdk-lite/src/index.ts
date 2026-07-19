@@ -120,9 +120,9 @@ export class GuildPassClient {
    * @throws {GuildPassApiError} when the request fails, the response is not
    *   JSON, or a successful response carries an unexpected shape.
    */
-  async getMemberships(wallet: string): Promise<MembershipSummary> {
+  async getMemberships(communityId: string, wallet: string): Promise<MembershipSummary> {
     return this._request<MembershipSummary>(
-      `/v1/memberships/${encodePathSegment(wallet)}`,
+      `/v1/communities/${encodePathSegment(communityId)}/memberships/${encodePathSegment(wallet)}`,
       { method: 'GET' },
     );
   }
@@ -133,9 +133,9 @@ export class GuildPassClient {
    * @throws {GuildPassApiError} when the request fails, the response is not
    *   JSON, or a successful response carries an unexpected shape.
    */
-  async getMemberProfile(wallet: string): Promise<MemberProfileResult> {
+  async getMemberProfile(communityId: string, wallet: string): Promise<MemberProfileResult> {
     return this._request<MemberProfileResult>(
-      `/v1/members/${encodePathSegment(wallet)}`,
+      `/v1/communities/${encodePathSegment(communityId)}/members/${encodePathSegment(wallet)}`,
       { method: 'GET' },
     );
   }

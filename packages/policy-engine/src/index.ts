@@ -270,5 +270,3 @@ export function explain(policy: AccessPolicy, ctx: RoleContext): string {
   return lines.join('\n');
 }
 
-// Re-export resolveEffectiveRoles for backward compatibility
-export { resolveEffectiveRoles };

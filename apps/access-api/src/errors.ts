@@ -27,6 +27,20 @@ export function validationError(message: string, details?: string | Record<strin
   return createApiError({ statusCode: 400, code: 'VALIDATION_ERROR', message, details });
 }
 
+export function validationErrorWithReason(
+  code: 'INVALID_WALLET' | 'UNKNOWN_COMMUNITY' | 'INVALID_ROLE',
+  message: string,
+): ApiErrorResponse & { reasons: { code: string; message: string }[] } {
+  return {
+    error: code,
+    code: code,
+    message,
+    statusCode: 400,
+    details: code,
+    reasons: [{ code, message }]
+  };
+}
+
 export function unauthorized(message: string): ApiErrorResponse {
   return createApiError({ statusCode: 401, code: 'UNAUTHORIZED', message });
 }

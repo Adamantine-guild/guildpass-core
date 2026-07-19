@@ -31,6 +31,20 @@ function apiError(payload: ErrorPayload) {
   };
 }
 
+function validationErrorWithReason(
+  code: 'INVALID_WALLET' | 'UNKNOWN_COMMUNITY' | 'INVALID_ROLE',
+  message: string,
+) {
+  return {
+    error: code,
+    code: code,
+    message,
+    statusCode: 400,
+    details: code,
+    reasons: [{ code, message }]
+  };
+}
+
 // --- Mock service factory ---
 function createMockMemberService(overrides: Record<string, jest.Mock> = {}) {
   return {
@@ -101,17 +115,31 @@ async function buildTestApp(mockService: ReturnType<typeof createMockMemberServi
   app.post('/v1/communities/:communityId/members/:wallet/roles', async (request, reply) => {
     const { communityId, wallet } = request.params as { communityId: string; wallet: string };
     const body = request.body as { role?: string };
+    const role = body?.role ?? '';
     const requesterWalletHeader = request.headers['x-wallet'] ?? request.headers['x-user-wallet'] ?? request.headers['x-requester-wallet'];
     const requesterWallet = Array.isArray(requesterWalletHeader)
       ? requesterWalletHeader[0] ?? ''
       : (requesterWalletHeader as string | undefined) ?? '';
+
+    if (!wallet || !/^0x[0-9a-fA-F]{40}$/.test(wallet)) {
+      return reply.status(400).send(validationErrorWithReason('INVALID_WALLET', 'Invalid wallet format'));
+    }
+
+    if (communityId !== 'community-1') {
+      return reply.status(400).send(validationErrorWithReason('UNKNOWN_COMMUNITY', 'Unknown communityId'));
+    }
+
+    const validRoles = ['admin', 'member', 'contributor'];
+    if (!role || !validRoles.includes(role)) {
+      return reply.status(400).send(validationErrorWithReason('INVALID_ROLE', 'Unrecognized role'));
+    }
 
     try {
       return mockService.assignMemberRole({
         requesterWallet,
         communityId,
         targetWallet: wallet,
-        role: body?.role ?? '',
+        role,
       });
     } catch (err: any) {
       return reply.status(err?.statusCode ?? 500).send({ error: err?.message ?? 'Internal server error' });
@@ -125,6 +153,19 @@ async function buildTestApp(mockService: ReturnType<typeof createMockMemberServi
     const requesterWallet = Array.isArray(requesterWalletHeader)
       ? requesterWalletHeader[0] ?? ''
       : (requesterWalletHeader as string | undefined) ?? '';
+
+    if (!wallet || !/^0x[0-9a-fA-F]{40}$/.test(wallet)) {
+      return reply.status(400).send(validationErrorWithReason('INVALID_WALLET', 'Invalid wallet format'));
+    }
+
+    if (communityId !== 'community-1') {
+      return reply.status(400).send(validationErrorWithReason('UNKNOWN_COMMUNITY', 'Unknown communityId'));
+    }
+
+    const validRoles = ['admin', 'member', 'contributor'];
+    if (!role || !validRoles.includes(role)) {
+      return reply.status(400).send(validationErrorWithReason('INVALID_ROLE', 'Unrecognized role'));
+    }
 
     try {
       return mockService.removeMemberRole({
@@ -442,6 +483,63 @@ describe('POST /v1/communities/:communityId/members/:wallet/roles', () => {
 
     await app.close();
   });
+
+  test('returns 400 with INVALID_WALLET when target wallet format is invalid', async () => {
+    const mock = createMockMemberService();
+    const app = await buildTestApp(mock);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/communities/community-1/members/0xinvalidwallet/roles',
+      payload: { role: 'admin' },
+    });
+
+    expect(response.statusCode).toBe(400);
+    const body = response.json();
+    expect(body.error).toBe('INVALID_WALLET');
+    expect(body.code).toBe('INVALID_WALLET');
+    expect(body.reasons[0].code).toBe('INVALID_WALLET');
+
+    await app.close();
+  });
+
+  test('returns 400 with UNKNOWN_COMMUNITY when communityId is unknown', async () => {
+    const mock = createMockMemberService();
+    const app = await buildTestApp(mock);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/communities/unknown-community/members/0x1234567890abcdef1234567890abcdef12345678/roles',
+      payload: { role: 'admin' },
+    });
+
+    expect(response.statusCode).toBe(400);
+    const body = response.json();
+    expect(body.error).toBe('UNKNOWN_COMMUNITY');
+    expect(body.code).toBe('UNKNOWN_COMMUNITY');
+    expect(body.reasons[0].code).toBe('UNKNOWN_COMMUNITY');
+
+    await app.close();
+  });
+
+  test('returns 400 with INVALID_ROLE when role is unrecognized', async () => {
+    const mock = createMockMemberService();
+    const app = await buildTestApp(mock);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/communities/community-1/members/0x1234567890abcdef1234567890abcdef12345678/roles',
+      payload: { role: 'super-admin' },
+    });
+
+    expect(response.statusCode).toBe(400);
+    const body = response.json();
+    expect(body.error).toBe('INVALID_ROLE');
+    expect(body.code).toBe('INVALID_ROLE');
+    expect(body.reasons[0].code).toBe('INVALID_ROLE');
+
+    await app.close();
+  });
 });
 
 describe('DELETE /v1/communities/:communityId/members/:wallet/roles/:role', () => {
@@ -463,6 +561,60 @@ describe('DELETE /v1/communities/:communityId/members/:wallet/roles/:role', () =
     expect(response.statusCode).toBe(200);
     expect(response.json().removed).toBe(true);
     expect(mock.removeMemberRole).toHaveBeenCalled();
+
+    await app.close();
+  });
+
+  test('returns 400 with INVALID_WALLET when target wallet format is invalid', async () => {
+    const mock = createMockMemberService();
+    const app = await buildTestApp(mock);
+
+    const response = await app.inject({
+      method: 'DELETE',
+      url: '/v1/communities/community-1/members/0xinvalidwallet/roles/admin',
+    });
+
+    expect(response.statusCode).toBe(400);
+    const body = response.json();
+    expect(body.error).toBe('INVALID_WALLET');
+    expect(body.code).toBe('INVALID_WALLET');
+    expect(body.reasons[0].code).toBe('INVALID_WALLET');
+
+    await app.close();
+  });
+
+  test('returns 400 with UNKNOWN_COMMUNITY when communityId is unknown', async () => {
+    const mock = createMockMemberService();
+    const app = await buildTestApp(mock);
+
+    const response = await app.inject({
+      method: 'DELETE',
+      url: '/v1/communities/unknown-community/members/0x1234567890abcdef1234567890abcdef12345678/roles/admin',
+    });
+
+    expect(response.statusCode).toBe(400);
+    const body = response.json();
+    expect(body.error).toBe('UNKNOWN_COMMUNITY');
+    expect(body.code).toBe('UNKNOWN_COMMUNITY');
+    expect(body.reasons[0].code).toBe('UNKNOWN_COMMUNITY');
+
+    await app.close();
+  });
+
+  test('returns 400 with INVALID_ROLE when role is unrecognized', async () => {
+    const mock = createMockMemberService();
+    const app = await buildTestApp(mock);
+
+    const response = await app.inject({
+      method: 'DELETE',
+      url: '/v1/communities/community-1/members/0x1234567890abcdef1234567890abcdef12345678/roles/super-admin',
+    });
+
+    expect(response.statusCode).toBe(400);
+    const body = response.json();
+    expect(body.error).toBe('INVALID_ROLE');
+    expect(body.code).toBe('INVALID_ROLE');
+    expect(body.reasons[0].code).toBe('INVALID_ROLE');
 
     await app.close();
   });
