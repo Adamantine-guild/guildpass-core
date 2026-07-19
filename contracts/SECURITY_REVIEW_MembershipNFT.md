@@ -111,6 +111,20 @@ single-step transfer, since no transfer function existed at all before)
 and directly reduces the blast radius of an operational mistake during key
 rotation.
 
+**Update (issue #102, Merkle batch claim):** `openzeppelin-contracts` (pinned
+`v5.6.1`) was subsequently added as a `lib/` dependency, but only for
+`MerkleProof.sol` and `BitMaps.sol` — both stateless, function-only libraries
+with no inheritance, no constructors, and no effect on this contract's
+storage layout or access-control model. This is a materially smaller
+addition than the `AccessControl` migration assessed above: it adds no new
+admin/role surface, `owner`/`admins` remain the sole access-control
+mechanism, and `onlyAdmin` still gates the new `setMembershipMerkleRoot`
+exactly as it gates `mint`/`renew`. The reasoning above for declining
+`AccessControl` (new submodule, new supply-chain surface, out of scope for
+an "audit and fix" review) still stands for anything *stateful*; it does not
+extend to pure verification/data-structure libraries with negligible attack
+surface.
+
 **Residual risk / recommendation:** the *day-to-day* minting/suspension
 key set (`admins`) and the *root* key (`owner`) are both still single EOA
 patterns. Before mainnet deployment with real funds/communities at stake,

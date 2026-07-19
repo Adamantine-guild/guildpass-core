@@ -17,3 +17,4 @@ apps/access-api/prisma/dev.db
 cache
 out
 broadcast
+contracts/script/fixtures/*.determinism-check.out.json
