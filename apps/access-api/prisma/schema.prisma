@@ -187,6 +187,12 @@ model AuditEvent {
   membershipStateVersion String? // JSON snapshot of membership state used
   roleStateVersion       String? // JSON snapshot of roles used
   
+  // Hash-chain integrity fields
+  // recordHash = keccak256(canonicalize(record fields) + previousRecordHash)
+  // Forms a tamper-evident chain that allows detection of retroactive alteration or deletion.
+  recordHash         String? @unique
+  previousRecordHash String?
+  
   createdAt   DateTime  @default(now())
 
   @@index([walletId])
@@ -194,6 +200,7 @@ model AuditEvent {
   @@index([createdAt])
   @@index([correlationId])
   @@index([txHash])
+  @@index([previousRecordHash])
 }
 
 // --- Integration Event Outbox ---

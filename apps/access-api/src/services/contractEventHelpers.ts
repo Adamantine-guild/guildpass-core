@@ -9,6 +9,7 @@
  */
 
 import type { PrismaClient } from '@prisma/client';
+import { writeChainedAuditEvent } from './auditChainHasher';
 
 /**
  * Decoded contract event types - derived from MembershipNFT.sol
@@ -178,27 +179,25 @@ export async function applyContractEvent(
         },
       });
 
-      // Create audit event with on-chain metadata
-      await tx.auditEvent.create({
-        data: {
-          eventType: 'MEMBERSHIP_CREATED',
-          walletId: wallet,
-          communityId: event.communityId,
-          correlationId,
-          chainId: event.chainId ?? null,
-          txHash: txHash ?? null,
-          blockNumber: event.blockNumber ?? null,
-          logIndex: event.logIndex ?? null,
-          beforeState: (existingMembership ? {
-            tokenId: existingMembership.tokenId,
-            state: existingMembership.state,
-            expiresAt: existingMembership.expiresAt?.toISOString(),
-          } : null) as any,
-          afterState: {
-            tokenId: updatedMembership.tokenId,
-            state: updatedMembership.state,
-            expiresAt: updatedMembership.expiresAt?.toISOString(),
-          },
+      // Create audit event with on-chain metadata and hash-chain integrity
+      await writeChainedAuditEvent(tx, {
+        eventType: 'MEMBERSHIP_CREATED',
+        walletId: wallet,
+        communityId: event.communityId,
+        correlationId,
+        chainId: event.chainId ?? null,
+        txHash: txHash ?? null,
+        blockNumber: event.blockNumber ?? null,
+        logIndex: event.logIndex ?? null,
+        beforeState: (existingMembership ? {
+          tokenId: existingMembership.tokenId,
+          state: existingMembership.state,
+          expiresAt: existingMembership.expiresAt?.toISOString(),
+        } : null) as any,
+        afterState: {
+          tokenId: updatedMembership.tokenId,
+          state: updatedMembership.state,
+          expiresAt: updatedMembership.expiresAt?.toISOString(),
         },
       });
 
@@ -260,24 +259,22 @@ export async function applyContractEvent(
         },
       });
 
-      // Create audit event with on-chain metadata
-      await tx.auditEvent.create({
-        data: {
-          eventType: 'MEMBERSHIP_UPDATED',
-          walletId: membership.member.wallet.address,
-          communityId: membership.member.communityId,
-          correlationId,
-          chainId: event.chainId ?? null,
-          txHash: txHash ?? null,
-          blockNumber: event.blockNumber ?? null,
-          logIndex: event.logIndex ?? null,
-          beforeState,
-          afterState: {
-            tokenId: updatedMembership.tokenId,
-            state: updatedMembership.state,
-            expiresAt: updatedMembership.expiresAt?.toISOString(),
-            renewedAt: updatedMembership.renewedAt?.toISOString(),
-          },
+      // Create audit event with on-chain metadata and hash-chain integrity
+      await writeChainedAuditEvent(tx, {
+        eventType: 'MEMBERSHIP_UPDATED',
+        walletId: membership.member.wallet.address,
+        communityId: membership.member.communityId,
+        correlationId,
+        chainId: event.chainId ?? null,
+        txHash: txHash ?? null,
+        blockNumber: event.blockNumber ?? null,
+        logIndex: event.logIndex ?? null,
+        beforeState,
+        afterState: {
+          tokenId: updatedMembership.tokenId,
+          state: updatedMembership.state,
+          expiresAt: updatedMembership.expiresAt?.toISOString(),
+          renewedAt: updatedMembership.renewedAt?.toISOString(),
         },
       });
 
@@ -330,23 +327,21 @@ export async function applyContractEvent(
         },
       });
 
-      // Create audit event with on-chain metadata
-      await tx.auditEvent.create({
-        data: {
-          eventType: 'MEMBERSHIP_UPDATED',
-          walletId: membership.member.wallet.address,
-          communityId: membership.member.communityId,
-          correlationId,
-          chainId: event.chainId ?? null,
-          txHash: txHash ?? null,
-          blockNumber: event.blockNumber ?? null,
-          logIndex: event.logIndex ?? null,
-          beforeState,
-          afterState: {
-            tokenId: updatedMembership.tokenId,
-            state: updatedMembership.state,
-            expiresAt: updatedMembership.expiresAt?.toISOString(),
-          },
+      // Create audit event with on-chain metadata and hash-chain integrity
+      await writeChainedAuditEvent(tx, {
+        eventType: 'MEMBERSHIP_UPDATED',
+        walletId: membership.member.wallet.address,
+        communityId: membership.member.communityId,
+        correlationId,
+        chainId: event.chainId ?? null,
+        txHash: txHash ?? null,
+        blockNumber: event.blockNumber ?? null,
+        logIndex: event.logIndex ?? null,
+        beforeState,
+        afterState: {
+          tokenId: updatedMembership.tokenId,
+          state: updatedMembership.state,
+          expiresAt: updatedMembership.expiresAt?.toISOString(),
         },
       });
 

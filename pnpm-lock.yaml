@@ -47,6 +47,9 @@ importers:
       fastify:
         specifier: ^4.25.0
         version: 4.29.1
+      js-sha3:
+        specifier: ^0.12.0
+        version: 0.12.0
       pino-http:
         specifier: ^11.0.0
         version: 11.0.0
@@ -1383,6 +1386,9 @@ packages:
     peerDependenciesMeta:
       node-notifier:
         optional: true
+
+  js-sha3@0.12.0:
+    resolution: {integrity: sha512-DGaUQKtsHeqChRD6ndGcESOBXUBQs5/ji4xyyoAgdqBsAu5yHsVTrzuF7MZ0VQTAa/IQFXOq0WmV2I1HNuzPtA==}
 
   js-tokens@4.0.0:
     resolution: {integrity: sha512-RdJUflcE3cUzKiMqQgsCu06FPu9UdIJO0beYbPhHN4k6apgJtifcoCtT9bcxOpYBtpD2kCM6Sbzg4CausW/PKQ==}
@@ -3602,6 +3608,8 @@ snapshots:
       - babel-plugin-macros
       - supports-color
       - ts-node
+
+  js-sha3@0.12.0: {}
 
   js-tokens@4.0.0: {}
 

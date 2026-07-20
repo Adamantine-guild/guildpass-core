@@ -145,6 +145,17 @@ const outboxWorkerBatchSize = new Gauge({
 // Exported handle
 // --------------------------------------------------------------------------
 
+// --------------------------------------------------------------------------
+// Audit Chain Metrics
+// --------------------------------------------------------------------------
+
+const auditChainWriteDuration = new Histogram({
+  name: 'audit_chain_write_duration_seconds',
+  help: 'Duration of audit chain hash computation and write in seconds',
+  buckets: [0.001, 0.005, 0.01, 0.025, 0.05, 0.1],
+  registers: [registry],
+});
+
 export const metrics = {
   httpRequestDuration,
   httpRequestsTotal,
@@ -155,4 +166,5 @@ export const metrics = {
   outboxEventsFailedTotal,
   outboxBacklogDepth,
   outboxWorkerBatchSize,
+  auditChainWriteDuration,
 };
