@@ -1,0 +1,247 @@
+{
+  "version": "1.0.0",
+  "snapshotDate": "2026-07-20",
+  "description": "Versioned contract snapshot for GuildPass Access API v1. This file is the source of truth for backward-compatibility checks.",
+  "sharedComponents": {
+    "WalletAddress": {
+      "type": "string",
+      "pattern": "^0x[0-9a-fA-F]{40}$"
+    },
+    "MembershipState": {
+      "type": "string",
+      "enum": ["invited", "active", "expired", "suspended"]
+    },
+    "Role": {
+      "type": "string",
+      "enum": ["admin", "member", "contributor"]
+    },
+    "ErrorResponse": {
+      "type": "object",
+      "required": ["error", "code", "message", "statusCode"],
+      "properties": {
+        "error": { "type": "string" },
+        "code": { "type": "string" },
+        "message": { "type": "string" },
+        "statusCode": { "type": "integer" },
+        "details": {
+          "oneOf": [{ "type": "string" }, { "type": "object" }]
+        }
+      }
+    },
+    "ForbiddenResponse": {
+      "type": "object",
+      "required": ["error"],
+      "properties": {
+        "error": { "type": "string" }
+      }
+    }
+  },
+  "endpoints": {
+    "POST /v1/access/check": {
+      "method": "POST",
+      "path": "/v1/access/check",
+      "requestBody": {
+        "type": "object",
+        "required": ["wallet", "communityId", "resource"],
+        "properties": {
+          "wallet": { "$ref": "#/sharedComponents/WalletAddress" },
+          "communityId": { "type": "string" },
+          "resource": { "type": "string" }
+        }
+      },
+      "successResponse": {
+        "type": "object",
+        "required": ["allowed", "code"],
+        "properties": {
+          "allowed": { "type": "boolean" },
+          "code": { "type": "string", "enum": ["ALLOW", "DENY"] },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["code", "message"],
+              "properties": {
+                "code": { "type": "string" },
+                "message": { "type": "string" }
+              }
+            }
+          },
+          "effectiveRoles": {
+            "type": "array",
+            "items": { "$ref": "#/sharedComponents/Role" },
+            "nullable": true
+          },
+          "membershipState": {
+            "$ref": "#/sharedComponents/MembershipState",
+            "nullable": true
+          }
+        }
+      }
+    },
+    "GET /v1/communities/:communityId/memberships/:wallet": {
+      "method": "GET",
+      "path": "/v1/communities/{communityId}/memberships/{wallet}",
+      "successResponse": {
+        "type": "object",
+        "required": ["wallet", "communities"],
+        "properties": {
+          "wallet": { "$ref": "#/sharedComponents/WalletAddress" },
+          "communities": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["communityId", "state"],
+              "properties": {
+                "communityId": { "type": "string" },
+                "state": { "$ref": "#/sharedComponents/MembershipState" },
+                "expiresAt": { "type": "string", "format": "date-time", "nullable": true }
+              }
+            }
+          }
+        }
+      }
+    },
+    "GET /v1/communities/:communityId/members/:wallet": {
+      "method": "GET",
+      "path": "/v1/communities/{communityId}/members/{wallet}",
+      "successResponse": {
+        "type": "object",
+        "required": ["communityId", "profile", "membership", "roles"],
+        "properties": {
+          "communityId": { "type": "string" },
+          "profile": {
+            "type": "object",
+            "required": ["id", "displayName"],
+            "properties": {
+              "id": { "type": "string" },
+              "displayName": { "type": "string" },
+              "bio": { "type": "string", "nullable": true },
+              "avatarUrl": { "type": "string", "nullable": true }
+            }
+          },
+          "membership": {
+            "type": "object",
+            "required": ["state"],
+            "properties": {
+              "state": { "$ref": "#/sharedComponents/MembershipState" },
+              "expiresAt": { "type": "string", "format": "date-time", "nullable": true }
+            }
+          },
+          "roles": {
+            "type": "array",
+            "items": { "$ref": "#/sharedComponents/Role" }
+          }
+        }
+      }
+    },
+    "POST /v1/communities/:communityId/members/:wallet/roles": {
+      "method": "POST",
+      "path": "/v1/communities/{communityId}/members/{wallet}/roles",
+      "requestBody": {
+        "type": "object",
+        "required": ["role"],
+        "properties": {
+          "role": { "$ref": "#/sharedComponents/Role" }
+        }
+      },
+      "successResponse": {
+        "type": "object",
+        "required": ["communityId", "wallet", "role", "assigned", "removed"],
+        "properties": {
+          "communityId": { "type": "string" },
+          "wallet": { "$ref": "#/sharedComponents/WalletAddress" },
+          "role": { "$ref": "#/sharedComponents/Role" },
+          "assigned": { "type": "boolean" },
+          "removed": { "type": "boolean" },
+          "message": { "type": "string" }
+        }
+      }
+    },
+    "DELETE /v1/communities/:communityId/members/:wallet/roles/:role": {
+      "method": "DELETE",
+      "path": "/v1/communities/{communityId}/members/{wallet}/roles/{role}",
+      "successResponse": {
+        "type": "object",
+        "required": ["communityId", "wallet", "role", "assigned", "removed"],
+        "properties": {
+          "communityId": { "type": "string" },
+          "wallet": { "$ref": "#/sharedComponents/WalletAddress" },
+          "role": { "$ref": "#/sharedComponents/Role" },
+          "assigned": { "type": "boolean" },
+          "removed": { "type": "boolean" },
+          "message": { "type": "string" }
+        }
+      }
+    },
+    "POST /v1/communities/:communityId/overrides": {
+      "method": "POST",
+      "path": "/v1/communities/{communityId}/overrides",
+      "requestBody": {
+        "type": "object",
+        "required": ["wallet", "resource", "effect"],
+        "properties": {
+          "wallet": { "$ref": "#/sharedComponents/WalletAddress" },
+          "resource": { "type": "string" },
+          "effect": { "type": "string", "enum": ["ALLOW", "DENY"] },
+          "reason": { "type": "string", "nullable": true },
+          "expiresAt": { "type": "string", "format": "date-time", "nullable": true }
+        }
+      },
+      "successResponse": {
+        "type": "object",
+        "required": ["communityId", "wallet", "resource", "effect", "created", "removed"],
+        "properties": {
+          "communityId": { "type": "string" },
+          "wallet": { "$ref": "#/sharedComponents/WalletAddress" },
+          "resource": { "type": "string" },
+          "effect": { "type": "string", "enum": ["ALLOW", "DENY"] },
+          "created": { "type": "boolean" },
+          "removed": { "type": "boolean" },
+          "message": { "type": "string" }
+        }
+      }
+    },
+    "DELETE /v1/communities/:communityId/overrides/:wallet/:resource": {
+      "method": "DELETE",
+      "path": "/v1/communities/{communityId}/overrides/{wallet}/{resource}",
+      "successResponse": {
+        "type": "object",
+        "required": ["communityId", "wallet", "resource", "effect", "created", "removed"],
+        "properties": {
+          "communityId": { "type": "string" },
+          "wallet": { "$ref": "#/sharedComponents/WalletAddress" },
+          "resource": { "type": "string" },
+          "effect": { "type": "string", "enum": ["ALLOW", "DENY"] },
+          "created": { "type": "boolean" },
+          "removed": { "type": "boolean" },
+          "message": { "type": "string" }
+        }
+      }
+    },
+    "GET /v1/communities/:communityId/members": {
+      "method": "GET",
+      "path": "/v1/communities/{communityId}/members",
+      "successResponse": {
+        "type": "object",
+        "required": ["members"],
+        "properties": {
+          "members": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "wallet": { "$ref": "#/sharedComponents/WalletAddress" },
+                "displayName": { "type": "string", "nullable": true },
+                "state": { "$ref": "#/sharedComponents/MembershipState" },
+                "roles": {
+                  "type": "array",
+                  "items": { "$ref": "#/sharedComponents/Role" }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
