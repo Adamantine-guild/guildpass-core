@@ -18,12 +18,14 @@ async function main() {
   const worker = createReconciliationWorker(config.reconciliationIntervalMs);
   worker.start();
 
-  const outboxWorker = createOutboxWorker(
-    config.outboxWorkerIntervalMs,
-    undefined, // Use default no-op handler; replace for production
-    undefined, // Use default Prisma client
-    config.outboxWorkerBatchSize,
-  );
+  const outboxWorker = createOutboxWorker({
+    intervalMs: config.outboxWorkerIntervalMs,
+    handler: undefined, // Use default no-op handler; replace for production
+    db: undefined, // Use default Prisma client
+    maxBatchSize: config.outboxWorkerBatchSize,
+    minBatchSize: config.outboxWorkerMinBatchSize,
+    workerCount: config.outboxWorkerCount,
+  });
   outboxWorker.start();
 
   // Initialize IndexerWorker if a provider is available

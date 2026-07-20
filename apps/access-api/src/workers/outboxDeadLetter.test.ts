@@ -19,6 +19,15 @@ function makeFakeDb(event: any) {
   const outboxEvents = [event];
   const deadLetters: any[] = [];
 
+  function fetchPending() {
+    return outboxEvents.filter(
+      (r) =>
+        r.status === "pending" &&
+        r.nextRetryAt &&
+        new Date(r.nextRetryAt) <= new Date(),
+    );
+  }
+
   return {
     outboxEvent: {
       findMany: jest.fn(async (args: any) => {
@@ -57,6 +66,12 @@ function makeFakeDb(event: any) {
       update: jest.fn(),
       count: jest.fn(async () => deadLetters.length),
     },
+    // processOutboxBatch now uses claimPendingOutboxEventsWithLock which calls
+    // $queryRaw with a FOR UPDATE SKIP LOCKED query.  Return pending events
+    // that are due.
+    $queryRaw: jest.fn(async () => {
+      return fetchPending().slice(0, 50);
+    }),
     _outboxEvents: outboxEvents,
     _deadLetters: deadLetters,
   } as any;

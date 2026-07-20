@@ -149,8 +149,10 @@ The API uses the **transactional outbox pattern** to emit reliable integration e
 
 | Environment Variable | Default | Description |
 | -------------------- | ------- | ----------- |
-| `OUTBOX_WORKER_INTERVAL_MS` | `10000` | Polling interval for the outbox worker (ms) |
-| `OUTBOX_WORKER_BATCH_SIZE` | `50` | Max events processed per worker pass |
+| `OUTBOX_WORKER_INTERVAL_MS` | `10000` | Polling interval per shard (ms) |
+| `OUTBOX_WORKER_BATCH_SIZE` | `50` | Max events per shard per poll |
+| `OUTBOX_WORKER_COUNT` | `1` | Number of concurrent shards for horizontal scaling |
+| `OUTBOX_WORKER_MIN_BATCH_SIZE` | `5` | Min batch size under backpressure |
 
 ### Pluggable Handler
 
@@ -167,7 +169,7 @@ const myHandler: OutboxEventHandler = async (event) => {
   });
 };
 
-const worker = createOutboxWorker(10_000, myHandler);
+const worker = createOutboxWorker({ intervalMs: 10_000, handler: myHandler });
 worker.start();
 ```
 
@@ -182,7 +184,7 @@ filtered by event type:
 import { createOutboxWorker } from './workers/outboxWorker';
 import { createWebhookHandler } from './handlers/webhookHandler';
 
-const worker = createOutboxWorker(10_000, createWebhookHandler());
+const worker = createOutboxWorker({ intervalMs: 10_000, handler: createWebhookHandler() });
 worker.start();
 ```
 

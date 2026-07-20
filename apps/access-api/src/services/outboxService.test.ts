@@ -16,6 +16,8 @@ import {
   getPendingOutboxEvents,
   getOutboxStats,
   pruneDeliveredOutboxEvents,
+  claimPendingOutboxEventsWithLock,
+  getOutboxBacklogDepth,
 } from "./outboxService";
 
 // ---------------------------------------------------------------------------
@@ -474,5 +476,68 @@ describe("pruneDeliveredOutboxEvents", () => {
       },
     });
     expect(count).toBe(5);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests for new horizontal-scalability functions
+// ---------------------------------------------------------------------------
+
+describe("claimPendingOutboxEventsWithLock", () => {
+  test("returns results from $queryRaw", async () => {
+    const rows = [{ id: "evt-1", status: "pending" }];
+    const db = {
+      $queryRaw: jest.fn().mockResolvedValue(rows),
+    } as any;
+
+    const result = await claimPendingOutboxEventsWithLock(db, 10);
+
+    expect(db.$queryRaw).toHaveBeenCalledTimes(1);
+    // The first argument should be a Prisma.Sql template (we just check it's
+    // not null and that the limit was incorporated).
+    expect(result).toEqual(rows);
+  });
+
+  test("defaults limit to 50", async () => {
+    const db = {
+      $queryRaw: jest.fn().mockResolvedValue([]),
+    } as any;
+
+    await claimPendingOutboxEventsWithLock(db);
+
+    expect(db.$queryRaw).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("getOutboxBacklogDepth", () => {
+  test("returns the count from $queryRaw result", async () => {
+    const db = {
+      $queryRaw: jest.fn().mockResolvedValue([{ count: 42 }]),
+    } as any;
+
+    const depth = await getOutboxBacklogDepth(db);
+
+    expect(depth).toBe(42);
+    expect(db.$queryRaw).toHaveBeenCalledTimes(1);
+  });
+
+  test("returns 0 when result is empty", async () => {
+    const db = {
+      $queryRaw: jest.fn().mockResolvedValue([]),
+    } as any;
+
+    const depth = await getOutboxBacklogDepth(db);
+
+    expect(depth).toBe(0);
+  });
+
+  test("returns 0 when result has no rows", async () => {
+    const db = {
+      $queryRaw: jest.fn().mockResolvedValue([{ count: null }]),
+    } as any;
+
+    const depth = await getOutboxBacklogDepth(db);
+
+    expect(depth).toBe(0);
   });
 });

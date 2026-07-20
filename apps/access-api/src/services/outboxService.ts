@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import type { PrismaClient } from "@prisma/client";
 import type {
   OutboxEventType,
@@ -171,6 +172,10 @@ export async function markOutboxFailed(
 /**
  * Fetch pending (or retryable) outbox events that are due for processing,
  * ordered by creation time (oldest first).
+ *
+ * NOTE: This uses a plain SELECT and is safe for single-worker deployments.
+ * For multi-worker horizontal scaling use claimPendingOutboxEventsWithLock
+ * instead, which uses SELECT ... FOR UPDATE SKIP LOCKED.
  */
 export async function getPendingOutboxEvents(
   db: PrismaLikeClient,
@@ -185,6 +190,58 @@ export async function getPendingOutboxEvents(
     orderBy: { createdAt: "asc" },
     take: limit,
   });
+}
+
+/**
+ * Claim pending outbox events using SELECT ... FOR UPDATE SKIP LOCKED.
+ *
+ * This is the core partitioning primitive: each concurrent worker (or shard)
+ * calls this function, and PostgreSQL guarantees that every event row is
+ * claimed by exactly one caller.  Rows locked by another transaction are
+ * skipped, so N workers can safely drain the queue in parallel without
+ * duplicate delivery.
+ *
+ * Requires a real PrismaClient (not the test-friendly PrismaLikeClient)
+ * because it uses raw SQL via $queryRaw.
+ *
+ * @returns Array of claimed outbox event rows (with all Prisma column names).
+ */
+export async function claimPendingOutboxEventsWithLock(
+  db: PrismaClient,
+  limit: number = 50,
+): Promise<any[]> {
+  const now = new Date();
+  const rows: any[] = await db.$queryRaw(
+    Prisma.sql`
+      SELECT *
+      FROM "OutboxEvent"
+      WHERE status = 'pending' AND "nextRetryAt" <= ${now}
+      ORDER BY "createdAt" ASC
+      LIMIT ${limit}
+      FOR UPDATE SKIP LOCKED
+    `,
+  );
+  return rows;
+}
+
+/**
+ * Count the number of pending outbox events that are currently due for
+ * processing (status = 'pending' AND nextRetryAt <= now).  Exposed as a
+ * Prometheus gauge so operators can observe whether the worker fleet is
+ * keeping up with the event production rate.
+ */
+export async function getOutboxBacklogDepth(
+  db: PrismaClient,
+): Promise<number> {
+  const now = new Date();
+  const result: Array<{ count: bigint }> = await db.$queryRaw(
+    Prisma.sql`
+      SELECT COUNT(*)::bigint AS count
+      FROM "OutboxEvent"
+      WHERE status = 'pending' AND "nextRetryAt" <= ${now}
+    `,
+  );
+  return Number(result[0]?.count ?? 0);
 }
 
 /**

@@ -2,10 +2,11 @@
  * outboxWorker.test.ts
  *
  * Tests for the outbox worker covering:
- *   - Processing pending events
+ *   - Processing pending events (via FOR UPDATE SKIP LOCKED)
  *   - Marking delivered on success
  *   - Marking failed on handler error
  *   - Retry state transitions through the worker
+ *   - Adaptive batch sizing
  *   - Start/stop lifecycle
  */
 
@@ -15,28 +16,19 @@ import {
   OutboxEventHandler,
 } from "./outboxWorker";
 
-// Mock prisma to avoid requiring generated client
-jest.mock("../services/prisma", () => ({
-  getPrisma: jest.fn(() => ({
-    outboxEvent: {
-      findMany: jest.fn().mockResolvedValue([]),
-      update: jest.fn(),
-      create: jest.fn(),
-      deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
-      count: jest.fn().mockResolvedValue(0),
-    },
-  })),
-}));
-
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * Create a mock PrismaClient that feeds the given pending events to
+ * $queryRaw (used by claimPendingOutboxEventsWithLock).
+ */
 function makePrismaWithEvents(pendingEvents: any[] = []) {
   const events = [...pendingEvents];
   const updated: Array<{ where: { id: string }; data: any }> = [];
 
-  return {
+  const prisma: any = {
     outboxEvent: {
       findMany: jest.fn(async (args?: any) => {
         let results = [...events];
@@ -74,12 +66,36 @@ function makePrismaWithEvents(pendingEvents: any[] = []) {
     deadLetterEvent: {
       create: jest.fn(async (args: any) => ({ id: "dl-1", ...args.data })),
     },
+    // $queryRaw is called by claimPendingOutboxEventsWithLock.
+    // Prisma.Sql objects expose .values[] for the interpolated parameters.
+    // The LIMIT is always the last value in the FOR UPDATE SKIP LOCKED query.
+    $queryRaw: jest.fn(async (sql: any): Promise<any[]> => {
+      const limit =
+        sql?.values && Array.isArray(sql.values)
+          ? (sql.values[sql.values.length - 1] as number) ?? 50
+          : 50;
+
+      let results = events.filter(
+        (r: any) =>
+          r.status === "pending" &&
+          r.nextRetryAt &&
+          new Date(r.nextRetryAt) <= new Date(),
+      );
+      results.sort(
+        (a, b) =>
+          new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+      );
+      results = results.slice(0, limit);
+      return results;
+    }),
     _updated: updated,
-  } as any;
+  };
+
+  return prisma;
 }
 
 // ---------------------------------------------------------------------------
-// Tests
+// Tests: processOutboxBatch
 // ---------------------------------------------------------------------------
 
 describe("processOutboxBatch", () => {
@@ -172,7 +188,6 @@ describe("processOutboxBatch", () => {
     expect(result.delivered).toBe(0);
     expect(result.failed).toBe(1);
 
-    // Should have called markOutboxFailed, which updates retryCount + schedules retry
     const failUpdate = prisma._updated.find(
       (u: any) => u.where.id === "evt-fail" && u.data.retryCount === 1,
     );
@@ -193,7 +208,7 @@ describe("processOutboxBatch", () => {
         communityId: "c1",
         payload: {},
         status: "pending",
-        retryCount: 4, // One retry left before permanent failure
+        retryCount: 4,
         maxRetries: 5,
         lastError: "Previous failures",
         createdAt: past,
@@ -208,7 +223,6 @@ describe("processOutboxBatch", () => {
 
     await processOutboxBatch(prisma, handler, 50);
 
-    // Should be permanently failed now
     const failUpdate = prisma._updated.find(
       (u: any) => u.where.id === "evt-exhausted" && u.data.status === "failed",
     );
@@ -258,6 +272,10 @@ describe("processOutboxBatch", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Tests: createOutboxWorker
+// ---------------------------------------------------------------------------
+
 describe("createOutboxWorker", () => {
   test("start and stop lifecycle", () => {
     jest.useFakeTimers();
@@ -265,15 +283,19 @@ describe("createOutboxWorker", () => {
     const prisma = makePrismaWithEvents([]);
     const handler: OutboxEventHandler = jest.fn();
 
-    const worker = createOutboxWorker(5000, handler, prisma as any, 10);
+    const worker = createOutboxWorker({
+      intervalMs: 5000,
+      handler,
+      db: prisma,
+      maxBatchSize: 10,
+    });
 
-    // Start runs immediately, then schedules
     worker.start();
 
-    // Fast-forward past the immediate run
+    expect(worker.shards.length).toBe(1);
+
     jest.advanceTimersByTime(100);
 
-    // Stop should clear the timer
     worker.stop();
 
     jest.useRealTimers();
@@ -305,10 +327,69 @@ describe("createOutboxWorker", () => {
       deliveredIds.push(event.id);
     };
 
-    const worker = createOutboxWorker(5000, handler, prisma as any, 10);
+    const worker = createOutboxWorker({
+      intervalMs: 5000,
+      handler,
+      db: prisma,
+      maxBatchSize: 10,
+    });
     const result = await worker.runOnce();
 
     expect(result.delivered).toBe(1);
     expect(deliveredIds).toContain("evt-once");
+  });
+
+  test("supports multiple worker shards", () => {
+    jest.useFakeTimers();
+
+    const prisma = makePrismaWithEvents([]);
+    const handler: OutboxEventHandler = jest.fn();
+
+    const worker = createOutboxWorker({
+      intervalMs: 5000,
+      handler,
+      db: prisma,
+      maxBatchSize: 10,
+      workerCount: 3,
+    });
+
+    worker.start();
+
+    expect(worker.shards.length).toBe(3);
+    expect(worker.shards[0].id).toBe(0);
+    expect(worker.shards[1].id).toBe(1);
+    expect(worker.shards[2].id).toBe(2);
+
+    worker.stop();
+
+    jest.useRealTimers();
+  });
+
+  test("start is idempotent (second call is a no-op)", () => {
+    jest.useFakeTimers();
+
+    const prisma = makePrismaWithEvents([]);
+    const handler: OutboxEventHandler = jest.fn();
+
+    const worker = createOutboxWorker({
+      intervalMs: 5000,
+      handler,
+      db: prisma,
+      maxBatchSize: 10,
+      workerCount: 2,
+    });
+
+    worker.start();
+    const shardCount1 = worker.shards.length;
+
+    worker.start();
+    const shardCount2 = worker.shards.length;
+
+    expect(shardCount1).toBe(2);
+    expect(shardCount2).toBe(2); // No additional shards on second start
+
+    worker.stop();
+
+    jest.useRealTimers();
   });
 });

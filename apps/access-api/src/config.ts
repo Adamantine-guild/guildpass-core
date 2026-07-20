@@ -61,6 +61,16 @@ const ConfigSchema = z.object({
     .int()
     .positive()
     .default(50),
+  outboxWorkerCount: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(1),
+  outboxWorkerMinBatchSize: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(5),
 
   // Indexer worker
   indexerIntervalMs: z.coerce
@@ -111,6 +121,8 @@ function validateConfig(): Config {
     reconciliationIntervalMs: process.env.RECONCILIATION_INTERVAL_MS,
     outboxWorkerIntervalMs: process.env.OUTBOX_WORKER_INTERVAL_MS,
     outboxWorkerBatchSize: process.env.OUTBOX_WORKER_BATCH_SIZE,
+    outboxWorkerCount: process.env.OUTBOX_WORKER_COUNT,
+    outboxWorkerMinBatchSize: process.env.OUTBOX_WORKER_MIN_BATCH_SIZE,
     indexerIntervalMs: process.env.INDEXER_INTERVAL_MS,
     indexerFinalityWindow: process.env.INDEXER_FINALITY_WINDOW,
     rateLimitEnabled: process.env.RATE_LIMIT_ENABLED,
