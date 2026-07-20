@@ -141,8 +141,20 @@ describe("Two-instance outbox worker concurrency", () => {
         if (event.communityId === SUITE_COMMUNITY_ID) deliveredByWorkerB.push(event.id);
       };
 
-      const workerA = createOutboxWorker(60_000, handlerA, prisma, 1200, "worker-A");
-      const workerB = createOutboxWorker(60_000, handlerB, prisma, 1200, "worker-B");
+      const workerA = createOutboxWorker({
+        intervalMs: 60_000,
+        handler: handlerA,
+        db: prisma,
+        maxBatchSize: 1200,
+        workerId: "worker-A",
+      });
+      const workerB = createOutboxWorker({
+        intervalMs: 60_000,
+        handler: handlerB,
+        db: prisma,
+        maxBatchSize: 1200,
+        workerId: "worker-B",
+      });
 
       const [resultA, resultB] = await Promise.all([
         workerA.runOnce(),
@@ -209,7 +221,13 @@ describe("Two-instance outbox worker concurrency", () => {
       const handler: OutboxEventHandler = async (event) => {
         if (event.communityId === SUITE_COMMUNITY_ID) delivered.push(event.id);
       };
-      const workerB = createOutboxWorker(60_000, handler, prisma, 10, "worker-B");
+      const workerB = createOutboxWorker({
+        intervalMs: 60_000,
+        handler,
+        db: prisma,
+        maxBatchSize: 10,
+        workerId: "worker-B",
+      });
       const result = await workerB.runOnce();
 
       expect(result.delivered).toBeGreaterThanOrEqual(1);
@@ -255,7 +273,13 @@ describe("Two-instance outbox worker concurrency", () => {
       const handler: OutboxEventHandler = async (event) => {
         if (event.communityId === SUITE_COMMUNITY_ID) delivered.push(event.id);
       };
-      const worker = createOutboxWorker(60_000, handler, prisma, 50, `solo-${randomUUID()}`);
+      const worker = createOutboxWorker({
+        intervalMs: 60_000,
+        handler,
+        db: prisma,
+        maxBatchSize: 50,
+        workerId: `solo-${randomUUID()}`,
+      });
       const result = await worker.runOnce();
 
       expect(result.errors).toBe(0);

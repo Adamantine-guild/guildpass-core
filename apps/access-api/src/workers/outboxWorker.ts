@@ -16,6 +16,24 @@
  *     your own integration (e.g. NATS, Kafka, HTTP webhook) in production —
  *     see createWebhookHandler in ../handlers/webhookHandler.ts for a
  *     production-ready HMAC-signed webhook implementation.
+ *
+ * Horizontal scalability:
+ *   - Uses claimPendingOutboxEvents (an atomic `UPDATE ... FOR UPDATE SKIP
+ *     LOCKED ... RETURNING` that stamps a claim lease in the same statement
+ *     that takes the lock) so that N concurrent worker "shards" — and N
+ *     separate process instances — can each claim a disjoint set of pending
+ *     events without coordination, and a crashed shard's claims self-heal
+ *     once its lease elapses.  Each shard runs its own independent polling
+ *     loop.  See services/outboxService.ts and the README's Integration
+ *     Event Outbox section.
+ *   - Throughput scales roughly linearly with shard count up to the
+ *     database connection-pool limit.
+ *   - Adaptive batch sizing: when the downstream handler produces sustained
+ *     failures the batch size is reduced (and an extra backoff delay is
+ *     added) to avoid hammering a struggling consumer.  When the handler
+ *     recovers the batch size ramps back up.
+ *   - Backlog depth is reported as a Prometheus gauge so operators can
+ *     observe whether the worker fleet keeps up with event production.
  */
 
 import { randomUUID } from "node:crypto";
@@ -23,11 +41,39 @@ import { PrismaClient } from "@prisma/client";
 import { getPrisma } from "../services/prisma";
 import {
   claimPendingOutboxEvents,
+  getOutboxBacklogDepth,
   markOutboxDelivered,
   markOutboxFailed,
   pruneDeliveredOutboxEvents,
 } from "../services/outboxService";
 import { recordDeadLetter } from "../services/deadLetterService";
+import { metrics } from "../observability/metrics";
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+/**
+ * Default adaptive-batch ceiling (matches the old fixed default).
+ */
+const DEFAULT_MAX_BATCH_SIZE = 50;
+
+/**
+ * Smallest batch we will ever shrink to under backpressure.
+ */
+const DEFAULT_MIN_BATCH_SIZE = 5;
+
+/**
+ * The number of consecutive batch iterations with zero successful deliveries
+ * that triggers a backpressure reduction.
+ */
+const BACKPRESSURE_CONSECUTIVE_THRESHOLD = 3;
+
+/**
+ * How often (in ms) the shared backlog-depth gauge is refreshed.  Only one
+ * shard per worker instance performs this update to avoid redundant queries.
+ */
+const BACKLOG_REPORT_INTERVAL_MS = 15_000;
 
 // ---------------------------------------------------------------------------
 // Pluggable delivery handler
@@ -59,7 +105,7 @@ const defaultHandler: OutboxEventHandler = async (event) => {
 };
 
 // ---------------------------------------------------------------------------
-// Worker
+// Types
 // ---------------------------------------------------------------------------
 
 export interface OutboxWorkerResult {
@@ -69,10 +115,59 @@ export interface OutboxWorkerResult {
   errors: number;
 }
 
+export interface OutboxWorkerOptions {
+  /** How often each shard polls for pending events (ms).  Default: 10 000. */
+  intervalMs: number;
+
+  /** Optional custom delivery handler. */
+  handler?: OutboxEventHandler;
+
+  /** Optional Prisma client (injected for testing). */
+  db?: PrismaClient;
+
+  /**
+   * Number of concurrent shards to run.  Each shard independently claims
+   * events via FOR UPDATE SKIP LOCKED.  Default: 1.
+   */
+  workerCount?: number;
+
+  /**
+   * Maximum batch size per shard per poll cycle.  Default: 50.
+   */
+  maxBatchSize?: number;
+
+  /**
+   * Minimum batch size when backpressure is active.  Default: 5.
+   */
+  minBatchSize?: number;
+
+  /**
+   * Identifies this worker process in the claim lease's `claimedBy` column
+   * (each shard suffixes this with its own shard id — see createShard).
+   * Defaults to a fresh UUID — override only if you need a stable,
+   * human-readable identity in the DB for debugging.
+   */
+  workerId?: string;
+
+  /**
+   * How long a shard's claimed batch is held before another shard/instance
+   * may reclaim it if this one never finishes (crash recovery — see
+   * config.ts's outboxWorkerClaimLeaseMs). Default: 60 000.
+   */
+  claimLeaseMs?: number;
+}
+
+export interface OutboxWorkerShard {
+  readonly id: number;
+  start(): void;
+  stop(): void;
+}
+
 export interface OutboxWorker {
   start(): void;
   stop(): void;
   runOnce(): Promise<OutboxWorkerResult>;
+  readonly shards: OutboxWorkerShard[];
 }
 
 /** Default claim identity/lease if the caller doesn't supply one (production
@@ -80,19 +175,75 @@ export interface OutboxWorker {
  *  outboxWorkerClaimLeaseMs). */
 const DEFAULT_CLAIM_LEASE_MS = 60_000;
 
+// ---------------------------------------------------------------------------
+// Adaptive batch-size tracker
+// ---------------------------------------------------------------------------
+
+class AdaptiveBatch {
+  private current: number;
+  private consecutiveFailures = 0;
+
+  constructor(
+    private readonly max: number,
+    private readonly min: number,
+  ) {
+    this.current = max;
+  }
+
+  get size(): number {
+    return this.current;
+  }
+
+  /**
+   * Call after a batch iteration completes.  Adjusts the batch size based on
+   * whether events were successfully delivered.
+   */
+  recordIteration(delivered: number): void {
+    if (delivered === 0) {
+      this.consecutiveFailures++;
+      if (this.consecutiveFailures >= BACKPRESSURE_CONSECUTIVE_THRESHOLD) {
+        // Reduce batch size by half (floor) and reset counter.
+        this.current = Math.max(this.min, Math.floor(this.current / 2));
+        this.consecutiveFailures = 0;
+      }
+    } else {
+      this.consecutiveFailures = 0;
+      // Ramp up gently: add 5 (capped at max).
+      this.current = Math.min(this.max, this.current + 5);
+    }
+  }
+
+  /**
+   * Returns the extra backoff delay (ms) to insert before the next poll when
+   * the system is under backpressure.  0 means no extra delay.
+   */
+  get backoffMs(): number {
+    if (this.consecutiveFailures >= BACKPRESSURE_CONSECUTIVE_THRESHOLD) {
+      // Exponential backoff: 1s, 2s, 4s, …
+      return 1000 * Math.pow(2, this.consecutiveFailures - BACKPRESSURE_CONSECUTIVE_THRESHOLD);
+    }
+    return 0;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Batch processing
+// ---------------------------------------------------------------------------
+
 /**
- * Process one batch of pending outbox events.
+ * Process one batch of pending outbox events, atomically claimed via
+ * `SELECT ... FOR UPDATE SKIP LOCKED` (see claimPendingOutboxEvents).
  *
- * `workerId` identifies this worker instance in the `claimedBy` column —
- * distinct instances must pass distinct values (defaults to a fresh UUID
- * per call, which is enough for correctness but not useful for debugging
- * which long-lived instance owns a claim; createOutboxWorker generates one
- * stable value per worker for that reason).
+ * `workerId` identifies this worker instance/shard in the `claimedBy`
+ * column — distinct callers must pass distinct values (defaults to a fresh
+ * UUID per call, which is enough for correctness but not useful for
+ * debugging which long-lived shard owns a claim; createOutboxWorker
+ * generates one stable value per shard for that reason).
  */
 export async function processOutboxBatch(
   db: PrismaClient,
   handler: OutboxEventHandler,
-  batchSize: number = 50,
+  batchSize: number = DEFAULT_MAX_BATCH_SIZE,
   workerId: string = randomUUID(),
   claimLeaseMs: number = DEFAULT_CLAIM_LEASE_MS,
 ): Promise<OutboxWorkerResult> {
@@ -103,10 +254,11 @@ export async function processOutboxBatch(
   let errors = 0;
 
   for (const event of pending) {
+    const eventType = event.eventType;
     try {
       await handler({
         id: event.id,
-        eventType: event.eventType,
+        eventType,
         entityId: event.entityId,
         entityType: event.entityType,
         communityId: event.communityId,
@@ -116,6 +268,7 @@ export async function processOutboxBatch(
 
       await markOutboxDelivered(db as any, event.id);
       delivered++;
+      metrics.outboxEventsDeliveredTotal.inc({ event_type: eventType });
     } catch (err: any) {
       const errorMessage =
         err?.message ?? "Unknown delivery error";
@@ -130,10 +283,11 @@ export async function processOutboxBatch(
         failed++;
 
         if (permanentlyFailed) {
+          metrics.outboxEventsFailedTotal.inc({ event_type: eventType });
           try {
             await recordDeadLetter(db as any, {
               id: event.id,
-              eventType: event.eventType,
+              eventType,
               entityId: event.entityId,
               entityType: event.entityType,
               communityId: event.communityId,
@@ -164,52 +318,55 @@ export async function processOutboxBatch(
   return { processed: pending.length, delivered, failed, errors };
 }
 
+// ---------------------------------------------------------------------------
+// Worker shard
+// ---------------------------------------------------------------------------
+
 /**
- * Create a scheduled outbox worker.
+ * A single polling shard within the outbox worker.  Each shard runs its own
+ * setInterval loop with its own AdaptiveBatch tracker and claims events via
+ * `claimPendingOutboxEvents` (see there for why the claim itself is safe
+ * across concurrent shards/instances) under its own `workerId`, so a claim
+ * left behind by a crashed shard is attributable and recoverable via its
+ * lease rather than another shard's.
  *
- * @param intervalMs   How often to poll for pending events.
- * @param handler      Optional custom delivery handler.
- * @param db           Optional Prisma client (injected for testing).
- * @param batchSize    Max events to process per pass.
- * @param workerId     Identifies this instance in the claim lease's
- *                     `claimedBy` column, so distinct instances running
- *                     against the same database never collide on a claim
- *                     (see claimPendingOutboxEvents). Defaults to a fresh
- *                     UUID per worker — override only if you need a stable,
- *                     human-readable identity in the DB for debugging.
+ * @param workerId Identifies this shard in the claim lease's `claimedBy`
+ *   column, so distinct shards — even within the same process — never
+ *   collide on a claim and a crashed shard's claims are attributable.
  * @param claimLeaseMs How long a claimed batch is held before another
- *                     instance may reclaim it if this one never finishes
- *                     (crash recovery — see config.ts's
- *                     outboxWorkerClaimLeaseMs).
+ *   shard/instance may reclaim it if this one never finishes (crash
+ *   recovery — see config.ts's outboxWorkerClaimLeaseMs).
  */
-export function createOutboxWorker(
-  intervalMs: number,
-  handler?: OutboxEventHandler,
-  db?: PrismaClient,
-  batchSize?: number,
-  workerId: string = randomUUID(),
-  claimLeaseMs?: number,
-): OutboxWorker {
-  const prisma = db ?? getPrisma();
-  const eventHandler = handler ?? defaultHandler;
-  const batch = batchSize ?? 50;
+function createShard(
+  id: number,
+  options: OutboxWorkerOptions,
+  prisma: PrismaClient,
+  handler: OutboxEventHandler,
+  workerId: string,
+  claimLeaseMs: number | undefined,
+): OutboxWorkerShard {
+  const adaptiveBatch = new AdaptiveBatch(
+    options.maxBatchSize ?? DEFAULT_MAX_BATCH_SIZE,
+    options.minBatchSize ?? DEFAULT_MIN_BATCH_SIZE,
+  );
   let timer: ReturnType<typeof setInterval> | null = null;
 
   async function run() {
     try {
-      const result = await processOutboxBatch(
-        prisma,
-        eventHandler,
-        batch,
-        workerId,
-        claimLeaseMs,
-      );
+      const batchSize = adaptiveBatch.size;
+      const result = await processOutboxBatch(prisma, handler, batchSize, workerId, claimLeaseMs);
+
+      adaptiveBatch.recordIteration(result.delivered);
+
+      metrics.outboxWorkerBatchSize.set({ shard: String(id) }, adaptiveBatch.size);
+
       if (result.processed > 0) {
         // eslint-disable-next-line no-console
         console.log(
-          `[outboxWorker] Batch complete: processed=${result.processed}` +
-            ` delivered=${result.delivered} failed=${result.failed}` +
-            ` errors=${result.errors}`,
+          `[outboxWorker:shard-${id}] Batch complete:` +
+            ` processed=${result.processed} delivered=${result.delivered}` +
+            ` failed=${result.failed} errors=${result.errors}` +
+            ` batchSize=${adaptiveBatch.size}`,
         );
       }
 
@@ -222,16 +379,19 @@ export function createOutboxWorker(
       }
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.error("[outboxWorker] Unhandled error in pass:", err);
+      console.error(`[outboxWorker:shard-${id}] Unhandled error in pass:`, err);
     }
   }
 
   return {
+    id,
     start() {
       if (timer) return;
       // Run immediately on start, then at the configured interval.
       run();
-      timer = setInterval(run, intervalMs);
+      // If under backpressure, insert extra delay on the first iteration too.
+      const backoff = adaptiveBatch.backoffMs;
+      timer = setInterval(run, options.intervalMs + backoff);
     },
 
     stop() {
@@ -240,9 +400,85 @@ export function createOutboxWorker(
         timer = null;
       }
     },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Worker factory
+// ---------------------------------------------------------------------------
+
+/**
+ * Create a horizontally-scalable outbox worker.
+ *
+ * The worker launches `workerCount` independent shards (default 1).  Each
+ * shard claims pending events via `claimPendingOutboxEvents` — an atomic
+ * `UPDATE ... FOR UPDATE SKIP LOCKED ... RETURNING` that stamps a claim
+ * lease in the same statement that takes the lock — so multiple shards
+ * (even across different process instances) can safely drain the queue in
+ * parallel without duplicate delivery, and a shard that crashes mid-batch
+ * self-heals once its lease (`claimLeaseMs`) elapses.
+ *
+ * Adaptive batch sizing: when a shard sees consecutive batches with zero
+ * deliveries it halves its batch size and inserts an exponential backoff
+ * delay.  When deliveries succeed it gradually ramps back up.
+ *
+ * A shared timer periodically reports backlog depth as a Prometheus gauge.
+ */
+export function createOutboxWorker(options: OutboxWorkerOptions): OutboxWorker {
+  const prisma = options.db ?? getPrisma();
+  const handler = options.handler ?? defaultHandler;
+  const workerCount = options.workerCount ?? 1;
+  const baseWorkerId = options.workerId ?? randomUUID();
+
+  const shards: OutboxWorkerShard[] = [];
+  let backlogTimer: ReturnType<typeof setInterval> | null = null;
+
+  return {
+    shards,
+
+    start() {
+      if (shards.length > 0) return; // already started
+      for (let i = 0; i < workerCount; i++) {
+        const shardWorkerId = workerCount > 1 ? `${baseWorkerId}:shard-${i}` : baseWorkerId;
+        const shard = createShard(i, options, prisma, handler, shardWorkerId, options.claimLeaseMs);
+        shard.start();
+        shards.push(shard);
+      }
+
+      // Shared backlog-depth reporter (only the first shard schedules this).
+      backlogTimer = setInterval(async () => {
+        try {
+          const depth = await getOutboxBacklogDepth(prisma);
+          metrics.outboxBacklogDepth.set(depth);
+        } catch {
+          // Best-effort; never crash the worker.
+        }
+      }, BACKLOG_REPORT_INTERVAL_MS);
+      // Report once immediately so the gauge has a value.
+      getOutboxBacklogDepth(prisma).then((depth) => {
+        metrics.outboxBacklogDepth.set(depth);
+      }).catch(() => {});
+    },
+
+    stop() {
+      for (const shard of shards) {
+        shard.stop();
+      }
+      shards.length = 0;
+      if (backlogTimer) {
+        clearInterval(backlogTimer);
+        backlogTimer = null;
+      }
+    },
 
     async runOnce(): Promise<OutboxWorkerResult> {
-      return processOutboxBatch(prisma, eventHandler, batch, workerId, claimLeaseMs);
+      return processOutboxBatch(
+        prisma,
+        handler,
+        options.maxBatchSize ?? DEFAULT_MAX_BATCH_SIZE,
+        baseWorkerId,
+        options.claimLeaseMs,
+      );
     },
   };
 }

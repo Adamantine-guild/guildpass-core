@@ -8,6 +8,18 @@ import {
   DeadLetterNotFoundError,
   DeadLetterAlreadyResolvedError,
 } from './services/deadLetterService';
+import {
+  getMembershipsSchema,
+  getMemberProfileSchema,
+  assignMemberRoleSchema,
+  removeMemberRoleSchema,
+  createAccessOverrideSchema,
+  revokeAccessOverrideSchema,
+  accessCheckSchema,
+  listCommunityMembersSchema,
+  listDeadLetterEventsSchema,
+  retryDeadLetterEventSchema,
+} from './schemas';
 
 function getRequesterWallet(request: FastifyRequest): string {
   const header = request.headers['x-wallet'] ?? request.headers['x-user-wallet'] ?? request.headers['x-requester-wallet'];
@@ -40,14 +52,14 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   const memberService = getMemberService(prisma);
 
   // GET /v1/communities/:communityId/memberships/:wallet — list membership communities for a wallet
-  app.get('/v1/communities/:communityId/memberships/:wallet', async (request: FastifyRequest, reply: FastifyReply) => {
+  app.get('/v1/communities/:communityId/memberships/:wallet', { schema: getMembershipsSchema }, async (request: FastifyRequest, reply: FastifyReply) => {
     const { communityId, wallet } = request.params as { communityId: string; wallet: string };
     const result = await memberService.getMembershipsByWallet(wallet, communityId);
     return result;
   });
 
   // GET /v1/communities/:communityId/members/:wallet — get member profile
-  app.get('/v1/communities/:communityId/members/:wallet', async (request: FastifyRequest, reply: FastifyReply) => {
+  app.get('/v1/communities/:communityId/members/:wallet', { schema: getMemberProfileSchema }, async (request: FastifyRequest, reply: FastifyReply) => {
     const { communityId, wallet } = request.params as { communityId: string; wallet: string };
     const result = await memberService.getProfileByWallet(wallet, communityId);
     if (!result) {
@@ -57,7 +69,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // POST /v1/communities/:communityId/members/:wallet/roles — assign a role to a member
-  app.post('/v1/communities/:communityId/members/:wallet/roles', async (request: FastifyRequest, reply: FastifyReply) => {
+  app.post('/v1/communities/:communityId/members/:wallet/roles', { schema: assignMemberRoleSchema }, async (request: FastifyRequest, reply: FastifyReply) => {
     const { communityId, wallet } = request.params as { communityId: string; wallet: string };
     const body = request.body as { role?: string };
     const role = body?.role ?? '';
@@ -91,7 +103,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // DELETE /v1/communities/:communityId/members/:wallet/roles/:role — remove an assigned role
-  app.delete('/v1/communities/:communityId/members/:wallet/roles/:role', async (request: FastifyRequest, reply: FastifyReply) => {
+  app.delete('/v1/communities/:communityId/members/:wallet/roles/:role', { schema: removeMemberRoleSchema }, async (request: FastifyRequest, reply: FastifyReply) => {
     const { communityId, wallet, role } = request.params as { communityId: string; wallet: string; role: string };
     const requesterWallet = getRequesterWallet(request);
 
@@ -123,7 +135,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // POST /v1/communities/:communityId/overrides — create or update an access override for a wallet/resource
-  app.post('/v1/communities/:communityId/overrides', async (request: FastifyRequest, reply: FastifyReply) => {
+  app.post('/v1/communities/:communityId/overrides', { schema: createAccessOverrideSchema }, async (request: FastifyRequest, reply: FastifyReply) => {
     const { communityId } = request.params as { communityId: string };
     const body = request.body as {
       wallet?: string;
@@ -155,7 +167,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // DELETE /v1/communities/:communityId/overrides/:wallet/:resource — revoke an access override
-  app.delete('/v1/communities/:communityId/overrides/:wallet/:resource', async (request: FastifyRequest, reply: FastifyReply) => {
+  app.delete('/v1/communities/:communityId/overrides/:wallet/:resource', { schema: revokeAccessOverrideSchema }, async (request: FastifyRequest, reply: FastifyReply) => {
     const { communityId, wallet, resource } = request.params as { communityId: string; wallet: string; resource: string };
     const requesterWallet = getRequesterWallet(request);
     try {
@@ -173,7 +185,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // POST /v1/access/check — check access for wallet/resource
-  app.post('/v1/access/check', async (request: FastifyRequest, reply: FastifyReply) => {
+  app.post('/v1/access/check', { schema: accessCheckSchema }, async (request: FastifyRequest, reply: FastifyReply) => {
     const body = request.body as {
       wallet: `0x${string}`;
       communityId: string;
@@ -189,7 +201,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // GET /v1/communities/:communityId/members — list members for admin
-  app.get('/v1/communities/:communityId/members', async (request: FastifyRequest, reply: FastifyReply) => {
+  app.get('/v1/communities/:communityId/members', { schema: listCommunityMembersSchema }, async (request: FastifyRequest, reply: FastifyReply) => {
     const { communityId } = request.params as { communityId: string };
     const role = (request.query as { role?: string })?.role;
     // Ensure caller is an authenticated community admin by reusing mutation auth check.
@@ -231,7 +243,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
   // GET /v1/communities/:communityId/dead-letter-events — inspect webhook
   // deliveries that exhausted the outbox's retry budget
-  app.get('/v1/communities/:communityId/dead-letter-events', async (request: FastifyRequest, reply: FastifyReply) => {
+  app.get('/v1/communities/:communityId/dead-letter-events', { schema: listDeadLetterEventsSchema }, async (request: FastifyRequest, reply: FastifyReply) => {
     const { communityId } = request.params as { communityId: string };
     const { status } = request.query as { status?: 'pending' | 'retried' | 'resolved' };
     const requesterWallet = getRequesterWallet(request);
@@ -251,7 +263,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
   // POST /v1/communities/:communityId/dead-letter-events/:id/retry — re-enqueue
   // a dead-lettered event as a fresh pending OutboxEvent
-  app.post('/v1/communities/:communityId/dead-letter-events/:id/retry', async (request: FastifyRequest, reply: FastifyReply) => {
+  app.post('/v1/communities/:communityId/dead-letter-events/:id/retry', { schema: retryDeadLetterEventSchema }, async (request: FastifyRequest, reply: FastifyReply) => {
     const { communityId, id } = request.params as { communityId: string; id: string };
     const requesterWallet = getRequesterWallet(request);
     try {

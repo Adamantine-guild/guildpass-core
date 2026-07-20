@@ -16,7 +16,7 @@
  * Dependencies: prom-client
  */
 
-import { Registry, Counter, Histogram, collectDefaultMetrics } from 'prom-client';
+import { Registry, Counter, Histogram, Gauge, collectDefaultMetrics } from 'prom-client';
 
 // --------------------------------------------------------------------------
 // Registry
@@ -119,6 +119,28 @@ const outboxEventsFailedTotal = new Counter({
   registers: [registry],
 });
 
+/**
+ * Backlog depth: current count of pending events that are due for processing.
+ * A rising backlog indicates the worker(s) cannot keep up with the production
+ * rate and that more worker instances (or a larger batch size) may be needed.
+ */
+const outboxBacklogDepth = new Gauge({
+  name: 'outbox_backlog_depth',
+  help: 'Number of pending outbox events currently due for processing',
+  registers: [registry],
+});
+
+/**
+ * Tracks the current adaptive batch size of each worker shard so operators
+ * can observe backpressure-driven reductions.
+ */
+const outboxWorkerBatchSize = new Gauge({
+  name: 'outbox_worker_batch_size',
+  help: 'Current adaptive batch size per outbox worker shard',
+  labelNames: ['shard'] as const,
+  registers: [registry],
+});
+
 // --------------------------------------------------------------------------
 // Exported handle
 // --------------------------------------------------------------------------
@@ -131,4 +153,6 @@ export const metrics = {
   outboxEventsCreatedTotal,
   outboxEventsDeliveredTotal,
   outboxEventsFailedTotal,
+  outboxBacklogDepth,
+  outboxWorkerBatchSize,
 };

@@ -194,7 +194,7 @@ describe("dead-letter fallback after repeated failure", () => {
 
     await processOutboxBatch(db, alwaysFails, 50); // exhausts the single retry -> dead-lettered
     // A subsequent worker pass should no longer pick this event up at all,
-    // since getPendingOutboxEvents only selects status="pending" rows.
+    // since claimPendingOutboxEvents only selects status="pending" rows.
     await processOutboxBatch(db, alwaysFails, 50);
 
     const deadLetters = await listDeadLetterEvents(db, { communityId: "community-1" });

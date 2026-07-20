@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import type { PrismaClient } from "@prisma/client";
 import type { OutboxEventType, OutboxDispatchResult } from "@guildpass/shared-types";
 
@@ -206,8 +207,10 @@ export interface ClaimedOutboxEvent {
 
 /**
  * Atomically claim up to `limit` pending, due outbox events for this worker
- * instance via `SELECT ... FOR UPDATE SKIP LOCKED`, so that two worker
- * instances polling the same table concurrently never claim the same row.
+ * instance/shard via `SELECT ... FOR UPDATE SKIP LOCKED`, so that two
+ * workers polling the same table concurrently never claim the same row.
+ * This is the safe claim primitive — see claimPendingOutboxEventsWithLock
+ * below for why that alternative is not.
  *
  * This is a single `UPDATE ... RETURNING` statement — the claim lease
  * (claimExpiresAt) is stamped in the same statement that locks the rows via
@@ -260,6 +263,69 @@ export async function claimPendingOutboxEvents(
     const byCreatedAt = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
     return byCreatedAt !== 0 ? byCreatedAt : a.id.localeCompare(b.id);
   });
+}
+
+/**
+ * @deprecated Do not wire this into any worker path — it does not actually
+ * prevent duplicate delivery. Kept for history/reference only; use
+ * claimPendingOutboxEvents above instead.
+ *
+ * This runs `SELECT ... FOR UPDATE SKIP LOCKED` as a single standalone
+ * `$queryRaw` call, not wrapped in an explicit transaction. Prisma commits a
+ * non-transactional raw query as soon as it returns, which releases the
+ * `FOR UPDATE` row lock immediately — before the caller has done anything
+ * with the claimed rows. Nothing here writes a durable "claimed" marker
+ * (no claimedAt/claimedBy/status change), so the moment this function
+ * returns, the rows it "claimed" are indistinguishable from unclaimed ones:
+ * status is still 'pending' and no lock is held. A second caller polling
+ * while the first is still running its handler against those rows (e.g.
+ * during a webhook HTTP call) will claim and deliver the same rows again.
+ *
+ * Verified against a real Postgres instance: two sequential, independent
+ * `SELECT ... FOR UPDATE SKIP LOCKED` calls with no update in between both
+ * returned the identical row set. claimPendingOutboxEvents avoids this by
+ * stamping the claim lease in the same UPDATE statement that takes the
+ * lock, so the claim is a durable row value rather than a lock that has to
+ * outlive a single query.
+ *
+ * @returns Array of claimed outbox event rows (with all Prisma column names).
+ */
+export async function claimPendingOutboxEventsWithLock(
+  db: PrismaClient,
+  limit: number = 50,
+): Promise<any[]> {
+  const now = new Date();
+  const rows: any[] = await db.$queryRaw(
+    Prisma.sql`
+      SELECT *
+      FROM "OutboxEvent"
+      WHERE status = 'pending' AND "nextRetryAt" <= ${now}
+      ORDER BY "createdAt" ASC
+      LIMIT ${limit}
+      FOR UPDATE SKIP LOCKED
+    `,
+  );
+  return rows;
+}
+
+/**
+ * Count the number of pending outbox events that are currently due for
+ * processing (status = 'pending' AND nextRetryAt <= now).  Exposed as a
+ * Prometheus gauge so operators can observe whether the worker fleet is
+ * keeping up with the event production rate.
+ */
+export async function getOutboxBacklogDepth(
+  db: PrismaClient,
+): Promise<number> {
+  const now = new Date();
+  const result: Array<{ count: bigint }> = await db.$queryRaw(
+    Prisma.sql`
+      SELECT COUNT(*)::bigint AS count
+      FROM "OutboxEvent"
+      WHERE status = 'pending' AND "nextRetryAt" <= ${now}
+    `,
+  );
+  return Number(result[0]?.count ?? 0);
 }
 
 /**
