@@ -45,7 +45,7 @@ function getNormalizedMembershipState(
   return state;
 }
 
-function accessDecisionCacheKey({
+export function accessDecisionCacheKey({
   communityId,
   wallet,
   resource,
