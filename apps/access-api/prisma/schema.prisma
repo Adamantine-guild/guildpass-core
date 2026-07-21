@@ -81,6 +81,7 @@ model Member {
   membership  Membership?
   roles       RoleAssignment[]
   badges      Badge[]
+  appeals     Appeal[]
 
   @@unique([communityId, walletId])
 }
@@ -478,4 +479,24 @@ model Session {
   expiresAt     DateTime
   createdAt     DateTime @default(now())
 }
+
+enum AppealStatus {
+  filed
+  under_review
+  upheld
+  reinstated
+}
+
+model Appeal {
+  id           String       @id @default(uuid())
+  memberId     String
+  reason       String
+  status       AppealStatus @default(filed)
+  adminComment String?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  member       Member       @relation(fields: [memberId], references: [id])
+}
+
 

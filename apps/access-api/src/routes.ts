@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { getMemberService, MemberServiceError } from './services/memberService';
 import { getIdentityService, IdentityServiceError } from './services/identityService';
+import { getModerationService, ModerationError } from './services/moderation/moderationService';
 import { getPrisma } from './services/prisma';
 import { notFound, validationError, validationErrorWithReason } from './errors';
 import {
@@ -58,6 +59,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   const prisma = getPrisma();
   const memberService = getMemberService(prisma);
   const identityService = getIdentityService(prisma);
+  const moderationService = getModerationService(prisma);
 
   // --- SIWE Authentication Routes ---
 
@@ -181,6 +183,51 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
         return reply.send({ primaryWallet, linkedWallets });
       } catch (error) {
         if (error instanceof IdentityServiceError) {
+          return reply.status(error.statusCode).send({ error: error.message });
+        }
+        throw error;
+      }
+    }
+  );
+
+  // --- Appeals and Moderation Routes ---
+
+  // File an appeal for a suspended member
+  app.post(
+    '/v1/memberships/:wallet/appeals',
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { wallet } = request.params as { wallet: string };
+      const { communityId, reason } = request.body as { communityId: string; reason: string };
+      if (!communityId || !reason) {
+        return reply.status(400).send({ error: 'Missing communityId or reason' });
+      }
+      try {
+        const result = await moderationService.fileAppeal(wallet, communityId, reason);
+        return reply.send(result);
+      } catch (error) {
+        if (error instanceof ModerationError) {
+          return reply.status(error.statusCode).send({ error: error.message });
+        }
+        throw error;
+      }
+    }
+  );
+
+  // Transition an appeal status (Admin only)
+  app.post(
+    '/v1/appeals/:appealId/transition',
+    { preHandler: [authenticateApiKey] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { appealId } = request.params as { appealId: string };
+      const { status, adminComment } = request.body as { status: string; adminComment?: string };
+      if (!status) {
+        return reply.status(400).send({ error: 'Missing status' });
+      }
+      try {
+        const result = await moderationService.transitionAppeal(appealId, status as any, adminComment);
+        return reply.send(result);
+      } catch (error) {
+        if (error instanceof ModerationError) {
           return reply.status(error.statusCode).send({ error: error.message });
         }
         throw error;

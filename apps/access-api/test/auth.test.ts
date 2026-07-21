@@ -33,6 +33,7 @@ const mockPrisma = {
   community: {
     findUnique: jest.fn(),
   },
+  $transaction: jest.fn().mockImplementation((cb) => cb(mockPrisma)),
 };
 
 // Mock the prisma service
@@ -218,7 +219,7 @@ describe('Authentication & Security Integration Tests', () => {
     test('should reject admin request if API key is missing or invalid', async () => {
       const response = await app.inject({
         method: 'POST',
-        url: '/v1/communities/community-1/members/0xmember/roles',
+        url: '/v1/communities/community-1/members/0x1111111111111111111111111111111111111111/roles',
         payload: {
           role: 'admin',
         },
