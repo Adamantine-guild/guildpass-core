@@ -499,4 +499,21 @@ model Appeal {
   member       Member       @relation(fields: [memberId], references: [id])
 }
 
+model IndexerCheckpoint {
+  chainId             Int      @id
+  lastProcessedBlock  Int
+  lastProcessedBlockHash String
+  updatedAt           DateTime @updatedAt
+}
+
+model BlockHeader {
+  chainId             Int
+  blockNumber         Int
+  blockHash           String
+
+  @@id([chainId, blockNumber])
+  @@index([blockNumber])
+}
+
+
 
