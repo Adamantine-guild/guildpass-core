@@ -23,8 +23,8 @@ model Wallet {
   primaryLinkedWallets  LinkedWallet[]  @relation("primaryWallet")
   // Wallet linking: this wallet is linked to a primary
   secondaryLinkedWallets LinkedWallet[] @relation("secondaryWallet")
-  // Stored challenges for this wallet as primary
-  challenges            Challenge[]
+  challenges            Challenge[] @relation("challengePrimaryWallet")
+  secondaryChallenges   Challenge[] @relation("challengeSecondaryWallet")
 }
 
 // --- Wallet Linking Models ---
@@ -463,3 +463,19 @@ model DeadLetterEvent {
   @@index([createdAt])
   @@index([originalEventId])
 }
+
+model SiweNonce {
+  id        String   @id @default(uuid())
+  nonce     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
+
+model Session {
+  id            String   @id @default(uuid())
+  walletAddress String
+  token         String   @unique
+  expiresAt     DateTime
+  createdAt     DateTime @default(now())
+}
+

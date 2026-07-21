@@ -296,10 +296,10 @@ export function getMemberService(prismaClient: PrismaClient) {
         membershipState = "active";
         break; // No need to check further if we have an active one
       }
-      if (state === "suspended" && membershipState !== "active") {
+      if (state === "suspended") {
         membershipState = "suspended";
       }
-      if (state === "expired" && membershipState !== "active" && membershipState !== "suspended") {
+      if (state === "expired" && membershipState !== "suspended") {
         membershipState = "expired";
       }
     }

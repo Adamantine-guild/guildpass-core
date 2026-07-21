@@ -774,7 +774,7 @@ describe('GovernanceService', () => {
   describe('evaluateGovernanceRule', () => {
     const roleContext = {
       membershipState: 'active' as const,
-      assignments: [{ role: 'admin' as const, source: 'manual', active: true }],
+      assignments: [{ role: 'admin' as const, source: 'manual' as const, active: true }],
     };
 
     beforeEach(() => {
@@ -803,7 +803,7 @@ describe('GovernanceService', () => {
 
       const noAdminContext = {
         membershipState: 'active' as const,
-        assignments: [{ role: 'member' as const, source: 'auto', active: true }],
+        assignments: [{ role: 'member' as const, source: 'auto' as const, active: true }],
       };
 
       const result = await service.evaluateGovernanceRule({
