@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { getMemberService, MemberServiceError } from './services/memberService';
+import { getIdentityService, IdentityServiceError } from './services/identityService';
 import { getPrisma } from './services/prisma';
 import { notFound, validationError, validationErrorWithReason } from './errors';
 import {
@@ -8,6 +9,7 @@ import {
   DeadLetterNotFoundError,
   DeadLetterAlreadyResolvedError,
 } from './services/deadLetterService';
+import { Challenge, LinkWalletInput, WalletAddress } from '@guildpass/shared-types';
 import {
   getMembershipsSchema,
   getMemberProfileSchema,
@@ -50,6 +52,69 @@ function sendRoleMutationError(reply: FastifyReply, error: unknown) {
 export async function registerRoutes(app: FastifyInstance): Promise<void> {
   const prisma = getPrisma();
   const memberService = getMemberService(prisma);
+  const identityService = getIdentityService(prisma);
+
+  // --- Wallet Linking Routes ---
+
+  // Generate a challenge
+  app.post(
+    '/v1/wallets/:primaryWallet/challenges',
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { primaryWallet } = request.params as { primaryWallet: string };
+      const { secondaryWallet } = request.body as { secondaryWallet: string };
+      try {
+        const challenge = await identityService.generateChallenge(
+          primaryWallet as WalletAddress, secondaryWallet as WalletAddress);
+        return reply.send(challenge);
+      } catch (error) {
+        if (error instanceof IdentityServiceError) {
+          return reply.status(error.statusCode).send({ error: error.message });
+        }
+        throw error;
+      }
+    }
+  );
+
+  // Link a wallet using a challenge and signature
+  app.post(
+    '/v1/wallets/:primaryWallet/link',
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { primaryWallet } = request.params as { primaryWallet: string };
+      const { challenge, signature } = request.body as {
+        challenge: Challenge,
+        signature: string
+      };
+      try {
+        const linkResult = await identityService.linkWallet({
+          challenge,
+          signature
+        });
+        return reply.send(linkResult);
+      } catch (error) {
+        if (error instanceof IdentityServiceError) {
+          return reply.status(error.statusCode).send({ error: error.message });
+        }
+        throw error;
+      }
+    }
+  );
+
+  // Get linked wallets for a primary wallet
+  app.get(
+    '/v1/wallets/:primaryWallet/linked',
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { primaryWallet } = request.params as { primaryWallet: string };
+      try {
+        const linkedWallets = await identityService.getLinkedWallets(primaryWallet as WalletAddress);
+        return reply.send({ primaryWallet, linkedWallets });
+      } catch (error) {
+        if (error instanceof IdentityServiceError) {
+          return reply.status(error.statusCode).send({ error: error.message });
+        }
+        throw error;
+      }
+    }
+  );
 
   // GET /v1/communities/:communityId/memberships/:wallet — list membership communities for a wallet
   app.get('/v1/communities/:communityId/memberships/:wallet', { schema: getMembershipsSchema }, async (request: FastifyRequest, reply: FastifyReply) => {
