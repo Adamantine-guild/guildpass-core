@@ -20,7 +20,7 @@ import {
   DelegatedGrant,
 } from "@guildpass/shared-types";
 import {
-  evaluate,
+  createDefaultEngine,
   resolveConflicts,
   resolveEffectiveRoles,
   DEFAULT_RESOLUTION_CONFIG,
@@ -40,6 +40,7 @@ import { createDefaultCacheService } from "./redisCacheService";
 import type { CacheService } from "./cacheService";
 
 const prisma = new PrismaClient();
+const policyEngine = createDefaultEngine();
 
 export class MemberServiceError extends Error {
   statusCode: number;
@@ -503,7 +504,7 @@ export function getMemberService(prismaClient: PrismaClient) {
           reason: override.reason,
         })),
       };
-      const decision = evaluate(basePolicy, ctx, {
+      const decision = policyEngine.evaluate(basePolicy, ctx, {
         roleDefinitions,
         delegatedGrants,
       });
@@ -534,7 +535,7 @@ export function getMemberService(prismaClient: PrismaClient) {
       overrides: [],
     };
 
-    let decision = evaluate(basePolicy, ctx, {
+    let decision = policyEngine.evaluate(basePolicy, ctx, {
       roleDefinitions,
       delegatedGrants,
     });
