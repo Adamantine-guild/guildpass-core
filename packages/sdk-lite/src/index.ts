@@ -381,3 +381,4 @@ function encodePathSegment(value: string): string {
 }
 
 export { GuildPassApiError } from './errors';
+export * from './consumer';

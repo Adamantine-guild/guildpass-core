@@ -149,6 +149,15 @@ The API uses the **transactional outbox pattern** to emit reliable integration e
 
 \* `POLICY_CREATED`/`POLICY_UPDATED`/`POLICY_DELETED` are reserved for future CRUD on the base `AccessPolicy` (per-resource `ruleType`) record, which today is only read, not managed via an API. Wallet-specific **access overrides** (see Policy Engine, above) are a separate concept with their own `ACCESS_OVERRIDE_*` event types.
 
+### Delivery Guarantees
+
+The outbox mechanism guarantees **at-least-once** delivery.
+
+- If a consumer (or webhook handler) successfully processes an event, but the outbox worker crashes or is restarted before it can mark the event as `delivered` in the database, the event **will be redelivered** on the next poll.
+- To handle redeliveries safely, consumers **must be idempotent**.
+- Every outbox event payload explicitly includes a stable, unique `id` and a `createdAt` timestamp. Consumers should use `id` (e.g., checking it against a cache or database table of processed IDs) to de-duplicate incoming events.
+- See `@guildpass/sdk-lite` for an `IdempotentWebhookConsumer` helper demonstrating this pattern.
+
 ### Configuration
 
 | Environment Variable | Default | Description |
