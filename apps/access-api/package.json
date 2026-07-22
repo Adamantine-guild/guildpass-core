@@ -26,6 +26,7 @@
     "@fastify/rate-limit": "^9.1.0",
     "@fastify/swagger": "^8.14.0",
     "@fastify/swagger-ui": "^2.0.1",
+    "@guildpass/contracts": "workspace:*",
     "@guildpass/governance-engine": "workspace:*",
     "@guildpass/policy-engine": "workspace:*",
     "@guildpass/shared-types": "workspace:*",
