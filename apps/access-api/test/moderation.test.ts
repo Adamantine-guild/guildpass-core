@@ -20,6 +20,9 @@ const mockPrisma = {
   membership: {
     update: jest.fn(),
   },
+  membershipToken: {
+    update: jest.fn(),
+  },
   outboxEvent: {
     create: jest.fn(),
   },
@@ -75,7 +78,7 @@ describe('Moderation appeals & Reinstatement integration', () => {
         id: 'member-1',
         communityId,
         wallet: { address: wallet.toLowerCase() },
-        membership: { state: 'active' },
+        membership: { activeToken: { state: 'active' } },
       });
 
       const response = await app.inject({
@@ -96,7 +99,7 @@ describe('Moderation appeals & Reinstatement integration', () => {
         id: 'member-1',
         communityId,
         wallet: { address: wallet.toLowerCase() },
-        membership: { state: 'suspended' },
+        membership: { activeToken: { state: 'suspended' } },
       });
 
       (mockPrisma.appeal.findFirst as jest.Mock).mockResolvedValue({
@@ -122,7 +125,7 @@ describe('Moderation appeals & Reinstatement integration', () => {
         id: 'member-1',
         communityId,
         wallet: { address: wallet.toLowerCase() },
-        membership: { state: 'suspended' },
+        membership: { activeToken: { state: 'suspended' } },
       });
 
       (mockPrisma.appeal.findFirst as jest.Mock).mockResolvedValue(null);
@@ -217,7 +220,7 @@ describe('Moderation appeals & Reinstatement integration', () => {
         member: {
           wallet: { address: wallet.toLowerCase() },
           communityId,
-          membership: { id: 'membership-1', state: 'suspended' },
+          membership: { id: 'membership-1', activeTokenId: 999 },
         },
       });
 
@@ -242,8 +245,8 @@ describe('Moderation appeals & Reinstatement integration', () => {
       expect(JSON.parse(response.body).status).toBe('reinstated');
       
       // Verification of side-effects
-      expect(mockPrisma.membership.update).toHaveBeenCalledWith({
-        where: { id: 'membership-1' },
+      expect(mockPrisma.membershipToken.update).toHaveBeenCalledWith({
+        where: { tokenId: 999 },
         data: { state: 'active' },
       });
       expect(mockPrisma.outboxEvent.create).toHaveBeenCalled();

@@ -23,7 +23,11 @@ export function getModerationService(prisma: PrismaClient) {
           wallet: { address: walletAddress.toLowerCase() },
         },
         include: {
-          membership: true,
+          membership: {
+            include: {
+              activeToken: true,
+            },
+          },
           wallet: true,
         },
       });
@@ -32,7 +36,7 @@ export function getModerationService(prisma: PrismaClient) {
         throw new ModerationError('Member not found', 404);
       }
 
-      if (!member.membership || member.membership.state !== 'suspended') {
+      if (!member.membership?.activeToken || member.membership.activeToken.state !== 'suspended') {
         throw new ModerationError('Membership is not suspended', 400);
       }
 
@@ -133,12 +137,13 @@ export function getModerationService(prisma: PrismaClient) {
 
       // If reinstated, trigger off-chain state change & outbox event
       if (toStatus === 'reinstated') {
-        if (appeal.member.membership) {
-          await tx.membership.update({
-            where: { id: appeal.member.membership.id },
+        if (appeal.member.membership?.activeTokenId) {
+          await tx.membershipToken.update({
+            where: { tokenId: appeal.member.membership.activeTokenId },
             data: { state: 'active' },
           });
         }
+
 
         // Emit outbox event
         await tx.outboxEvent.create({

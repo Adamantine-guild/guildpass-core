@@ -196,38 +196,141 @@ export function getMemberService(prismaClient: PrismaClient) {
     const cached = await cacheService.getJSON<any>(cacheKey);
     if (cached) return cached as unknown as AccessDecision;
 
-    const policy = await prismaClient.accessPolicy.findFirst({
-      where: { communityId, resource },
-    });
-
-    const ruleType = policy ? policy.ruleType : "MEMBERS_ONLY";
-    const basePolicy = {
-      id: policy?.id ?? "default",
-      communityId,
-      resource,
-      ruleType,
-      params: policy?.params as Record<string, any> | undefined,
-    };
-
     // Aggregate state from ALL linked wallets (primary + secondaries)
     // 1. Get all wallets
-    const wallets = await prismaClient.wallet.findMany({
+    let wallets = await prismaClient.wallet.findMany({
       where: {
         address: { in: allLinkedWallets.map(normaliseWallet) },
       },
     });
 
+    if ((!wallets || wallets.length === 0) && allLinkedWallets.length > 0) {
+      wallets = [];
+      for (const addr of allLinkedWallets) {
+        const w = await prismaClient.wallet.findUnique({
+          where: { address: addr.toLowerCase() },
+        });
+        if (w) {
+          wallets.push(w);
+        }
+      }
+    }
+
     // 2. Get all members for these wallets in the community
-    const members = await prismaClient.member.findMany({
+    let members = await prismaClient.member.findMany({
       where: {
         walletId: { in: wallets.map(w => w.id) },
         communityId,
       },
       include: {
         roles: true,
-        membership: true,
+        membership: {
+          include: {
+            activeToken: true,
+          },
+        },
       },
     });
+
+    if ((!members || members.length === 0) && wallets.length > 0) {
+      for (const w of wallets) {
+        const m = await prismaClient.member.findFirst({
+          where: { walletId: w.id, communityId },
+          include: {
+            roles: true,
+            membership: {
+              include: {
+                activeToken: true,
+              },
+            },
+          },
+        });
+        if (m) {
+          members.push(m);
+        }
+      }
+    }
+
+    // Aggregate roles: union of all roles from all members
+    const allAssignments = members.flatMap(member =>
+      (member.roles || []).map(role => ({
+        role: role.role as Role,
+        source: role.source as "manual" | "auto",
+        active: role.active,
+        expiresAt: role.expiresAt,
+      }))
+    );
+
+    // Aggregate membership state: if ANY member has active membership, state is active
+    let membershipState: "invited" | "active" | "expired" | "suspended" = "invited";
+    let activeTokenId: number | null = null;
+    let rawState: string | null = null;
+    for (const member of members) {
+      const activeToken = member.membership?.activeToken;
+      const legacyState = (member.membership as any)?.state;
+      const legacyExpiresAt = (member.membership as any)?.expiresAt;
+      const stateVal = activeToken?.state ?? legacyState;
+      if (!stateVal) continue;
+      const expiresAtVal = activeToken ? activeToken.expiresAt : (legacyExpiresAt ?? null);
+
+      const state = getNormalizedMembershipState(
+        stateVal as any,
+        expiresAtVal,
+      );
+      if (state === "active") {
+        membershipState = "active";
+        activeTokenId = activeToken?.tokenId ?? null;
+        rawState = stateVal;
+        break; // No need to check further if we have an active one
+      }
+      if (state === "suspended") {
+        membershipState = "suspended";
+        activeTokenId = activeToken?.tokenId ?? null;
+        rawState = stateVal;
+      }
+      if (state === "expired" && membershipState !== "suspended") {
+        membershipState = "expired";
+        activeTokenId = activeToken?.tokenId ?? null;
+        rawState = stateVal;
+      }
+    }
+
+    const auditMembershipSnapshot = activeTokenId ? {
+      tokenId: activeTokenId,
+      state: rawState,
+      effectiveState: membershipState,
+    } : {
+      state: "invited",
+      effectiveState: "invited",
+    };
+
+    const policy = await prismaClient.accessPolicy.findFirst({
+      where: { communityId, resource },
+    });
+
+    if (!policy) {
+      return {
+        allowed: false,
+        code: "DENY",
+        reasons: [
+          {
+            code: "NO_POLICY",
+            message: "No access policy found for this resource",
+          },
+        ],
+        effectiveRoles: [],
+        membershipState,
+      };
+    }
+
+    const ruleType = policy.ruleType;
+    const basePolicy = {
+      id: policy.id,
+      communityId,
+      resource,
+      ruleType,
+      params: policy.params as Record<string, any> | undefined,
+    };
 
     // 3. Get all overrides that apply to any of these wallets
     const overrides = await prismaClient.accessOverride.findMany({
@@ -242,8 +345,8 @@ export function getMemberService(prismaClient: PrismaClient) {
     if (overrides.length > 0) {
       // Find the most permissive or first applicable override (policy engine uses first one)
       const ctx: RoleContext = {
-        assignments: [],
-        membershipState: "invited",
+        assignments: allAssignments,
+        membershipState: membershipState,
         wallet: primaryWallet,
         communityId,
         resource,
@@ -269,39 +372,11 @@ export function getMemberService(prismaClient: PrismaClient) {
         reasonCode,
         details: (decision as any).details ?? null,
         correlationId,
+        membershipState: auditMembershipSnapshot,
+        roleState: allAssignments,
       });
       await cacheService.setJSON(cacheKey, decision, decisionTtlSeconds);
       return decision;
-    }
-
-    // Aggregate roles: union of all roles from all members
-    const allAssignments = members.flatMap(member =>
-      member.roles.map(role => ({
-        role: role.role as Role,
-        source: role.source as "manual" | "auto",
-        active: role.active,
-        expiresAt: role.expiresAt,
-      }))
-    );
-
-    // Aggregate membership state: if ANY member has active membership, state is active
-    let membershipState: "invited" | "active" | "expired" | "suspended" = "invited";
-    for (const member of members) {
-      if (!member.membership) continue;
-      const state = getNormalizedMembershipState(
-        member.membership.state as any,
-        member.membership.expiresAt,
-      );
-      if (state === "active") {
-        membershipState = "active";
-        break; // No need to check further if we have an active one
-      }
-      if (state === "suspended") {
-        membershipState = "suspended";
-      }
-      if (state === "expired" && membershipState !== "suspended") {
-        membershipState = "expired";
-      }
     }
 
     const ctx: RoleContext = {
@@ -327,8 +402,8 @@ export function getMemberService(prismaClient: PrismaClient) {
       reasonCode,
       details: (decision as any).details ?? null,
       correlationId,
-      membershipState: null,
-      roleState: null,
+      membershipState: auditMembershipSnapshot,
+      roleState: allAssignments,
     });
 
     await cacheService.setJSON(cacheKey, decision, decisionTtlSeconds);
@@ -344,16 +419,29 @@ export function getMemberService(prismaClient: PrismaClient) {
       if (!w) return { wallet, communities: [] };
       const members = await prismaClient.member.findMany({
         where: { walletId: w.id, ...(communityId ? { communityId } : {}) },
-        include: { membership: true },
+        include: {
+          membership: {
+            include: {
+              activeToken: true,
+            },
+          },
+        },
       });
-      const communities = members.map((m: any) => ({
-        communityId: m.communityId,
-        state: getNormalizedMembershipState(
-          m.membership?.state || "invited",
-          m.membership?.expiresAt,
-        ),
-        expiresAt: m.membership?.expiresAt?.toISOString() ?? null,
-      }));
+      const communities = members.map((m: any) => {
+        const activeToken = m.membership?.activeToken;
+        const legacyState = (m.membership as any)?.state;
+        const legacyExpiresAt = (m.membership as any)?.expiresAt;
+        const stateVal = activeToken?.state ?? legacyState ?? "invited";
+        const expiresAtVal = activeToken ? activeToken.expiresAt : (legacyExpiresAt ?? null);
+        return {
+          communityId: m.communityId,
+          state: getNormalizedMembershipState(
+            stateVal,
+            expiresAtVal,
+          ),
+          expiresAt: expiresAtVal?.toISOString() ?? null,
+        };
+      });
       return { wallet: normaliseWallet(wallet), communities };
     },
     async getProfileByWallet(wallet: string, communityId?: string) {
@@ -364,9 +452,22 @@ export function getMemberService(prismaClient: PrismaClient) {
       if (!w) return null;
       const m = await prismaClient.member.findFirst({
         where: { walletId: w.id, ...(communityId ? { communityId } : {}) },
-        include: { profile: true, membership: true, roles: true },
+        include: {
+          profile: true,
+          membership: {
+            include: {
+              activeToken: true,
+            },
+          },
+          roles: true,
+        },
       });
       if (!m) return null;
+      const activeToken = m.membership?.activeToken;
+      const legacyState = (m.membership as any)?.state;
+      const legacyExpiresAt = (m.membership as any)?.expiresAt;
+      const stateVal = activeToken?.state ?? legacyState ?? "invited";
+      const expiresAtVal = activeToken ? activeToken.expiresAt : (legacyExpiresAt ?? null);
       return {
         wallet: normalised,
         communityId: m.communityId,
@@ -377,10 +478,10 @@ export function getMemberService(prismaClient: PrismaClient) {
         },
         membership: {
           state: getNormalizedMembershipState(
-            m.membership?.state ?? "invited",
-            m.membership?.expiresAt,
+            stateVal,
+            expiresAtVal,
           ),
-          expiresAt: m.membership?.expiresAt?.toISOString() ?? null,
+          expiresAt: expiresAtVal?.toISOString() ?? null,
         },
         roles: m.roles.filter((r: any) => r.active).map((r: any) => r.role),
       };
@@ -394,19 +495,33 @@ export function getMemberService(prismaClient: PrismaClient) {
     ) {
       const members = await prismaClient.member.findMany({
         where: { communityId },
-        include: { wallet: true, membership: true, roles: true, profile: true },
+        include: {
+          wallet: true,
+          membership: {
+            include: {
+              activeToken: true,
+            },
+          },
+          roles: true,
+          profile: true,
+        },
       });
       const list = members
         .map((m: any) => {
           const activeRoles = m.roles
             .filter((r: any) => r.active)
             .map((r: any) => r.role);
+          const activeToken = m.membership?.activeToken;
+          const legacyState = (m.membership as any)?.state;
+          const legacyExpiresAt = (m.membership as any)?.expiresAt;
+          const stateVal = activeToken?.state ?? legacyState ?? "invited";
+          const expiresAtVal = activeToken ? activeToken.expiresAt : (legacyExpiresAt ?? null);
           return {
             wallet: m.wallet.address,
             displayName: m.profile?.displayName ?? null,
             state: getNormalizedMembershipState(
-              m.membership?.state ?? "invited",
-              m.membership?.expiresAt,
+              stateVal,
+              expiresAtVal,
             ),
             roles: activeRoles,
           };

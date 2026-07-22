@@ -126,6 +126,7 @@ export const getMemberProfileSchema = {
       description: 'Member profile',
       type: 'object',
       properties: {
+        wallet: walletAddressSchema,
         communityId: { type: 'string' },
         profile: {
           type: 'object',

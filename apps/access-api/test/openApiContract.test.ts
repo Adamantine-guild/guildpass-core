@@ -279,8 +279,8 @@ const fixtures = {
 async function buildContractTestApp(): Promise<FastifyInstance> {
   const app = Fastify({ logger: false });
 
-  function getTrigger(request: Parameters<typeof app.get>[1]): number | null {
-    const h = (request as any).headers['x-contract-trigger'];
+  function getTrigger(request: any): number | null {
+    const h = request.headers['x-contract-trigger'];
     return h ? parseInt(h as string, 10) : null;
   }
 

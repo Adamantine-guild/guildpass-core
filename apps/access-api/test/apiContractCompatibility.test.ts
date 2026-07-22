@@ -64,7 +64,9 @@ function extractPureJsonSchema(raw: Record<string, unknown>): JsonSchema {
     '$ref',
   ];
   for (const key of keys) {
-    if (raw[key] !== undefined) result[key] = raw[key];
+    if (raw[key] !== undefined) {
+      result[key] = JSON.parse(JSON.stringify(raw[key]));
+    }
   }
   return result;
 }

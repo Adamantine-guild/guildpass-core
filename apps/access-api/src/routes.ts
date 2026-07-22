@@ -3,6 +3,11 @@ import { getMemberService, MemberServiceError } from './services/memberService';
 import { getIdentityService, IdentityServiceError } from './services/identityService';
 import { getModerationService, ModerationError } from './services/moderation/moderationService';
 import { getPrisma } from './services/prisma';
+import {
+  getAuditTraceByCorrelationId,
+  getAuditTracesByTxHash,
+  getAuditTracesByWallet,
+} from './services/auditTraceService';
 import { notFound, validationError, validationErrorWithReason } from './errors';
 import {
   listDeadLetterEvents,
@@ -468,6 +473,41 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       }
       return reply.status(500).send({ error: 'Internal server error' });
     }
+  });
+
+  // --- Admin Audit Trace Routes ---
+
+  // GET /admin/audit/trace/* — query audit traces (by txHash, wallet, or correlationId)
+  app.get('/admin/audit/trace/*', async (request: FastifyRequest, reply: FastifyReply) => {
+    const wildcard = (request.params as any)['*'];
+
+    if (wildcard.startsWith('tx/')) {
+      const txHash = wildcard.substring(3);
+      const result = await getAuditTracesByTxHash(txHash, prisma);
+      return { txHash, traces: result };
+    }
+
+    if (wildcard.startsWith('wallet/')) {
+      const wallet = wildcard.substring(7);
+      const { communityId } = request.query as { communityId?: string };
+      if (!communityId) {
+        return reply.status(400).send({ error: 'communityId query parameter is required' });
+      }
+      const result = await getAuditTracesByWallet(wallet, communityId, 50, prisma);
+      return {
+        wallet,
+        communityId,
+        traces: result,
+      };
+    }
+
+    // Default: treat as correlationId
+    const correlationId = wildcard;
+    const result = await getAuditTraceByCorrelationId(correlationId, prisma);
+    if (!result) {
+      return reply.status(404).send({ error: 'Audit trace not found' });
+    }
+    return result;
   });
 
 }

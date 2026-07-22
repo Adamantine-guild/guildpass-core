@@ -130,24 +130,36 @@ export async function applyContractEvent(
       // Capture before state for audit trail
       const existingMembership = await tx.membership.findUnique({
         where: { memberId: member.id },
+        include: { activeToken: true },
       });
+      const previousToken = existingMembership?.activeToken;
 
-      // Create or update membership
-      // Note: If a member receives a second MembershipMinted for the same community,
-      // this updates their existing membership (replacing the tokenId and resetting state)
-      const updatedMembership = await tx.membership.upsert({
-        where: { memberId: member.id },
+      // Create or update membership token
+      const updatedToken = await tx.membershipToken.upsert({
+        where: { tokenId: event.tokenId },
         update: {
-          tokenId: event.tokenId,
+          memberId: member.id,
           state: 'active',
           expiresAt,
           renewedAt: new Date(),
         },
         create: {
-          memberId: member.id,
           tokenId: event.tokenId,
+          memberId: member.id,
           state: 'active',
           expiresAt,
+        },
+      });
+
+      // Update the active token pointer in Membership table
+      const updatedMembership = await tx.membership.upsert({
+        where: { memberId: member.id },
+        update: {
+          activeTokenId: event.tokenId,
+        },
+        create: {
+          memberId: member.id,
+          activeTokenId: event.tokenId,
         },
       });
 
@@ -161,15 +173,15 @@ export async function applyContractEvent(
         txHash: txHash ?? null,
         blockNumber: event.blockNumber ?? null,
         logIndex: event.logIndex ?? null,
-        beforeState: (existingMembership ? {
-          tokenId: existingMembership.tokenId,
-          state: existingMembership.state,
-          expiresAt: existingMembership.expiresAt?.toISOString(),
+        beforeState: (previousToken ? {
+          tokenId: previousToken.tokenId,
+          state: previousToken.state,
+          expiresAt: previousToken.expiresAt?.toISOString(),
         } : null) as any,
         afterState: {
-          tokenId: updatedMembership.tokenId,
-          state: updatedMembership.state,
-          expiresAt: updatedMembership.expiresAt?.toISOString(),
+          tokenId: updatedToken.tokenId,
+          state: updatedToken.state,
+          expiresAt: updatedToken.expiresAt?.toISOString(),
         },
       });
 
@@ -196,7 +208,7 @@ export async function applyContractEvent(
         },
       });
     } else if (event.type === 'MembershipRenewed') {
-      const membership = await tx.membership.findFirst({
+      const token = await tx.membershipToken.findUnique({
         where: {
           tokenId: event.tokenId,
         },
@@ -204,27 +216,28 @@ export async function applyContractEvent(
           member: {
             include: {
               wallet: true,
+              membership: true,
             },
           },
         },
       });
 
-      if (!membership) {
+      if (!token) {
         throw new Error(
           `Cannot renew membership: tokenId ${event.tokenId} not found in database`,
         );
       }
 
       const beforeState = {
-        tokenId: membership.tokenId,
-        state: membership.state,
-        expiresAt: membership.expiresAt?.toISOString(),
-        renewedAt: membership.renewedAt?.toISOString(),
+        tokenId: token.tokenId,
+        state: token.state,
+        expiresAt: token.expiresAt?.toISOString(),
+        renewedAt: token.renewedAt?.toISOString(),
       };
 
       const newExpiresAt = new Date(event.newExpiresAt * 1000);
-      const updatedMembership = await tx.membership.update({
-        where: { id: membership.id },
+      const updatedToken = await tx.membershipToken.update({
+        where: { tokenId: token.tokenId },
         data: {
           expiresAt: newExpiresAt,
           renewedAt: new Date(),
@@ -234,8 +247,8 @@ export async function applyContractEvent(
       // Create audit event with on-chain metadata and hash-chain integrity
       await writeChainedAuditEvent(tx, {
         eventType: 'MEMBERSHIP_UPDATED',
-        walletId: membership.member.wallet.address,
-        communityId: membership.member.communityId,
+        walletId: token.member.wallet.address,
+        communityId: token.member.communityId,
         correlationId,
         chainId: event.chainId ?? null,
         txHash: txHash ?? null,
@@ -243,10 +256,10 @@ export async function applyContractEvent(
         logIndex: event.logIndex ?? null,
         beforeState,
         afterState: {
-          tokenId: updatedMembership.tokenId,
-          state: updatedMembership.state,
-          expiresAt: updatedMembership.expiresAt?.toISOString(),
-          renewedAt: updatedMembership.renewedAt?.toISOString(),
+          tokenId: updatedToken.tokenId,
+          state: updatedToken.state,
+          expiresAt: updatedToken.expiresAt?.toISOString(),
+          renewedAt: updatedToken.renewedAt?.toISOString(),
         },
       });
 
@@ -254,18 +267,18 @@ export async function applyContractEvent(
       await tx.outboxEvent.create({
         data: {
           eventType: 'MEMBERSHIP_RENEWED',
-          entityId: membership.id,
+          entityId: token.member.membership?.id ?? 'unknown',
           entityType: 'Membership',
-          communityId: membership.member.communityId,
+          communityId: token.member.communityId,
           correlationId,
           chainId: event.chainId ?? null,
           txHash: txHash ?? null,
           blockNumber: event.blockNumber ?? null,
           logIndex: event.logIndex ?? null,
           payload: {
-            memberId: membership.memberId,
+            memberId: token.memberId,
             tokenId: event.tokenId,
-            wallet: membership.member.wallet.address,
+            wallet: token.member.wallet.address,
             newExpiresAt: newExpiresAt.toISOString(),
           },
           status: 'pending',
@@ -273,27 +286,34 @@ export async function applyContractEvent(
         },
       });
     } else if (event.type === 'MembershipSuspended') {
-      const membership = await tx.membership.findFirst({
+      const token = await tx.membershipToken.findUnique({
         where: {
           tokenId: event.tokenId,
         },
-        include: { member: { include: { wallet: true } } },
+        include: {
+          member: {
+            include: {
+              wallet: true,
+              membership: true,
+            },
+          },
+        },
       });
 
-      if (!membership) {
+      if (!token) {
         throw new Error(
           `Cannot suspend membership: tokenId ${event.tokenId} not found in database`,
         );
       }
 
       const beforeState = {
-        tokenId: membership.tokenId,
-        state: membership.state,
-        expiresAt: membership.expiresAt?.toISOString(),
+        tokenId: token.tokenId,
+        state: token.state,
+        expiresAt: token.expiresAt?.toISOString(),
       };
 
-      const updatedMembership = await tx.membership.update({
-        where: { id: membership.id },
+      const updatedToken = await tx.membershipToken.update({
+        where: { tokenId: token.tokenId },
         data: {
           state: event.isSuspended ? 'suspended' : 'active',
         },
@@ -302,8 +322,8 @@ export async function applyContractEvent(
       // Create audit event with on-chain metadata and hash-chain integrity
       await writeChainedAuditEvent(tx, {
         eventType: 'MEMBERSHIP_UPDATED',
-        walletId: membership.member.wallet.address,
-        communityId: membership.member.communityId,
+        walletId: token.member.wallet.address,
+        communityId: token.member.communityId,
         correlationId,
         chainId: event.chainId ?? null,
         txHash: txHash ?? null,
@@ -311,9 +331,9 @@ export async function applyContractEvent(
         logIndex: event.logIndex ?? null,
         beforeState,
         afterState: {
-          tokenId: updatedMembership.tokenId,
-          state: updatedMembership.state,
-          expiresAt: updatedMembership.expiresAt?.toISOString(),
+          tokenId: updatedToken.tokenId,
+          state: updatedToken.state,
+          expiresAt: updatedToken.expiresAt?.toISOString(),
         },
       });
 
@@ -321,18 +341,18 @@ export async function applyContractEvent(
       await tx.outboxEvent.create({
         data: {
           eventType: event.isSuspended ? 'MEMBERSHIP_SUSPENDED' : 'MEMBERSHIP_UNSUSPENDED',
-          entityId: membership.id,
+          entityId: token.member.membership?.id ?? 'unknown',
           entityType: 'Membership',
-          communityId: membership.member.communityId,
+          communityId: token.member.communityId,
           correlationId,
           chainId: event.chainId ?? null,
           txHash: txHash ?? null,
           blockNumber: event.blockNumber ?? null,
           logIndex: event.logIndex ?? null,
           payload: {
-            memberId: membership.memberId,
+            memberId: token.memberId,
             tokenId: event.tokenId,
-            wallet: membership.member.wallet.address,
+            wallet: token.member.wallet.address,
             isSuspended: event.isSuspended,
           },
           status: 'pending',
@@ -429,17 +449,23 @@ export async function getCurrentMembershipState(
       wallet: { address: wallet.toLowerCase() },
       community: { id: communityId },
     },
-    include: { membership: true },
+    include: {
+      membership: {
+        include: {
+          activeToken: true,
+        },
+      },
+    },
   });
 
-  if (!member?.membership) {
+  if (!member?.membership?.activeToken) {
     return null;
   }
 
   return {
-    tokenId: member.membership.tokenId,
-    state: member.membership.state,
-    expiresAt: member.membership.expiresAt,
+    tokenId: member.membership.activeToken.tokenId,
+    state: member.membership.activeToken.state,
+    expiresAt: member.membership.activeToken.expiresAt,
   };
 }
 
@@ -452,8 +478,8 @@ export async function tokenIdExists(
   prisma: PrismaClient,
   tokenId: number,
 ): Promise<boolean> {
-  const membership = await prisma.membership.findUnique({
+  const token = await prisma.membershipToken.findUnique({
     where: { tokenId },
   });
-  return !!membership;
+  return !!token;
 }

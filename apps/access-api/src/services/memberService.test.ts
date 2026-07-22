@@ -6,6 +6,10 @@ import { getMemberService } from './memberService';
 const mockPrisma = {
   wallet: {
     findUnique: jest.fn(),
+    findMany: jest.fn(),
+  },
+  linkedWallet: {
+    findFirst: jest.fn().mockResolvedValue(null),
   },
   member: {
     findMany: jest.fn(),
@@ -43,10 +47,43 @@ describe('getMemberService - Membership State Normalization', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    (mockPrisma.accessOverride.findMany as jest.Mock).mockResolvedValue([]);
+    (mockPrisma.wallet.findUnique as jest.Mock).mockReset();
+    (mockPrisma.wallet.findMany as jest.Mock).mockReset();
+    (mockPrisma.linkedWallet.findFirst as jest.Mock).mockReset();
+    (mockPrisma.member.findMany as jest.Mock).mockReset();
+    (mockPrisma.member.findFirst as jest.Mock).mockReset();
+    (mockPrisma.accessPolicy.findFirst as jest.Mock).mockReset();
+    (mockPrisma.community.findUnique as jest.Mock).mockReset();
+    (mockPrisma.roleAssignment.findFirst as jest.Mock).mockReset();
+    (mockPrisma.roleAssignment.create as jest.Mock).mockReset();
+    (mockPrisma.roleAssignment.updateMany as jest.Mock).mockReset();
+    (mockPrisma.accessOverride.findFirst as jest.Mock).mockReset();
+    (mockPrisma.accessOverride.findMany as jest.Mock).mockReset();
+    (mockPrisma.accessOverride.create as jest.Mock).mockReset();
+    (mockPrisma.accessOverride.update as jest.Mock).mockReset();
+    (mockPrisma.accessOverride.delete as jest.Mock).mockReset();
+    (mockPrisma.outboxEvent.create as jest.Mock).mockReset();
+    (mockPrisma.auditEvent.create as jest.Mock).mockReset();
+
+    // Set defaults
+    (mockPrisma.wallet.findUnique as jest.Mock).mockResolvedValue(null);
+    (mockPrisma.wallet.findMany as jest.Mock).mockResolvedValue([]);
+    (mockPrisma.linkedWallet.findFirst as jest.Mock).mockResolvedValue(null);
+    (mockPrisma.member.findMany as jest.Mock).mockResolvedValue([]);
+    (mockPrisma.member.findFirst as jest.Mock).mockResolvedValue(null);
+    (mockPrisma.accessPolicy.findFirst as jest.Mock).mockResolvedValue(null);
+    (mockPrisma.community.findUnique as jest.Mock).mockResolvedValue(null);
+    (mockPrisma.roleAssignment.findFirst as jest.Mock).mockResolvedValue(null);
+    (mockPrisma.roleAssignment.create as jest.Mock).mockResolvedValue({});
+    (mockPrisma.roleAssignment.updateMany as jest.Mock).mockResolvedValue({ count: 0 });
     (mockPrisma.accessOverride.findFirst as jest.Mock).mockResolvedValue(null);
+    (mockPrisma.accessOverride.findMany as jest.Mock).mockResolvedValue([]);
+    (mockPrisma.accessOverride.create as jest.Mock).mockResolvedValue({});
+    (mockPrisma.accessOverride.update as jest.Mock).mockResolvedValue({});
+    (mockPrisma.accessOverride.delete as jest.Mock).mockResolvedValue({});
     (mockPrisma.outboxEvent.create as jest.Mock).mockResolvedValue({ id: 'outbox-event-id' });
     (mockPrisma.auditEvent.create as jest.Mock).mockResolvedValue({ id: 'audit-event-id' });
+
     memberService = getMemberService(mockPrisma);
   });
 
@@ -760,7 +797,7 @@ describe('getMemberService - Membership State Normalization', () => {
       };
 
       // Test getMembershipsByWallet
-      (mockPrisma.wallet.findUnique as jest.Mock).mockResolvedValueOnce(mockWallet);
+      (mockPrisma.wallet.findUnique as jest.Mock).mockResolvedValue(mockWallet);
       (mockPrisma.member.findMany as jest.Mock).mockResolvedValueOnce([
         {
           communityId: 'community-1',
@@ -771,7 +808,7 @@ describe('getMemberService - Membership State Normalization', () => {
       const result1 = await memberService.getMembershipsByWallet(wallet);
 
       // Test getProfileByWallet
-      (mockPrisma.wallet.findUnique as jest.Mock).mockResolvedValueOnce(mockWallet);
+      (mockPrisma.wallet.findUnique as jest.Mock).mockResolvedValue(mockWallet);
       (mockPrisma.member.findFirst as jest.Mock).mockResolvedValueOnce({
         communityId: 'community-1',
         profile: {
@@ -786,7 +823,7 @@ describe('getMemberService - Membership State Normalization', () => {
       const result2 = await memberService.getProfileByWallet(wallet);
 
       // Test checkAccess
-      (mockPrisma.wallet.findUnique as jest.Mock).mockResolvedValueOnce(mockWallet);
+      (mockPrisma.wallet.findUnique as jest.Mock).mockResolvedValue(mockWallet);
       (mockPrisma.member.findFirst as jest.Mock).mockResolvedValueOnce({
         roles: [],
         membership: memberData,
@@ -818,8 +855,8 @@ describe('getMemberService - Membership State Normalization', () => {
     const resource = 'dashboard';
 
     test('createAccessOverride rejects non-admin requesters with 403', async () => {
-      (mockPrisma.wallet.findUnique as jest.Mock).mockResolvedValueOnce({ id: 'req-wallet-id' });
-      (mockPrisma.member.findFirst as jest.Mock).mockResolvedValueOnce({
+      (mockPrisma.wallet.findUnique as jest.Mock).mockResolvedValue({ id: 'req-wallet-id' });
+      (mockPrisma.member.findFirst as jest.Mock).mockResolvedValue({
         id: 'req-member-id',
         roles: [{ role: 'member', active: true }], // not admin
       });
@@ -837,8 +874,8 @@ describe('getMemberService - Membership State Normalization', () => {
     });
 
     test('createAccessOverride creates a new override if none exists', async () => {
-      (mockPrisma.wallet.findUnique as jest.Mock).mockResolvedValueOnce({ id: 'req-wallet-id' });
-      (mockPrisma.member.findFirst as jest.Mock).mockResolvedValueOnce({
+      (mockPrisma.wallet.findUnique as jest.Mock).mockResolvedValue({ id: 'req-wallet-id' });
+      (mockPrisma.member.findFirst as jest.Mock).mockResolvedValue({
         id: 'req-member-id',
         roles: [{ role: 'admin', active: true }],
       });
@@ -867,8 +904,8 @@ describe('getMemberService - Membership State Normalization', () => {
     });
 
     test('createAccessOverride updates an existing override', async () => {
-      (mockPrisma.wallet.findUnique as jest.Mock).mockResolvedValueOnce({ id: 'req-wallet-id' });
-      (mockPrisma.member.findFirst as jest.Mock).mockResolvedValueOnce({
+      (mockPrisma.wallet.findUnique as jest.Mock).mockResolvedValue({ id: 'req-wallet-id' });
+      (mockPrisma.member.findFirst as jest.Mock).mockResolvedValue({
         id: 'req-member-id',
         roles: [{ role: 'admin', active: true }],
       });
@@ -899,8 +936,8 @@ describe('getMemberService - Membership State Normalization', () => {
     });
 
     test('revokeAccessOverride rejects non-admin requesters with 403', async () => {
-      (mockPrisma.wallet.findUnique as jest.Mock).mockResolvedValueOnce({ id: 'req-wallet-id' });
-      (mockPrisma.member.findFirst as jest.Mock).mockResolvedValueOnce({
+      (mockPrisma.wallet.findUnique as jest.Mock).mockResolvedValue({ id: 'req-wallet-id' });
+      (mockPrisma.member.findFirst as jest.Mock).mockResolvedValue({
         id: 'req-member-id',
         roles: [{ role: 'member', active: true }],
       });
@@ -917,8 +954,8 @@ describe('getMemberService - Membership State Normalization', () => {
     });
 
     test('revokeAccessOverride deletes override if it exists', async () => {
-      (mockPrisma.wallet.findUnique as jest.Mock).mockResolvedValueOnce({ id: 'req-wallet-id' });
-      (mockPrisma.member.findFirst as jest.Mock).mockResolvedValueOnce({
+      (mockPrisma.wallet.findUnique as jest.Mock).mockResolvedValue({ id: 'req-wallet-id' });
+      (mockPrisma.member.findFirst as jest.Mock).mockResolvedValue({
         id: 'req-member-id',
         roles: [{ role: 'admin', active: true }],
       });
@@ -949,8 +986,8 @@ describe('getMemberService - Membership State Normalization', () => {
           expiresAt: new Date(Date.now() - 10000), // expired!
         },
       };
-      (mockPrisma.wallet.findUnique as jest.Mock).mockResolvedValueOnce(mockWallet);
-      (mockPrisma.member.findFirst as jest.Mock).mockResolvedValueOnce(mockMember);
+      (mockPrisma.wallet.findUnique as jest.Mock).mockResolvedValue(mockWallet);
+      (mockPrisma.member.findFirst as jest.Mock).mockResolvedValue(mockMember);
       (mockPrisma.accessPolicy.findFirst as jest.Mock).mockResolvedValueOnce({
         id: 'policy-1',
         communityId,
@@ -988,8 +1025,8 @@ describe('getMemberService - Membership State Normalization', () => {
           expiresAt: null, // active!
         },
       };
-      (mockPrisma.wallet.findUnique as jest.Mock).mockResolvedValueOnce(mockWallet);
-      (mockPrisma.member.findFirst as jest.Mock).mockResolvedValueOnce(mockMember);
+      (mockPrisma.wallet.findUnique as jest.Mock).mockResolvedValue(mockWallet);
+      (mockPrisma.member.findFirst as jest.Mock).mockResolvedValue(mockMember);
       (mockPrisma.accessPolicy.findFirst as jest.Mock).mockResolvedValueOnce({
         id: 'policy-1',
         communityId,
@@ -1027,8 +1064,8 @@ describe('getMemberService - Membership State Normalization', () => {
           expiresAt: new Date(Date.now() - 10000), // expired!
         },
       };
-      (mockPrisma.wallet.findUnique as jest.Mock).mockResolvedValueOnce(mockWallet);
-      (mockPrisma.member.findFirst as jest.Mock).mockResolvedValueOnce(mockMember);
+      (mockPrisma.wallet.findUnique as jest.Mock).mockResolvedValue(mockWallet);
+      (mockPrisma.member.findFirst as jest.Mock).mockResolvedValue(mockMember);
       (mockPrisma.accessPolicy.findFirst as jest.Mock).mockResolvedValueOnce({
         id: 'policy-1',
         communityId,

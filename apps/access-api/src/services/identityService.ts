@@ -187,7 +187,7 @@ export function getIdentityService(prisma: PrismaClient) {
     // Return primary + all linked secondary wallets
     return [
       primaryWalletAddress,
-      ...primaryWallet.primaryLinkedWallets.map(
+      ...(primaryWallet.primaryLinkedWallets || []).map(
         (lw) => lw.secondaryWalletAddress as WalletAddress
       ),
     ];
