@@ -8,6 +8,25 @@ import {
   MembershipState,
 } from "@guildpass/shared-types";
 
+export type {
+  RuleProvider,
+  EvaluationContext,
+  EvaluationResult,
+  PolicyDecision,
+  ResolutionConfig,
+} from "./types";
+export { PolicyEngine, createDefaultEngine } from "./engine";
+export {
+  resolveConflicts,
+  buildDecisionReasons,
+  DEFAULT_RESOLUTION_CONFIG,
+} from "./resolution";
+export {
+  ValidationProvider,
+  StaticPolicyProvider,
+  FallbackProvider,
+} from "./providers";
+
 function unique<T>(arr: T[]): T[] {
   return Array.from(new Set(arr));
 }

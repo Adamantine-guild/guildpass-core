@@ -1,6 +1,8 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { getMemberService, MemberServiceError } from './services/memberService';
 import { getIdentityService, IdentityServiceError } from './services/identityService';
+import { getGovernanceService } from './services/governanceService';
+import { registerGovernanceRoutes } from './routes/governanceRoutes';
 import { getModerationService, ModerationError } from './services/moderation/moderationService';
 import { queryAuditEvents } from './services/auditService';
 import { getPrisma } from './services/prisma';
