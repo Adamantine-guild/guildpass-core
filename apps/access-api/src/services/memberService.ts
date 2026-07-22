@@ -34,6 +34,7 @@ import {
 import { logEvent } from "./auditService";
 import { logOutboxEventTx } from "./outboxService";
 import { getIdentityService } from "./identityService";
+import { validateAndEvaluateMutation } from "./constitutionalService";
 
 import { config } from "../config";
 import { createDefaultCacheService } from "./redisCacheService";
@@ -737,13 +738,23 @@ export function getMemberService(prismaClient: PrismaClient) {
         return { communityId, wallet: targetWallet, role, assigned: false, removed: false, message: "Role already assigned" };
       }
 
-      await prismaClient.roleAssignment.create({
-        data: {
-          memberId: targetMember.id,
-          role,
-          source: "manual",
-          active: true,
-        },
+      await prismaClient.$transaction(async (tx: any) => {
+        await validateAndEvaluateMutation(tx, {
+          action: "ROLE_ASSIGNMENT",
+          communityId,
+          actorWallet: requesterWallet,
+          targetWallet,
+          proposedData: { role },
+        });
+
+        await tx.roleAssignment.create({
+          data: {
+            memberId: targetMember.id,
+            role,
+            source: "manual",
+            active: true,
+          },
+        });
       });
 
       await bumpRoleVersion(communityId);
@@ -782,6 +793,15 @@ export function getMemberService(prismaClient: PrismaClient) {
 
       const parsedExpiresAt = expiresAt ? new Date(expiresAt) : null;
       const { wasExisting } = await prismaClient.$transaction(async (tx: any) => {
+        await validateAndEvaluateMutation(tx, {
+          action: "OVERRIDE_CREATE",
+          communityId,
+          actorWallet: requesterWallet,
+          targetWallet: normalizedWallet,
+          targetResource: resource,
+          proposedData: { effect, reason, expiresAt },
+        });
+
         const existing = await tx.accessOverride.findFirst({
           where: { communityId, wallet: normalizedWallet, resource },
         });
@@ -867,6 +887,14 @@ export function getMemberService(prismaClient: PrismaClient) {
       }
 
       await prismaClient.$transaction(async (tx: any) => {
+        await validateAndEvaluateMutation(tx, {
+          action: "OVERRIDE_REVOKE",
+          communityId,
+          actorWallet: requesterWallet,
+          targetWallet: normalizedWallet,
+          targetResource: resource,
+        });
+
         await tx.accessOverride.delete({ where: { id: existing.id } });
         await logOutboxEventTx(tx, {
           eventType: "ACCESS_OVERRIDE_REVOKED",

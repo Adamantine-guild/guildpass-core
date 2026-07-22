@@ -20,7 +20,12 @@ import {
 } from './services/deadLetterService';
 import { Challenge, LinkWalletInput, WalletAddress, VALID_ROLES, Role } from '@guildpass/shared-types';
 import { getResourceService, ResourceServiceError } from './services/resourceService';
-import { Challenge, LinkWalletInput, WalletAddress } from '@guildpass/shared-types';
+import {
+  createConstitutionalRuleSet,
+  getActiveConstitutionalRuleSet,
+  getConstitutionalRuleSetVersions,
+  ConstitutionalViolationError,
+} from './services/constitutionalService';
 import {
   getCommunityRolesSchema,
   getMembershipsSchema,
@@ -65,6 +70,14 @@ function getRequesterWallet(request: FastifyRequest): string {
 }
 
 function sendRoleMutationError(reply: FastifyReply, error: unknown) {
+  if (error instanceof ConstitutionalViolationError) {
+    return reply.status(error.statusCode).send({
+      error: error.message,
+      code: error.code,
+      reasons: error.reasons,
+      traces: error.traces,
+    });
+  }
   if (error instanceof MemberServiceError) {
     return reply.status(error.statusCode).send({ error: error.message });
   }
@@ -785,4 +798,45 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 
+  // --- Constitutional Rule Set Management Routes ---
+
+  // POST /v1/communities/:communityId/constitutional-rulesets — Create a new versioned constitutional rule set
+  app.post('/v1/communities/:communityId/constitutional-rulesets', { preHandler: [authenticateApiKey] }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const { communityId } = request.params as { communityId: string };
+    const body = request.body as { rules?: any[]; description?: string };
+    const requesterWallet = getRequesterWallet(request);
+
+    if (!body?.rules || !Array.isArray(body.rules)) {
+      return reply.status(400).send(validationError('Missing required field: rules array'));
+    }
+
+    try {
+      const result = await createConstitutionalRuleSet(prisma, {
+        communityId,
+        rules: body.rules,
+        createdBy: requesterWallet,
+        description: body.description,
+      });
+      return reply.status(201).send(result);
+    } catch (error) {
+      return reply.status(400).send({ error: error instanceof Error ? error.message : 'Invalid rule set' });
+    }
+  });
+
+  // GET /v1/communities/:communityId/constitutional-rulesets — List all rule set versions
+  app.get('/v1/communities/:communityId/constitutional-rulesets', { preHandler: [authenticateApiKey] }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const { communityId } = request.params as { communityId: string };
+    const result = await getConstitutionalRuleSetVersions(prisma, communityId);
+    return { communityId, versions: result };
+  });
+
+  // GET /v1/communities/:communityId/constitutional-rulesets/active — Get current active rule set
+  app.get('/v1/communities/:communityId/constitutional-rulesets/active', async (request: FastifyRequest, reply: FastifyReply) => {
+    const { communityId } = request.params as { communityId: string };
+    const active = await getActiveConstitutionalRuleSet(prisma, communityId);
+    if (!active) {
+      return reply.status(404).send(notFound('No active constitutional rule set found for this community'));
+    }
+    return active;
+  });
 }

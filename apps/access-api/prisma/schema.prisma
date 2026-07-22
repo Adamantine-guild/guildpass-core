@@ -12,6 +12,7 @@ model Community {
   resources   Resource[]
   overrides   AccessOverride[]
   rules       GovernanceRule[]
+  constitutionalRuleSets ConstitutionalRuleSet[]
   delegatedGrants DelegatedGrant[]
   roleDefinitions RoleDefinition[]
   createdAt   DateTime          @default(now())
@@ -655,6 +656,25 @@ model ContractOwnership {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 }
+
+model ConstitutionalRuleSet {
+  id          String    @id @default(uuid())
+  communityId String
+  version     Int
+  rules       Json      // Array of ConstitutionalRule AST objects
+  active      Boolean   @default(true)
+  description String?
+  createdBy   String?   // Wallet address of creator
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  community Community @relation(fields: [communityId], references: [id])
+
+  @@unique([communityId, version])
+  @@index([communityId])
+  @@index([communityId, active])
+}
+
 
 
 
