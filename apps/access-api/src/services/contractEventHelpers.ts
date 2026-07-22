@@ -21,6 +21,9 @@ export type {
   DecodedMembershipMintedEvent,
   DecodedMembershipRenewedEvent,
   DecodedMembershipSuspendedEvent,
+  DecodedAdminUpdatedEvent,
+  DecodedOwnershipTransferProposedEvent,
+  DecodedOwnershipTransferredEvent,
 } from '@guildpass/contracts';
 
 import type {
@@ -28,6 +31,9 @@ import type {
   DecodedMembershipMintedEvent,
   DecodedMembershipRenewedEvent,
   DecodedMembershipSuspendedEvent,
+  DecodedAdminUpdatedEvent,
+  DecodedOwnershipTransferProposedEvent,
+  DecodedOwnershipTransferredEvent,
 } from '@guildpass/contracts';
 
 /**
@@ -45,6 +51,18 @@ function validateEvent(event: DecodedContractEvent): void {
   } else if (event.type === 'MembershipSuspended') {
     if (!event.tokenId || event.isSuspended === undefined) {
       throw new Error('Invalid MembershipSuspended event: missing required fields');
+    }
+  } else if (event.type === 'AdminUpdated') {
+    if (!event.admin || event.enabled === undefined) {
+      throw new Error('Invalid AdminUpdated event: missing required fields');
+    }
+  } else if (event.type === 'OwnershipTransferProposed') {
+    if (!event.currentOwner || !event.proposedOwner) {
+      throw new Error('Invalid OwnershipTransferProposed event: missing required fields');
+    }
+  } else if (event.type === 'OwnershipTransferred') {
+    if (!event.previousOwner || !event.newOwner) {
+      throw new Error('Invalid OwnershipTransferred event: missing required fields');
     }
   }
 }
@@ -357,6 +375,135 @@ export async function applyContractEvent(
           },
           status: 'pending',
           nextRetryAt: new Date(),
+        },
+      });
+    } else if (event.type === 'AdminUpdated') {
+      const adminAddress = event.admin.toLowerCase();
+      const chainId = event.chainId ?? 31337;
+
+      const existingAdmin = await tx.contractAdmin.findUnique({
+        where: {
+          chainId_address: {
+            chainId,
+            address: adminAddress,
+          },
+        },
+      });
+
+      const beforeState = existingAdmin
+        ? { enabled: existingAdmin.enabled }
+        : null;
+
+      const updatedAdmin = await tx.contractAdmin.upsert({
+        where: {
+          chainId_address: {
+            chainId,
+            address: adminAddress,
+          },
+        },
+        update: {
+          enabled: event.enabled,
+        },
+        create: {
+          chainId,
+          address: adminAddress,
+          enabled: event.enabled,
+        },
+      });
+
+      await writeChainedAuditEvent(tx, {
+        eventType: 'CONTRACT_ADMIN_UPDATED',
+        walletId: adminAddress,
+        communityId: null,
+        correlationId,
+        chainId,
+        txHash: txHash ?? null,
+        blockNumber: event.blockNumber ?? null,
+        logIndex: event.logIndex ?? null,
+        beforeState: beforeState as any,
+        afterState: {
+          enabled: updatedAdmin.enabled,
+        },
+      });
+    } else if (event.type === 'OwnershipTransferProposed') {
+      const currentOwner = event.currentOwner.toLowerCase();
+      const proposedOwner = event.proposedOwner.toLowerCase();
+      const chainId = event.chainId ?? 31337;
+
+      const existingOwnership = await tx.contractOwnership.findUnique({
+        where: { chainId },
+      });
+
+      const beforeState = existingOwnership
+        ? { owner: existingOwnership.owner, proposedOwner: existingOwnership.proposedOwner }
+        : null;
+
+      const updatedOwnership = await tx.contractOwnership.upsert({
+        where: { chainId },
+        update: {
+          proposedOwner,
+        },
+        create: {
+          chainId,
+          owner: currentOwner,
+          proposedOwner,
+        },
+      });
+
+      await writeChainedAuditEvent(tx, {
+        eventType: 'CONTRACT_OWNERSHIP_TRANSFERRED',
+        walletId: proposedOwner,
+        communityId: null,
+        correlationId,
+        chainId,
+        txHash: txHash ?? null,
+        blockNumber: event.blockNumber ?? null,
+        logIndex: event.logIndex ?? null,
+        beforeState: beforeState as any,
+        afterState: {
+          owner: updatedOwnership.owner,
+          proposedOwner: updatedOwnership.proposedOwner,
+        },
+      });
+    } else if (event.type === 'OwnershipTransferred') {
+      const previousOwner = event.previousOwner.toLowerCase();
+      const newOwner = event.newOwner.toLowerCase();
+      const chainId = event.chainId ?? 31337;
+
+      const existingOwnership = await tx.contractOwnership.findUnique({
+        where: { chainId },
+      });
+
+      const beforeState = existingOwnership
+        ? { owner: existingOwnership.owner, proposedOwner: existingOwnership.proposedOwner }
+        : null;
+
+      const updatedOwnership = await tx.contractOwnership.upsert({
+        where: { chainId },
+        update: {
+          owner: newOwner,
+          proposedOwner: null,
+        },
+        create: {
+          chainId,
+          owner: newOwner,
+          proposedOwner: null,
+        },
+      });
+
+      await writeChainedAuditEvent(tx, {
+        eventType: 'CONTRACT_OWNERSHIP_TRANSFERRED',
+        walletId: newOwner,
+        communityId: null,
+        correlationId,
+        chainId,
+        txHash: txHash ?? null,
+        blockNumber: event.blockNumber ?? null,
+        logIndex: event.logIndex ?? null,
+        beforeState: beforeState as any,
+        afterState: {
+          owner: updatedOwnership.owner,
+          proposedOwner: updatedOwnership.proposedOwner,
         },
       });
     }

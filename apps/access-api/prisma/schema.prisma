@@ -267,6 +267,8 @@ enum EventType {
   MEMBERSHIP_DELETED
   POLICY_EVALUATION
   MEMBERSHIP_RECONCILED
+  CONTRACT_ADMIN_UPDATED
+  CONTRACT_OWNERSHIP_TRANSFERRED
   OTHER
 }
 
@@ -634,6 +636,24 @@ model AttendanceRecord {
 
   @@unique([walletId, eventId, source])
   @@index([communityId])
+}
+
+model ContractAdmin {
+  chainId   Int
+  address   String
+  enabled   Boolean
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@id([chainId, address])
+}
+
+model ContractOwnership {
+  chainId       Int      @id
+  owner         String
+  proposedOwner String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }
 
 
