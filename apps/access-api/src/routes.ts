@@ -19,6 +19,8 @@ import {
   DeadLetterAlreadyResolvedError,
 } from './services/deadLetterService';
 import { Challenge, LinkWalletInput, WalletAddress, VALID_ROLES, Role } from '@guildpass/shared-types';
+import { getResourceService, ResourceServiceError } from './services/resourceService';
+import { Challenge, LinkWalletInput, WalletAddress } from '@guildpass/shared-types';
 import {
   getCommunityRolesSchema,
   getMembershipsSchema,
@@ -36,6 +38,10 @@ import {
   listDeadLetterEventsSchema,
   retryDeadLetterEventSchema,
   listAuditEventsSchema,
+  createResourceSchema,
+  updateResourceSchema,
+  archiveResourceSchema,
+  listResourcesSchema,
 } from './schemas';
 import { authenticateApiKey, authenticateSessionOrApiKey, verifySiweSignature } from './lib/auth/auth';
 import crypto from 'crypto';
@@ -74,6 +80,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   const memberService = getMemberService(prisma);
   const identityService = getIdentityService(prisma);
   const moderationService = getModerationService(prisma);
+  const resourceService = getResourceService(prisma);
 
   // --- SIWE Authentication Routes ---
 
@@ -696,6 +703,82 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       return result;
     } catch (error) {
       if (error instanceof MemberServiceError) {
+        return reply.status(error.statusCode).send({ error: error.message });
+      }
+      return reply.status(500).send({ error: 'Internal server error' });
+    }
+  });
+
+  // --- Resource Routes ---
+
+  app.post('/v1/communities/:communityId/resources', { schema: createResourceSchema, preHandler: [authenticateApiKey] }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const { communityId } = request.params as { communityId: string };
+    const body = request.body as { resourceId: string; name: string; metadata?: any };
+    const requesterWallet = getRequesterWallet(request);
+    try {
+      const result = await resourceService.upsertResource({
+        requesterWallet,
+        communityId,
+        resourceId: body.resourceId,
+        name: body.name,
+        metadata: body.metadata,
+      });
+      return reply.status(200).send(result);
+    } catch (error) {
+      if (error instanceof ResourceServiceError) {
+        return reply.status(error.statusCode).send({ error: error.message });
+      }
+      return reply.status(500).send({ error: 'Internal server error' });
+    }
+  });
+
+  app.patch('/v1/communities/:communityId/resources/:resourceId', { schema: updateResourceSchema, preHandler: [authenticateApiKey] }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const { communityId, resourceId } = request.params as { communityId: string; resourceId: string };
+    const body = request.body as { name?: string; metadata?: any };
+    const requesterWallet = getRequesterWallet(request);
+    try {
+      const result = await resourceService.updateResource({
+        requesterWallet,
+        communityId,
+        resourceId,
+        name: body.name,
+        metadata: body.metadata,
+      });
+      return reply.status(200).send(result);
+    } catch (error) {
+      if (error instanceof ResourceServiceError) {
+        return reply.status(error.statusCode).send({ error: error.message });
+      }
+      return reply.status(500).send({ error: 'Internal server error' });
+    }
+  });
+
+  app.delete('/v1/communities/:communityId/resources/:resourceId', { schema: archiveResourceSchema, preHandler: [authenticateApiKey] }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const { communityId, resourceId } = request.params as { communityId: string; resourceId: string };
+    const requesterWallet = getRequesterWallet(request);
+    try {
+      const result = await resourceService.archiveResource({
+        requesterWallet,
+        communityId,
+        resourceId,
+      });
+      return reply.status(200).send(result);
+    } catch (error) {
+      if (error instanceof ResourceServiceError) {
+        return reply.status(error.statusCode).send({ error: error.message });
+      }
+      return reply.status(500).send({ error: 'Internal server error' });
+    }
+  });
+
+  app.get('/v1/communities/:communityId/resources', { schema: listResourcesSchema, preHandler: [authenticateApiKey] }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const { communityId } = request.params as { communityId: string };
+    // listResources does not strictly require admin auth according to the service definition
+    try {
+      const result = await resourceService.listResources(communityId);
+      return reply.status(200).send(result);
+    } catch (error) {
+      if (error instanceof ResourceServiceError) {
         return reply.status(error.statusCode).send({ error: error.message });
       }
       return reply.status(500).send({ error: 'Internal server error' });
