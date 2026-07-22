@@ -1,4 +1,4 @@
-import { PrismaClient, Prisma } from "@prisma/client";
+import { PrismaClient, Prisma, EventType } from "@prisma/client";
 import { writeChainedAuditEvent } from "./auditChainHasher";
 
 const prisma = new PrismaClient();
@@ -153,5 +153,87 @@ export async function getEventsByCommunity(
   }
   return prisma.auditEvent.findMany(args);
 }
+
+export interface QueryAuditEventsInput {
+  communityId: string;
+  actorWallet?: string;
+  eventType?: EventType | string;
+  resource?: string;
+  from?: Date;
+  to?: Date;
+  page?: number;
+  limit?: number;
+}
+
+export interface PaginatedAuditEventsResult {
+  events: any[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
+}
+
+/**
+ * Filterable, paginated audit_events query service.
+ * Supports filtering by communityId, actorWallet, eventType, resource, date range (from/to),
+ * with page/limit pagination.
+ */
+export async function queryAuditEvents(
+  client: PrismaClient | Prisma.TransactionClient = prisma,
+  options: QueryAuditEventsInput,
+): Promise<PaginatedAuditEventsResult> {
+  const page = Math.max(1, options.page ?? 1);
+  const limit = Math.min(100, Math.max(1, options.limit ?? 20));
+  const skip = (page - 1) * limit;
+
+  const where: any = {
+    communityId: options.communityId,
+  };
+
+  if (options.actorWallet) {
+    where.walletId = { equals: options.actorWallet, mode: "insensitive" };
+  }
+
+  if (options.eventType) {
+    where.eventType = options.eventType as EventType;
+  }
+
+  if (options.resource) {
+    where.resource = options.resource;
+  }
+
+  if (options.from || options.to) {
+    where.createdAt = {};
+    if (options.from) {
+      where.createdAt.gte = options.from;
+    }
+    if (options.to) {
+      where.createdAt.lte = options.to;
+    }
+  }
+
+  const [events, total] = await Promise.all([
+    (client as any).auditEvent.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      skip,
+      take: limit,
+    }),
+    (client as any).auditEvent.count({ where }),
+  ]);
+
+  return {
+    events,
+    pagination: {
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
+    },
+  };
+}
+
 
 

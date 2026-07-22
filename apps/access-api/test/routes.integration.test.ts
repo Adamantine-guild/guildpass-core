@@ -54,6 +54,9 @@ function createMockMemberService(overrides: Record<string, jest.Mock> = {}) {
     listMembersForAdmin: overrides.listMembersForAdmin ?? jest.fn(),
     assignMemberRole: overrides.assignMemberRole ?? jest.fn(),
     removeMemberRole: overrides.removeMemberRole ?? jest.fn(),
+    assignBadge: overrides.assignBadge ?? jest.fn(),
+    revokeBadge: overrides.revokeBadge ?? jest.fn(),
+    listBadgesForMember: overrides.listBadgesForMember ?? jest.fn(),
     createAccessOverride: overrides.createAccessOverride ?? jest.fn(),
     revokeAccessOverride: overrides.revokeAccessOverride ?? jest.fn(),
   };
@@ -173,6 +176,87 @@ async function buildTestApp(mockService: ReturnType<typeof createMockMemberServi
         communityId,
         targetWallet: wallet,
         role,
+      });
+    } catch (err: any) {
+      return reply.status(err?.statusCode ?? 500).send({ error: err?.message ?? 'Internal server error' });
+    }
+  });
+
+  // POST /v1/communities/:communityId/members/:wallet/badges — assign a badge to a member
+  app.post('/v1/communities/:communityId/members/:wallet/badges', async (request, reply) => {
+    const { communityId, wallet } = request.params as { communityId: string; wallet: string };
+    const body = request.body as { label?: string };
+    const label = body?.label ?? '';
+    const requesterWalletHeader = request.headers['x-wallet'] ?? request.headers['x-user-wallet'] ?? request.headers['x-requester-wallet'];
+    const requesterWallet = Array.isArray(requesterWalletHeader)
+      ? requesterWalletHeader[0] ?? ''
+      : (requesterWalletHeader as string | undefined) ?? '';
+
+    if (!wallet || !/^0x[0-9a-fA-F]{40}$/.test(wallet)) {
+      return reply.status(400).send(validationErrorWithReason('INVALID_WALLET', 'Invalid wallet format'));
+    }
+
+    if (communityId !== 'community-1') {
+      return reply.status(400).send(validationErrorWithReason('UNKNOWN_COMMUNITY', 'Unknown communityId'));
+    }
+
+    if (!label.trim()) {
+      return reply.status(400).send(apiError({ statusCode: 400, code: 'VALIDATION_ERROR', message: 'Missing required field: label' }));
+    }
+
+    try {
+      return await mockService.assignBadge({
+        requesterWallet,
+        communityId,
+        targetWallet: wallet,
+        label,
+      });
+    } catch (err: any) {
+      return reply.status(err?.statusCode ?? 500).send({ error: err?.message ?? 'Internal server error' });
+    }
+  });
+
+  // GET /v1/communities/:communityId/members/:wallet/badges — list badges for a member
+  app.get('/v1/communities/:communityId/members/:wallet/badges', async (request, reply) => {
+    const { communityId, wallet } = request.params as { communityId: string; wallet: string };
+
+    if (!wallet || !/^0x[0-9a-fA-F]{40}$/.test(wallet)) {
+      return reply.status(400).send(validationErrorWithReason('INVALID_WALLET', 'Invalid wallet format'));
+    }
+
+    if (communityId !== 'community-1') {
+      return reply.status(400).send(validationErrorWithReason('UNKNOWN_COMMUNITY', 'Unknown communityId'));
+    }
+
+    const result = await mockService.listBadgesForMember(communityId, wallet);
+    if (!result) {
+      return reply.status(404).send(apiError({ statusCode: 404, code: 'NOT_FOUND', message: 'Member not found' }));
+    }
+    return result;
+  });
+
+  // DELETE /v1/communities/:communityId/members/:wallet/badges/:badgeId — revoke a badge
+  app.delete('/v1/communities/:communityId/members/:wallet/badges/:badgeId', async (request, reply) => {
+    const { communityId, wallet, badgeId } = request.params as { communityId: string; wallet: string; badgeId: string };
+    const requesterWalletHeader = request.headers['x-wallet'] ?? request.headers['x-user-wallet'] ?? request.headers['x-requester-wallet'];
+    const requesterWallet = Array.isArray(requesterWalletHeader)
+      ? requesterWalletHeader[0] ?? ''
+      : (requesterWalletHeader as string | undefined) ?? '';
+
+    if (!wallet || !/^0x[0-9a-fA-F]{40}$/.test(wallet)) {
+      return reply.status(400).send(validationErrorWithReason('INVALID_WALLET', 'Invalid wallet format'));
+    }
+
+    if (communityId !== 'community-1') {
+      return reply.status(400).send(validationErrorWithReason('UNKNOWN_COMMUNITY', 'Unknown communityId'));
+    }
+
+    try {
+      return await mockService.revokeBadge({
+        requesterWallet,
+        communityId,
+        targetWallet: wallet,
+        badgeId,
       });
     } catch (err: any) {
       return reply.status(err?.statusCode ?? 500).send({ error: err?.message ?? 'Internal server error' });
@@ -615,6 +699,190 @@ describe('DELETE /v1/communities/:communityId/members/:wallet/roles/:role', () =
     expect(body.error).toBe('INVALID_ROLE');
     expect(body.code).toBe('INVALID_ROLE');
     expect(body.reasons[0].code).toBe('INVALID_ROLE');
+
+    await app.close();
+  });
+});
+
+describe('POST /v1/communities/:communityId/members/:wallet/badges', () => {
+  test('assigns a badge to a member', async () => {
+    const mockResponse = {
+      communityId: 'community-1',
+      wallet: '0x1234567890abcdef1234567890abcdef12345678',
+      badge: { id: 'badge-1', memberId: 'member-1', label: 'Top Contributor', issuedAt: '2026-01-01T00:00:00.000Z' },
+      assigned: true,
+      removed: false,
+    };
+    const mock = createMockMemberService({
+      assignBadge: jest.fn().mockResolvedValue(mockResponse),
+    });
+    const app = await buildTestApp(mock);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/communities/community-1/members/0x1234567890abcdef1234567890abcdef12345678/badges',
+      headers: {
+        'x-wallet': '0xrequester0000000000000000000000000000000000',
+      },
+      payload: { label: 'Top Contributor' },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.assigned).toBe(true);
+    expect(body.badge.label).toBe('Top Contributor');
+    expect(mock.assignBadge).toHaveBeenCalledWith({
+      requesterWallet: '0xrequester0000000000000000000000000000000000',
+      communityId: 'community-1',
+      targetWallet: '0x1234567890abcdef1234567890abcdef12345678',
+      label: 'Top Contributor',
+    });
+
+    await app.close();
+  });
+
+  test('returns 400 with INVALID_WALLET when target wallet format is invalid', async () => {
+    const mock = createMockMemberService();
+    const app = await buildTestApp(mock);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/communities/community-1/members/0xinvalidwallet/badges',
+      payload: { label: 'Top Contributor' },
+    });
+
+    expect(response.statusCode).toBe(400);
+    const body = response.json();
+    expect(body.error).toBe('INVALID_WALLET');
+
+    await app.close();
+  });
+
+  test('returns 400 with UNKNOWN_COMMUNITY when communityId is unknown', async () => {
+    const mock = createMockMemberService();
+    const app = await buildTestApp(mock);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/communities/unknown-community/members/0x1234567890abcdef1234567890abcdef12345678/badges',
+      payload: { label: 'Top Contributor' },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error).toBe('UNKNOWN_COMMUNITY');
+
+    await app.close();
+  });
+
+  test('returns 400 when label is missing', async () => {
+    const mock = createMockMemberService();
+    const app = await buildTestApp(mock);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/v1/communities/community-1/members/0x1234567890abcdef1234567890abcdef12345678/badges',
+      payload: {},
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error).toBe('VALIDATION_ERROR');
+
+    await app.close();
+  });
+});
+
+describe('GET /v1/communities/:communityId/members/:wallet/badges', () => {
+  test('returns badges for a member', async () => {
+    const mockResponse = {
+      communityId: 'community-1',
+      wallet: '0x1234567890abcdef1234567890abcdef12345678',
+      badges: [
+        { id: 'badge-1', memberId: 'member-1', label: 'Top Contributor', issuedAt: '2026-01-01T00:00:00.000Z' },
+      ],
+    };
+    const mock = createMockMemberService({
+      listBadgesForMember: jest.fn().mockResolvedValue(mockResponse),
+    });
+    const app = await buildTestApp(mock);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/v1/communities/community-1/members/0x1234567890abcdef1234567890abcdef12345678/badges',
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.badges).toHaveLength(1);
+    expect(mock.listBadgesForMember).toHaveBeenCalledWith(
+      'community-1',
+      '0x1234567890abcdef1234567890abcdef12345678',
+    );
+
+    await app.close();
+  });
+
+  test('returns 404 when the wallet is not a member', async () => {
+    const mock = createMockMemberService({
+      listBadgesForMember: jest.fn().mockResolvedValue(null),
+    });
+    const app = await buildTestApp(mock);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/v1/communities/community-1/members/0x1234567890abcdef1234567890abcdef12345678/badges',
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json().error).toBe('NOT_FOUND');
+
+    await app.close();
+  });
+});
+
+describe('DELETE /v1/communities/:communityId/members/:wallet/badges/:badgeId', () => {
+  test('revokes a badge from a member', async () => {
+    const mockResponse = {
+      communityId: 'community-1',
+      wallet: '0x1234567890abcdef1234567890abcdef12345678',
+      assigned: false,
+      removed: true,
+    };
+    const mock = createMockMemberService({
+      revokeBadge: jest.fn().mockResolvedValue(mockResponse),
+    });
+    const app = await buildTestApp(mock);
+
+    const response = await app.inject({
+      method: 'DELETE',
+      url: '/v1/communities/community-1/members/0x1234567890abcdef1234567890abcdef12345678/badges/badge-1',
+      headers: {
+        'x-wallet': '0xrequester0000000000000000000000000000000000',
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().removed).toBe(true);
+    expect(mock.revokeBadge).toHaveBeenCalledWith({
+      requesterWallet: '0xrequester0000000000000000000000000000000000',
+      communityId: 'community-1',
+      targetWallet: '0x1234567890abcdef1234567890abcdef12345678',
+      badgeId: 'badge-1',
+    });
+
+    await app.close();
+  });
+
+  test('returns 400 with INVALID_WALLET when target wallet format is invalid', async () => {
+    const mock = createMockMemberService();
+    const app = await buildTestApp(mock);
+
+    const response = await app.inject({
+      method: 'DELETE',
+      url: '/v1/communities/community-1/members/0xinvalidwallet/badges/badge-1',
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error).toBe('INVALID_WALLET');
 
     await app.close();
   });

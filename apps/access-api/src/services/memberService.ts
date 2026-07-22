@@ -3,6 +3,7 @@ import {
   AccessCheckInput,
   AccessDecision,
   AccessOverride,
+  AccessPolicy,
   AccessOverrideMutationInput,
   AccessOverrideMutationResult,
   Role,
@@ -10,9 +11,24 @@ import {
   AssignRoleInput,
   RemoveRoleInput,
   RoleMutationResult,
+  AssignBadgeInput,
+  RevokeBadgeInput,
+  BadgeMutationResult,
+  ListBadgesResult,
   WalletAddress,
 } from "@guildpass/shared-types";
-import { evaluate } from "@guildpass/policy-engine";
+import {
+  evaluate,
+  resolveConflicts,
+  resolveEffectiveRoles,
+  DEFAULT_RESOLUTION_CONFIG,
+  type EvaluationResult,
+} from "@guildpass/policy-engine";
+import type { ContributionScore } from "@guildpass/governance-engine";
+import {
+  GovernanceRuleProvider,
+  type ActiveGovernanceRule,
+} from "../policy/governanceRuleProvider";
 import { logEvent } from "./auditService";
 import { logOutboxEventTx } from "./outboxService";
 import { getIdentityService } from "./identityService";
@@ -99,6 +115,86 @@ function overrideVersionKey(communityId: string) {
 }
 function delegationVersionKey(communityId: string) {
   return `accessDecisionVersion:delegation|c:${communityId}`;
+}
+
+async function loadActiveGovernanceRules(
+  prismaClient: PrismaClient,
+  communityId: string,
+  resource: string,
+): Promise<ActiveGovernanceRule[]> {
+  const rules = await prismaClient.governanceRule.findMany({
+    where: { communityId, resource, active: true },
+  });
+  return rules.map((rule) => ({
+    id: rule.id,
+    name: rule.name,
+    resource: rule.resource,
+    ast: rule.ast as unknown as ActiveGovernanceRule["ast"],
+  }));
+}
+
+async function loadContributionScore(
+  prismaClient: PrismaClient,
+  wallet: string,
+  communityId: string,
+): Promise<ContributionScore | undefined> {
+  const score = await prismaClient.contributionScore.findUnique({
+    where: { walletId_communityId: { walletId: wallet, communityId } },
+  });
+  if (!score) return undefined;
+  return {
+    total: score.totalScore,
+    breakdown: (score.breakdown as ContributionScore["breakdown"]) ?? {},
+  };
+}
+
+function applyGovernanceDecision(
+  base: AccessDecision,
+  ctx: RoleContext,
+  basePolicy: AccessPolicy,
+  opts: {
+    rules: ActiveGovernanceRule[];
+    wallet: string;
+    communityId: string;
+    contributionScore?: ContributionScore;
+  },
+): AccessDecision {
+  const provider = new GovernanceRuleProvider(opts);
+  const effectiveRoles = base.effectiveRoles ?? resolveEffectiveRoles(ctx);
+  const govResult = provider.evaluate({
+    policy: basePolicy,
+    roleContext: ctx,
+    effectiveRoles,
+  });
+
+  if (govResult.result === "ABSTAIN") {
+    return base;
+  }
+
+  const baseResult: EvaluationResult = {
+    result: base.code,
+    explanation: base.reasons.map((r) => r.message).join("; "),
+    code: base.reasons[0]?.code,
+  };
+
+  const resolution = resolveConflicts(
+    [baseResult, govResult],
+    DEFAULT_RESOLUTION_CONFIG,
+  );
+
+  return {
+    allowed: resolution.decision === "ALLOW",
+    code: resolution.decision,
+    reasons: [
+      ...base.reasons,
+      {
+        code: govResult.code ?? `GOVERNANCE_${govResult.result}`,
+        message: govResult.explanation,
+      },
+    ],
+    effectiveRoles,
+    membershipState: base.membershipState,
+  };
 }
 
 export function getMemberService(prismaClient: PrismaClient) {
@@ -321,10 +417,10 @@ export function getMemberService(prismaClient: PrismaClient) {
         membershipState = "active";
         break; // No need to check further if we have an active one
       }
-      if (state === "suspended" && membershipState !== "active") {
+      if (state === "suspended") {
         membershipState = "suspended";
       }
-      if (state === "expired" && membershipState !== "active" && membershipState !== "suspended") {
+      if (state === "expired" && membershipState !== "suspended") {
         membershipState = "expired";
       }
     }
@@ -349,10 +445,26 @@ export function getMemberService(prismaClient: PrismaClient) {
       overrides: [],
     };
 
-    const decision = evaluate(basePolicy, ctx, {
-      roleDefinitions,
-      delegatedGrants,
-    });
+    let decision = evaluate(basePolicy, ctx);
+
+    const governanceRules = await loadActiveGovernanceRules(
+      prismaClient,
+      communityId,
+      resource,
+    );
+    if (governanceRules.length > 0) {
+      const contributionScore = await loadContributionScore(
+        prismaClient,
+        primaryWallet,
+        communityId,
+      );
+      decision = applyGovernanceDecision(decision, ctx, basePolicy, {
+        rules: governanceRules,
+        wallet: primaryWallet,
+        communityId,
+        contributionScore,
+      });
+    }
 
     const reasonCode = decision.reasons?.[0]?.code ?? null;
     const allowedDecision = decision.allowed ? "ALLOW" : "DENY";
@@ -673,6 +785,151 @@ export function getMemberService(prismaClient: PrismaClient) {
 
       await bumpRoleVersion(communityId);
       return { communityId, wallet: targetWallet, role, assigned: false, removed: true };
+    },
+
+    async assignBadge(input: AssignBadgeInput): Promise<BadgeMutationResult> {
+      const { requesterWallet, communityId, targetWallet, label } = input;
+      if (!label || !label.trim()) {
+        throw new MemberServiceError("Badge label is required", 400);
+      }
+
+      const requester = await prismaClient.wallet.findUnique({
+        where: { address: normaliseWallet(requesterWallet) },
+      });
+      if (!requester) throw new MemberServiceError("Requester not found", 403);
+
+      const requesterMember = await prismaClient.member.findFirst({
+        where: { walletId: requester.id, communityId },
+        include: { roles: true },
+      });
+      const isRequesterAdmin = requesterMember?.roles.some(
+        (r) => r.role === "admin" && r.active,
+      );
+      if (!isRequesterAdmin) throw new MemberServiceError("Not authorized", 403);
+
+      const target = await prismaClient.wallet.findUnique({
+        where: { address: normaliseWallet(targetWallet) },
+      });
+      if (!target) throw new MemberServiceError("Target wallet not found", 404);
+
+      const targetMember = await prismaClient.member.findFirst({
+        where: { walletId: target.id, communityId },
+      });
+      if (!targetMember) throw new MemberServiceError("Target not a member", 404);
+
+      const badge = await prismaClient.$transaction(async (tx: any) => {
+        const created = await tx.badge.create({
+          data: {
+            memberId: targetMember.id,
+            label,
+          },
+        });
+
+        await logOutboxEventTx(tx, {
+          eventType: "BADGE_ASSIGNED",
+          entityId: created.id,
+          entityType: "Badge",
+          communityId,
+          payload: {
+            wallet: normaliseWallet(targetWallet),
+            label: created.label,
+          },
+        });
+
+        return created;
+      });
+
+      return {
+        communityId,
+        wallet: targetWallet,
+        badge: {
+          id: badge.id,
+          memberId: badge.memberId,
+          label: badge.label,
+          issuedAt: badge.issuedAt.toISOString(),
+        },
+        assigned: true,
+        removed: false,
+      };
+    },
+
+    async revokeBadge(input: RevokeBadgeInput): Promise<BadgeMutationResult> {
+      const { requesterWallet, communityId, targetWallet, badgeId } = input;
+
+      const requester = await prismaClient.wallet.findUnique({
+        where: { address: normaliseWallet(requesterWallet) },
+      });
+      if (!requester) throw new MemberServiceError("Requester not found", 403);
+
+      const requesterMember = await prismaClient.member.findFirst({
+        where: { walletId: requester.id, communityId },
+        include: { roles: true },
+      });
+      const isRequesterAdmin = requesterMember?.roles.some(
+        (r) => r.role === "admin" && r.active,
+      );
+      if (!isRequesterAdmin) throw new MemberServiceError("Not authorized", 403);
+
+      const target = await prismaClient.wallet.findUnique({
+        where: { address: normaliseWallet(targetWallet) },
+      });
+      if (!target) throw new MemberServiceError("Target wallet not found", 404);
+
+      const targetMember = await prismaClient.member.findFirst({
+        where: { walletId: target.id, communityId },
+      });
+      if (!targetMember) throw new MemberServiceError("Target not a member", 404);
+
+      const existing = await prismaClient.badge.findFirst({
+        where: { id: badgeId, memberId: targetMember.id },
+      });
+      if (!existing) {
+        return { communityId, wallet: targetWallet, assigned: false, removed: false, message: "Badge not found" };
+      }
+
+      await prismaClient.$transaction(async (tx: any) => {
+        await tx.badge.delete({ where: { id: existing.id } });
+        await logOutboxEventTx(tx, {
+          eventType: "BADGE_REVOKED",
+          entityId: existing.id,
+          entityType: "Badge",
+          communityId,
+          payload: {
+            wallet: normaliseWallet(targetWallet),
+            label: existing.label,
+          },
+        });
+      });
+
+      return { communityId, wallet: targetWallet, assigned: false, removed: true };
+    },
+
+    async listBadgesForMember(communityId: string, wallet: string): Promise<ListBadgesResult | null> {
+      const target = await prismaClient.wallet.findUnique({
+        where: { address: normaliseWallet(wallet) },
+      });
+      if (!target) return null;
+
+      const targetMember = await prismaClient.member.findFirst({
+        where: { walletId: target.id, communityId },
+      });
+      if (!targetMember) return null;
+
+      const badges = await prismaClient.badge.findMany({
+        where: { memberId: targetMember.id },
+        orderBy: { issuedAt: "desc" },
+      });
+
+      return {
+        communityId,
+        wallet: wallet as WalletAddress,
+        badges: badges.map((b) => ({
+          id: b.id,
+          memberId: b.memberId,
+          label: b.label,
+          issuedAt: b.issuedAt.toISOString(),
+        })),
+      };
     },
 
     bumpMembershipVersion,

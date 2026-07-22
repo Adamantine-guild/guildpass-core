@@ -1,6 +1,7 @@
 import { PrismaClient, Wallet, Challenge as PrismaChallenge, LinkedWallet as PrismaLinkedWallet } from "@prisma/client";
 import { Challenge, LinkWalletInput, LinkedWallet, WalletAddress } from "@guildpass/shared-types";
 import crypto from "crypto";
+import { ethers } from "ethers";
 
 export class IdentityServiceError extends Error {
   statusCode: number;
@@ -115,10 +116,25 @@ export function getIdentityService(prisma: PrismaClient) {
       throw new IdentityServiceError("Challenge wallet addresses do not match", 400);
     }
 
-    // TODO: Implement signature verification!
-    // For EIP-712 or personal_sign, use ethers.js or viem to verify the signature
-    // against the secondary wallet address
-    // For now, we'll skip verification but add a TODO
+    // Verify the signature against the secondary wallet address
+    const message = `GuildPass Link Wallet Request\n` +
+      `Primary Wallet: ${normalisedPrimary}\n` +
+      `Secondary Wallet: ${normalisedSecondary}\n` +
+      `Nonce: ${challenge.nonce}\n` +
+      `Issued At: ${challenge.issuedAt}\n` +
+      `Expires At: ${challenge.expiresAt}`;
+
+    try {
+      const recoveredAddress = ethers.verifyMessage(message, signature);
+      if (recoveredAddress.toLowerCase() !== normalisedSecondary) {
+        throw new IdentityServiceError("Signature verification failed: signer address does not match secondary wallet", 400);
+      }
+    } catch (err) {
+      throw new IdentityServiceError(
+        err instanceof Error ? `Invalid signature: ${err.message}` : "Invalid signature format",
+        400
+      );
+    }
 
     // Mark challenge as used and create the link in a transaction
     const linkedWallet = await prisma.$transaction(async (tx) => {
@@ -184,7 +200,7 @@ export function getIdentityService(prisma: PrismaClient) {
     const normalised = normaliseWallet(walletAddress);
 
     // First check if this is a secondary wallet linked to a primary
-    const linkedAsSecondary = await prisma.linkedWallet.findUnique({
+    const linkedAsSecondary = await prisma.linkedWallet.findFirst({
       where: { secondaryWalletAddress: normalised },
     });
 

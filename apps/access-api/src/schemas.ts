@@ -375,6 +375,172 @@ export const revokeAccessOverrideSchema = {
 } as const;
 
 // ---------------------------------------------------------------------------
+// Badge shared fragments
+// ---------------------------------------------------------------------------
+
+const badgeItemSchema = {
+  type: 'object',
+  required: ['id', 'memberId', 'label', 'issuedAt'],
+  properties: {
+    id: { type: 'string' },
+    memberId: { type: 'string' },
+    label: { type: 'string' },
+    issuedAt: { type: 'string', format: 'date-time' },
+  },
+} as const;
+
+// ---------------------------------------------------------------------------
+// POST /v1/communities/:communityId/members/:wallet/badges
+// ---------------------------------------------------------------------------
+
+export const assignBadgeSchema = {
+  summary: 'Assign a badge to a community member',
+  tags: ['Members', 'Badges'],
+  params: {
+    type: 'object',
+    required: ['communityId', 'wallet'],
+    properties: {
+      communityId: { type: 'string', description: 'Community identifier' },
+      wallet: walletAddressSchema,
+    },
+  },
+  body: {
+    type: 'object',
+    required: ['label'],
+    properties: {
+      label: {
+        type: 'string',
+        minLength: 1,
+        description: 'Badge label to assign',
+      },
+    },
+  },
+  response: {
+    200: {
+      description: 'Badge assigned successfully',
+      type: 'object',
+      required: ['communityId', 'wallet', 'assigned', 'removed'],
+      properties: {
+        communityId: { type: 'string' },
+        wallet: walletAddressSchema,
+        badge: badgeItemSchema,
+        assigned: { type: 'boolean' },
+        removed: { type: 'boolean' },
+        message: { type: 'string' },
+      },
+    },
+    400: {
+      description: 'Validation error (invalid wallet, unknown community, or missing label)',
+      ...errorSchema,
+    },
+    403: {
+      description: 'Forbidden — requester does not have permission',
+      ...forbiddenSchema,
+    },
+    404: {
+      description: 'Target wallet is not a member of the community',
+      ...errorSchema,
+    },
+    500: {
+      description: 'Internal server error',
+      ...forbiddenSchema,
+    },
+  },
+} as const;
+
+// ---------------------------------------------------------------------------
+// GET /v1/communities/:communityId/members/:wallet/badges
+// ---------------------------------------------------------------------------
+
+export const listBadgesSchema = {
+  summary: 'List badges assigned to a community member',
+  tags: ['Members', 'Badges'],
+  params: {
+    type: 'object',
+    required: ['communityId', 'wallet'],
+    properties: {
+      communityId: { type: 'string', description: 'Community identifier' },
+      wallet: walletAddressSchema,
+    },
+  },
+  response: {
+    200: {
+      description: 'Badges for the member',
+      type: 'object',
+      required: ['communityId', 'wallet', 'badges'],
+      properties: {
+        communityId: { type: 'string' },
+        wallet: walletAddressSchema,
+        badges: {
+          type: 'array',
+          items: badgeItemSchema,
+        },
+      },
+    },
+    400: {
+      description: 'Validation error (invalid wallet or unknown community)',
+      ...errorSchema,
+    },
+    404: {
+      description: 'Target wallet is not a member of the community',
+      ...errorSchema,
+    },
+    500: {
+      description: 'Internal server error',
+      ...forbiddenSchema,
+    },
+  },
+} as const;
+
+// ---------------------------------------------------------------------------
+// DELETE /v1/communities/:communityId/members/:wallet/badges/:badgeId
+// ---------------------------------------------------------------------------
+
+export const revokeBadgeSchema = {
+  summary: 'Revoke a badge from a community member',
+  tags: ['Members', 'Badges'],
+  params: {
+    type: 'object',
+    required: ['communityId', 'wallet', 'badgeId'],
+    properties: {
+      communityId: { type: 'string', description: 'Community identifier' },
+      wallet: walletAddressSchema,
+      badgeId: { type: 'string', description: 'Badge identifier' },
+    },
+  },
+  response: {
+    200: {
+      description: 'Badge revoked (or was already absent)',
+      type: 'object',
+      required: ['communityId', 'wallet', 'assigned', 'removed'],
+      properties: {
+        communityId: { type: 'string' },
+        wallet: walletAddressSchema,
+        assigned: { type: 'boolean' },
+        removed: { type: 'boolean' },
+        message: { type: 'string' },
+      },
+    },
+    400: {
+      description: 'Validation error (invalid wallet or unknown community)',
+      ...errorSchema,
+    },
+    403: {
+      description: 'Forbidden — requester does not have permission',
+      ...forbiddenSchema,
+    },
+    404: {
+      description: 'Target wallet is not a member of the community',
+      ...errorSchema,
+    },
+    500: {
+      description: 'Internal server error',
+      ...forbiddenSchema,
+    },
+  },
+} as const;
+
+// ---------------------------------------------------------------------------
 // POST /v1/access/check
 // ---------------------------------------------------------------------------
 
@@ -607,3 +773,129 @@ export const retryDeadLetterEventSchema = {
     },
   },
 } as const;
+
+// ---------------------------------------------------------------------------
+// GET /v1/communities/:communityId/audit-events
+// ---------------------------------------------------------------------------
+
+export const listAuditEventsSchema = {
+  summary: 'List and filter audit events for a community (admin only)',
+  tags: ['Audit'],
+  params: {
+    type: 'object',
+    required: ['communityId'],
+    properties: {
+      communityId: { type: 'string', description: 'Community identifier' },
+    },
+  },
+  querystring: {
+    type: 'object',
+    properties: {
+      actorWallet: {
+        type: 'string',
+        description: 'Filter events by actor wallet address',
+      },
+      eventType: {
+        type: 'string',
+        enum: [
+          'ACCESS_CHECK',
+          'MEMBERSHIP_CREATED',
+          'MEMBERSHIP_UPDATED',
+          'MEMBERSHIP_DELETED',
+          'POLICY_EVALUATION',
+          'MEMBERSHIP_RECONCILED',
+          'OTHER',
+        ],
+        description: 'Filter events by event type',
+      },
+      resource: {
+        type: 'string',
+        description: 'Filter events by resource identifier',
+      },
+      from: {
+        type: 'string',
+        format: 'date-time',
+        description: 'ISO 8601 timestamp to filter events created at or after',
+      },
+      to: {
+        type: 'string',
+        format: 'date-time',
+        description: 'ISO 8601 timestamp to filter events created at or before',
+      },
+      page: {
+        type: 'integer',
+        minimum: 1,
+        default: 1,
+        description: 'Page number for pagination',
+      },
+      limit: {
+        type: 'integer',
+        minimum: 1,
+        maximum: 100,
+        default: 20,
+        description: 'Number of events per page',
+      },
+    },
+  },
+  response: {
+    200: {
+      description: 'Paginated audit events list',
+      type: 'object',
+      required: ['events', 'pagination'],
+      properties: {
+        events: {
+          type: 'array',
+          items: {
+            type: 'object',
+            required: ['id', 'eventType', 'createdAt'],
+            properties: {
+              id: { type: 'string', format: 'uuid' },
+              eventType: { type: 'string' },
+              walletId: { type: 'string', nullable: true },
+              communityId: { type: 'string', nullable: true },
+              resource: { type: 'string', nullable: true },
+              policyRule: { type: 'string', nullable: true },
+              decision: { type: 'string', nullable: true },
+              reasonCode: { type: 'string', nullable: true },
+              beforeState: { type: 'object', additionalProperties: true, nullable: true },
+              afterState: { type: 'object', additionalProperties: true, nullable: true },
+              correlationId: { type: 'string', nullable: true },
+              chainId: { type: 'integer', nullable: true },
+              txHash: { type: 'string', nullable: true },
+              blockNumber: { type: 'integer', nullable: true },
+              logIndex: { type: 'integer', nullable: true },
+              membershipStateVersion: { type: 'string', nullable: true },
+              roleStateVersion: { type: 'string', nullable: true },
+              recordHash: { type: 'string', nullable: true },
+              previousRecordHash: { type: 'string', nullable: true },
+              createdAt: { type: 'string', format: 'date-time' },
+            },
+          },
+        },
+        pagination: {
+          type: 'object',
+          required: ['page', 'limit', 'total', 'totalPages'],
+          properties: {
+            page: { type: 'integer' },
+            limit: { type: 'integer' },
+            total: { type: 'integer' },
+            totalPages: { type: 'integer' },
+          },
+        },
+      },
+    },
+    400: {
+      description: 'Validation error (e.g. invalid date format)',
+      ...errorSchema,
+    },
+    403: {
+      description: 'Forbidden — requester is not a community admin',
+      ...forbiddenSchema,
+    },
+    500: {
+      description: 'Internal server error',
+      ...forbiddenSchema,
+    },
+  },
+} as const;
+

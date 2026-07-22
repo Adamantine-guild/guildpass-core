@@ -27,6 +27,7 @@ import { registerRoutes } from './routes';
 import { getPrisma } from './services/prisma';
 import { unauthorized } from './errors';
 import { config } from './config';
+import accessCheckRateLimiter from './plugins/accessCheckRateLimiter';
 
 // --------------------------------------------------------------------------
 // Helper: normalise a Fastify route URL into a stable label
@@ -273,6 +274,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   // -----------------------------------------------------------------------
   // 8. Business routes
   // -----------------------------------------------------------------------
+  await app.register(accessCheckRateLimiter);
   registerRoutes(app);
 
   return app;

@@ -6,57 +6,29 @@
  * as a test helper for integration tests.
  *
  * These helpers bridge the gap between contract events and database state updates.
+ *
+ * Event types are imported from @guildpass/contracts — the single source of truth
+ * for the MembershipNFT contract ABI and typed event definitions.
  */
 
 import type { PrismaClient } from '@prisma/client';
 import { writeChainedAuditEvent } from './auditChainHasher';
 
-/**
- * Decoded contract event types - derived from MembershipNFT.sol
- */
+// Re-export event types from the shared contracts package so that existing
+// consumers of this module continue to work without import changes.
+export type {
+  DecodedContractEvent,
+  DecodedMembershipMintedEvent,
+  DecodedMembershipRenewedEvent,
+  DecodedMembershipSuspendedEvent,
+} from '@guildpass/contracts';
 
-export interface DecodedMembershipMintedEvent {
-  type: 'MembershipMinted';
-  to: string; // wallet address
-  tokenId: number;
-  communityId: string;
-  expiresAt: number; // unix timestamp
-  chainId?: number;
-  blockNumber?: number;
-  blockHash?: string;
-  transactionHash?: string;
-  txHash?: string;
-  logIndex?: number;
-}
-
-export interface DecodedMembershipRenewedEvent {
-  type: 'MembershipRenewed';
-  tokenId: number;
-  newExpiresAt: number; // unix timestamp
-  chainId?: number;
-  blockNumber?: number;
-  blockHash?: string;
-  transactionHash?: string;
-  txHash?: string;
-  logIndex?: number;
-}
-
-export interface DecodedMembershipSuspendedEvent {
-  type: 'MembershipSuspended';
-  tokenId: number;
-  isSuspended: boolean;
-  chainId?: number;
-  blockNumber?: number;
-  blockHash?: string;
-  transactionHash?: string;
-  txHash?: string;
-  logIndex?: number;
-}
-
-export type DecodedContractEvent =
-  | DecodedMembershipMintedEvent
-  | DecodedMembershipRenewedEvent
-  | DecodedMembershipSuspendedEvent;
+import type {
+  DecodedContractEvent,
+  DecodedMembershipMintedEvent,
+  DecodedMembershipRenewedEvent,
+  DecodedMembershipSuspendedEvent,
+} from '@guildpass/contracts';
 
 /**
  * Validates that required fields exist in an event
