@@ -104,6 +104,34 @@ export const API_CONTRACT = {
       message: 'Role removed',
     },
   },
+  communityRoles: {
+    method: 'GET',
+    pathTemplate: '/v1/communities/:communityId/roles',
+    samplePath: '/v1/communities/community-1/roles',
+    successStatus: 200,
+    successResponse: {
+      roles: [
+        {
+          name: 'admin' as const,
+          description: 'Administrator with full permissions',
+          implies: ['contributor' as const, 'member' as const],
+        },
+        {
+          name: 'contributor' as const,
+          description: 'Contributor with write permissions',
+          implies: ['member' as const],
+        },
+        {
+          name: 'member' as const,
+          description: 'Standard member with basic permissions',
+          implies: [],
+        },
+      ],
+    },
+    errorResponse: {
+      404: { error: 'NOT_FOUND', code: 'NOT_FOUND', message: 'Community not found', statusCode: 404 },
+    },
+  },
 } as const;
 
 export type ApiContract = typeof API_CONTRACT;

@@ -18,8 +18,9 @@ import {
   DeadLetterNotFoundError,
   DeadLetterAlreadyResolvedError,
 } from './services/deadLetterService';
-import { Challenge, LinkWalletInput, WalletAddress } from '@guildpass/shared-types';
+import { Challenge, LinkWalletInput, WalletAddress, VALID_ROLES, Role } from '@guildpass/shared-types';
 import {
+  getCommunityRolesSchema,
   getMembershipsSchema,
   getMemberProfileSchema,
   assignMemberRoleSchema,
@@ -248,6 +249,35 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     }
   );
 
+  // GET /v1/communities/:communityId/roles — list valid roles and hierarchy for a community
+  app.get('/v1/communities/:communityId/roles', { schema: getCommunityRolesSchema }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const { communityId } = request.params as { communityId: string };
+    const community = await prisma.community.findUnique({ where: { id: communityId } });
+    if (!community) {
+      return reply.status(404).send(notFound('Community not found'));
+    }
+
+    return {
+      roles: [
+        {
+          name: 'admin',
+          description: 'Administrator with full permissions',
+          implies: ['contributor', 'member'],
+        },
+        {
+          name: 'contributor',
+          description: 'Contributor with write permissions',
+          implies: ['member'],
+        },
+        {
+          name: 'member',
+          description: 'Standard member with basic permissions',
+          implies: [],
+        },
+      ],
+    };
+  });
+
   // GET /v1/communities/:communityId/memberships/:wallet — list membership communities for a wallet
   app.get('/v1/communities/:communityId/memberships/:wallet', { schema: getMembershipsSchema }, async (request: FastifyRequest, reply: FastifyReply) => {
     const { communityId, wallet } = request.params as { communityId: string; wallet: string };
@@ -281,8 +311,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       return reply.status(400).send(validationErrorWithReason('UNKNOWN_COMMUNITY', 'Unknown communityId'));
     }
 
-    const validRoles = ['admin', 'member', 'contributor'];
-    if (!role || !validRoles.includes(role)) {
+    if (!role || !(VALID_ROLES as readonly string[]).includes(role)) {
       return reply.status(400).send(validationErrorWithReason('INVALID_ROLE', 'Unrecognized role'));
     }
 
@@ -313,8 +342,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       return reply.status(400).send(validationErrorWithReason('UNKNOWN_COMMUNITY', 'Unknown communityId'));
     }
 
-    const validRoles = ['admin', 'member', 'contributor'];
-    if (!role || !validRoles.includes(role)) {
+    if (!role || !(VALID_ROLES as readonly string[]).includes(role)) {
       return reply.status(400).send(validationErrorWithReason('INVALID_ROLE', 'Unrecognized role'));
     }
 
@@ -509,7 +537,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       // We do this by calling listMembersForAdmin only after requester is validated.
       const requesterMembers = await memberService.listMembersForAdmin(
         communityId,
-        role as 'admin' | 'member' | 'contributor' | undefined,
+        role as Role | undefined,
       );
       // listMembersForAdmin is not requester-scoped; enforce admin authorization in a lightweight way:
       // If requester is missing from admin-filtered listing, deny.
