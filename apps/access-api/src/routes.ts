@@ -185,7 +185,10 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // POST /v1/access/check — check access for wallet/resource
-  app.post('/v1/access/check', { schema: accessCheckSchema }, async (request: FastifyRequest, reply: FastifyReply) => {
+  app.post('/v1/access/check', { 
+    schema: accessCheckSchema,
+    preHandler: app.accessCheckRateLimitHook ? [app.accessCheckRateLimitHook] : undefined,
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
     const body = request.body as {
       wallet: `0x${string}`;
       communityId: string;
