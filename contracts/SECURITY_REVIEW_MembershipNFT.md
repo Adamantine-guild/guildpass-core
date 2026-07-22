@@ -143,6 +143,64 @@ we recommend:
 `testTransferOwnershipRejectsZeroAddress`,
 `testFuzz_transferOwnership_twoStep`.
 
+### 5. Missing ERC-721 / ERC-165 / ERC-5192 interface — Non-transferable tokens invisible to wallets — Fixed
+
+**Before:** The contract implemented "minimal ERC-721-like" ownership
+tracking but did not implement the actual ERC-721 interface (no
+`balanceOf`, no `tokenURI`, no ERC-165 `supportsInterface`), did not emit
+spec-compliant `Transfer` events, and did not declare non-transferability
+via any recognized standard. As a result, wallets, block explorers, and
+NFT marketplaces could not recognize, display, or correctly represent
+membership tokens — undermining the "membership NFT" branding.
+
+**Impact:** Users' wallet apps could not show GuildPass membership NFTs
+the way they show any standard NFT. Marketplaces could not correctly
+refuse to list soulbound tokens (they would silently fail rather than
+showing a clear "non-transferable" state).
+
+**Fix applied:**
+
+1. **`supportsInterface(bytes4)`** — returns `true` for IERC165
+   (`0x01ffc9a7`), IERC721 (`0x80ac58cd`), and IERC5192 (`0x4bc2a65b`);
+   `false` for unrelated interfaces.
+
+2. **`balanceOf(address)`** — returns the number of tokens currently owned
+   by a wallet. Maintained via an incrementing/decrementing counter with
+   swap-and-pop removal on `_ownedTokens`, keeping mint and suspend paths
+   O(1) (one new SSTORE each).
+
+3. **`tokenURI(uint256)`** — returns a well-formed URI
+   (`baseTokenURI` + decimal token id) for any minted token; reverts with
+   `NO_TOKEN` for nonexistent tokens (matching `ownerOf`'s revert behavior).
+
+4. **`locked(uint256)`** (ERC-5192) — always returns `true` since
+   transfers are never implemented; reverts for nonexistent tokens.
+
+5. **ERC-721 `Transfer` events** — emitted additively (not replacing
+   custom events) on mint (`from: address(0)`) and suspend
+   (`to: address(0)`), so existing indexers built against
+   `MembershipMinted`/`MembershipSuspended` keep working unchanged.
+
+6. **ERC-5192 `Locked` event** — emitted on mint, signaling the token is
+   soulbound.
+
+7. **`baseTokenURI`** — configurable in the constructor; exposed via a
+   public getter.
+
+**Gas impact:** The `mint()` path gains ~16k gas per call (two additional
+SSTOREs for `_balances` and `_ownedTokens`, plus one event emission for
+`Transfer` and one for `Locked`). `setSuspended()` gains ~10k gas when
+toggling active status (one `Transfer` event + one SSTORE for `_balances`
++ swap-and-pop on `_ownedTokens`). Renewal paths are unaffected. See
+`GasBenchmark.t.sol` for measured values.
+
+**Tests:** `testSupportsInterface_IERC165`, `testSupportsInterface_IERC721`,
+`testSupportsInterface_IERC5192`, `testSupportsInterface_UnrelatedInterface`,
+`testBalanceOf_*` (7 tests), `testTokenURI_*` (2 tests),
+`testLocked_*` (4 tests), `testMintEmitsTransferFromZero`,
+`testMintEmitsLockedEvent`, `testSuspendEmitsTransferToZero`,
+`testRemintEmitsBothTransferEvents`, `testBaseTokenURI_ReturnsConfiguredValue`.
+
 ---
 
 ## Checked, no issue found
@@ -191,12 +249,11 @@ The contract has no `transferFrom`/`safeTransferFrom` at all — membership
 tokens are non-transferable by construction (only admin-driven mint/renew/
 suspend change ownership-adjacent state). This sidesteps an entire class of
 ERC-721 transfer-time vulnerabilities (reentrancy via `onERC721Received`,
-approval-based theft, etc.) since the surface doesn't exist. This is a
-product/API-completeness gap relative to being called an "ERC-721" in the
-README, not a security issue — noted here for completeness, not acted on,
-since adding transfers is a product decision (would a transferred token
-carry its community membership to a new wallet?) outside this review's
-scope.
+approval-based theft, etc.) since the surface doesn't exist. The contract
+now implements ERC-5192 (`locked()` always returns `true`) to explicitly
+declare non-transferability so marketplaces correctly refuse to list tokens.
+ERC-721 `Transfer` events are emitted additively for wallet/display
+compatibility but never indicate actual token transfers.
 
 ---
 
@@ -208,6 +265,7 @@ scope.
 | 2 | Re-mint leaves stale token active | High (violates core membership invariant) | Fixed |
 | 3 | `setAdmin(address(0), ...)` accepted | Low (defense in depth) | Fixed |
 | 4 | Single-key owner, no transfer path | Medium (operational/key-management risk) | Two-step transfer added; multisig/timelock recommended before mainnet |
+| 5 | Missing ERC-721/ERC-165/ERC-5192 interface | Medium (tokens invisible to wallets/explorers/marketplaces) | Fixed (read-only ERC-721, ERC-165, ERC-5192 soulbound) |
 | — | Reentrancy | N/A | Reviewed, no external calls exist |
 | — | Integer overflow in expiry | N/A | Reviewed, checked arithmetic + admin-only input |
 | — | Timestamp manipulation | Low | Reviewed, not economically exploitable at this contract's timescales |

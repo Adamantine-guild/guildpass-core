@@ -9,7 +9,7 @@ contract MembershipFuzzInvariantTest is Test {
     address admin = address(0xA1);
 
     function setUp() public {
-        nft = new MembershipNFT("GuildPass", "GUILD");
+        nft = new MembershipNFT("GuildPass", "GUILD", "https://guildpass.example.com/metadata/");
         // msg.sender (this test contract) is the owner, allow admin
         nft.setAdmin(admin, true);
     }

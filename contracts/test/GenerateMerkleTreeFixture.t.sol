@@ -32,7 +32,7 @@ contract GenerateMerkleTreeFixtureTest is Test {
     }
 
     function setUp() public {
-        nft = new MembershipNFT("GuildPass Membership", "GPM");
+        nft = new MembershipNFT("GuildPass Membership", "GPM", "https://guildpass.example.com/metadata/");
         nft.setAdmin(admin, true);
         generator = new GenerateMerkleTree();
         generator.generateToFile(INPUT_PATH, OUTPUT_PATH);
@@ -385,7 +385,7 @@ contract GenerateMerkleTreeFixtureTest is Test {
         uint256 communityIdSeed,
         uint256 expiresAtOffset
     ) public {
-        MembershipNFT refNft = new MembershipNFT("GuildPass Membership", "GPM");
+        MembershipNFT refNft = new MembershipNFT("GuildPass Membership", "GPM", "https://guildpass.example.com/metadata/");
         refNft.setAdmin(admin, true);
 
         uint256 count = bound(uint256(countLog2), 0, 6);

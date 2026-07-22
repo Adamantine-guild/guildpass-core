@@ -156,6 +156,16 @@ const auditChainWriteDuration = new Histogram({
   registers: [registry],
 });
 
+/**
+ * Tracks the indexing lag in blocks per chain.
+ */
+const indexerLag = new Gauge({
+  name: 'guildpass_indexer_lag_blocks',
+  help: 'Difference between current chain tip and last processed block',
+  labelNames: ['chain_id'] as const,
+  registers: [registry],
+});
+
 export const metrics = {
   httpRequestDuration,
   httpRequestsTotal,
@@ -167,4 +177,5 @@ export const metrics = {
   outboxBacklogDepth,
   outboxWorkerBatchSize,
   auditChainWriteDuration,
+  indexerLag,
 };

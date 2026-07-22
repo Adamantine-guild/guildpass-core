@@ -15,10 +15,52 @@ model Community {
 }
 
 model Wallet {
-  id        String   @id @default(cuid())
-  address   String   @unique
-  members   Member[]
-  createdAt DateTime @default(now())
+  id                    String          @id @default(cuid())
+  address               String          @unique
+  members               Member[]
+  createdAt             DateTime        @default(now())
+  // Wallet linking: this wallet is primary
+  primaryLinkedWallets  LinkedWallet[]  @relation("primaryWallet")
+  // Wallet linking: this wallet is linked to a primary
+  secondaryLinkedWallets LinkedWallet[] @relation("secondaryWallet")
+  challenges            Challenge[] @relation("challengePrimaryWallet")
+  secondaryChallenges   Challenge[] @relation("challengeSecondaryWallet")
+}
+
+// --- Wallet Linking Models ---
+
+// Challenges for wallet linking (prevents replay attacks)
+model Challenge {
+  id                String   @id @default(uuid())
+  nonce             String   @unique
+  primaryWalletId   String
+  secondaryWalletId String
+  primaryWallet     Wallet   @relation("challengePrimaryWallet", fields: [primaryWalletId], references: [id])
+  secondaryWallet   Wallet   @relation("challengeSecondaryWallet", fields: [secondaryWalletId], references: [id])
+  issuedAt          DateTime @default(now())
+  expiresAt         DateTime
+  used              Boolean  @default(false)
+  createdAt         DateTime @default(now())
+
+  @@index([primaryWalletId])
+  @@index([secondaryWalletId])
+  @@index([nonce])
+}
+
+// Links a secondary wallet to a primary identity
+model LinkedWallet {
+  id                 String   @id @default(uuid())
+  primaryWalletId    String
+  secondaryWalletId  String   @unique
+  primaryWallet      Wallet   @relation("primaryWallet", fields: [primaryWalletId], references: [id])
+  secondaryWallet    Wallet   @relation("secondaryWallet", fields: [secondaryWalletId], references: [id])
+  // Denormalize addresses for easier querying
+  primaryWalletAddress  String
+  secondaryWalletAddress String
+  linkedAt           DateTime @default(now())
+
+  @@index([primaryWalletId])
+  @@unique([primaryWalletId, secondaryWalletId])
 }
 
 model Profile {
@@ -39,6 +81,7 @@ model Member {
   membership  Membership?
   roles       RoleAssignment[]
   badges      Badge[]
+  appeals     Appeal[]
 
   @@unique([communityId, walletId])
 }
@@ -421,3 +464,110 @@ model DeadLetterEvent {
   @@index([createdAt])
   @@index([originalEventId])
 }
+
+model SiweNonce {
+  id        String   @id @default(uuid())
+  nonce     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
+
+model Session {
+  id            String   @id @default(uuid())
+  walletAddress String
+  token         String   @unique
+  expiresAt     DateTime
+  createdAt     DateTime @default(now())
+}
+
+enum AppealStatus {
+  filed
+  under_review
+  upheld
+  reinstated
+}
+
+model Appeal {
+  id           String       @id @default(uuid())
+  memberId     String
+  reason       String
+  status       AppealStatus @default(filed)
+  adminComment String?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  member       Member       @relation(fields: [memberId], references: [id])
+}
+
+model IndexerCheckpoint {
+  chainId             Int      @id
+  lastProcessedBlock  Int
+  lastProcessedBlockHash String
+  updatedAt           DateTime @updatedAt
+}
+
+model BlockHeader {
+  chainId             Int
+  blockNumber         Int
+  blockHash           String
+
+  @@id([chainId, blockNumber])
+  @@index([blockNumber])
+}
+
+model StreakState {
+  id             String   @id @default(uuid())
+  walletId       String
+  communityId    String
+  currentStreak  Int      @default(0)
+  longestStreak  Int      @default(0)
+  lastActivityAt DateTime
+  graceUsed      Boolean  @default(false)
+  updatedAt      DateTime @updatedAt
+
+  @@unique([walletId, communityId])
+}
+
+enum RewardActionType {
+  GRANT_BADGE
+  UPGRADE_ROLE
+}
+
+model RewardRule {
+  id           String           @id @default(uuid())
+  communityId  String
+  milestone    Int              // streak count threshold
+  actionType   RewardActionType
+  actionParams Json             // e.g. { badgeLabel: "7-Day Streak" } or { role: "contributor" }
+  createdAt    DateTime         @default(now())
+
+  @@unique([communityId, milestone, actionType])
+}
+
+model StreakRewardHistory {
+  id          String   @id @default(uuid())
+  walletId    String
+  communityId String
+  ruleId      String
+  awardedAt   DateTime @default(now())
+
+  @@unique([walletId, communityId, ruleId])
+}
+
+model AttendanceRecord {
+  id          String   @id @default(uuid())
+  walletId    String
+  communityId String
+  eventId     String
+  source      String   // e.g. "manual", "webhook", "on-chain"
+  timestamp   DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  @@unique([walletId, eventId, source])
+  @@index([communityId])
+}
+
+
+
+
+

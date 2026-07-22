@@ -1,5 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { getMemberService, MemberServiceError } from './services/memberService';
+import { getIdentityService, IdentityServiceError } from './services/identityService';
+import { getModerationService, ModerationError } from './services/moderation/moderationService';
 import { getPrisma } from './services/prisma';
 import { notFound, validationError, validationErrorWithReason } from './errors';
 import {
@@ -8,6 +10,7 @@ import {
   DeadLetterNotFoundError,
   DeadLetterAlreadyResolvedError,
 } from './services/deadLetterService';
+import { Challenge, LinkWalletInput, WalletAddress } from '@guildpass/shared-types';
 import {
   getMembershipsSchema,
   getMemberProfileSchema,
@@ -20,8 +23,13 @@ import {
   listDeadLetterEventsSchema,
   retryDeadLetterEventSchema,
 } from './schemas';
+import { authenticateApiKey, authenticateSessionOrApiKey, verifySiweSignature } from './lib/auth/auth';
+import crypto from 'crypto';
 
 function getRequesterWallet(request: FastifyRequest): string {
+  if ((request as any).authenticatedWallet) {
+    return (request as any).authenticatedWallet;
+  }
   const header = request.headers['x-wallet'] ?? request.headers['x-user-wallet'] ?? request.headers['x-requester-wallet'];
   if (Array.isArray(header)) {
     return header[0] ?? '';
@@ -50,6 +58,182 @@ function sendRoleMutationError(reply: FastifyReply, error: unknown) {
 export async function registerRoutes(app: FastifyInstance): Promise<void> {
   const prisma = getPrisma();
   const memberService = getMemberService(prisma);
+  const identityService = getIdentityService(prisma);
+  const moderationService = getModerationService(prisma);
+
+  // --- SIWE Authentication Routes ---
+
+  // Generate a SIWE nonce
+  app.post('/v1/auth/nonce', async (request: FastifyRequest, reply: FastifyReply) => {
+    const nonce = crypto.randomBytes(16).toString('hex');
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes expiry
+    await prisma.siweNonce.create({
+      data: {
+        nonce,
+        expiresAt,
+      },
+    });
+    return reply.send({ nonce });
+  });
+
+  // Verify SIWE signature and issue session token
+  app.post('/v1/auth/verify', async (request: FastifyRequest, reply: FastifyReply) => {
+    const { message, signature } = request.body as { message: string; signature: string };
+    if (!message || !signature) {
+      return reply.status(400).send({ error: 'Missing message or signature' });
+    }
+
+    let parsedMessage;
+    try {
+      const { parseSiweMessage } = require('./lib/auth/auth');
+      parsedMessage = parseSiweMessage(message);
+    } catch (err) {
+      return reply.status(400).send({ error: 'Invalid SIWE message format' });
+    }
+
+    const storedNonce = await prisma.siweNonce.findUnique({
+      where: { nonce: parsedMessage.nonce },
+    });
+
+    if (!storedNonce) {
+      return reply.status(400).send({ error: 'Invalid nonce' });
+    }
+
+    if (new Date(storedNonce.expiresAt) < new Date()) {
+      return reply.status(400).send({ error: 'Nonce has expired' });
+    }
+
+    await prisma.siweNonce.delete({ where: { id: storedNonce.id } });
+
+    try {
+      const walletAddress = verifySiweSignature(message, signature, parsedMessage.nonce);
+      const token = crypto.randomBytes(32).toString('hex');
+      const sessionExpiry = new Date(Date.now() + 2 * 60 * 60 * 1000); // 2 hours
+      
+      const session = await prisma.session.create({
+        data: {
+          walletAddress: walletAddress.toLowerCase(),
+          token,
+          expiresAt: sessionExpiry,
+        },
+      });
+
+      return reply.send({
+        token: session.token,
+        expiresAt: session.expiresAt.toISOString(),
+        walletAddress: session.walletAddress,
+      });
+    } catch (err) {
+      return reply.status(400).send({ error: err instanceof Error ? err.message : 'Signature verification failed' });
+    }
+  });
+
+  // --- Wallet Linking Routes ---
+
+  // Generate a challenge
+  app.post(
+    '/v1/wallets/:primaryWallet/challenges',
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { primaryWallet } = request.params as { primaryWallet: string };
+      const { secondaryWallet } = request.body as { secondaryWallet: string };
+      try {
+        const challenge = await identityService.generateChallenge(
+          primaryWallet as WalletAddress, secondaryWallet as WalletAddress);
+        return reply.send(challenge);
+      } catch (error) {
+        if (error instanceof IdentityServiceError) {
+          return reply.status(error.statusCode).send({ error: error.message });
+        }
+        throw error;
+      }
+    }
+  );
+
+  // Link a wallet using a challenge and signature
+  app.post(
+    '/v1/wallets/:primaryWallet/link',
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { primaryWallet } = request.params as { primaryWallet: string };
+      const { challenge, signature } = request.body as {
+        challenge: Challenge,
+        signature: string
+      };
+      try {
+        const linkResult = await identityService.linkWallet({
+          challenge,
+          signature
+        });
+        return reply.send(linkResult);
+      } catch (error) {
+        if (error instanceof IdentityServiceError) {
+          return reply.status(error.statusCode).send({ error: error.message });
+        }
+        throw error;
+      }
+    }
+  );
+
+  // Get linked wallets for a primary wallet
+  app.get(
+    '/v1/wallets/:primaryWallet/linked',
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { primaryWallet } = request.params as { primaryWallet: string };
+      try {
+        const linkedWallets = await identityService.getLinkedWallets(primaryWallet as WalletAddress);
+        return reply.send({ primaryWallet, linkedWallets });
+      } catch (error) {
+        if (error instanceof IdentityServiceError) {
+          return reply.status(error.statusCode).send({ error: error.message });
+        }
+        throw error;
+      }
+    }
+  );
+
+  // --- Appeals and Moderation Routes ---
+
+  // File an appeal for a suspended member
+  app.post(
+    '/v1/memberships/:wallet/appeals',
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { wallet } = request.params as { wallet: string };
+      const { communityId, reason } = request.body as { communityId: string; reason: string };
+      if (!communityId || !reason) {
+        return reply.status(400).send({ error: 'Missing communityId or reason' });
+      }
+      try {
+        const result = await moderationService.fileAppeal(wallet, communityId, reason);
+        return reply.send(result);
+      } catch (error) {
+        if (error instanceof ModerationError) {
+          return reply.status(error.statusCode).send({ error: error.message });
+        }
+        throw error;
+      }
+    }
+  );
+
+  // Transition an appeal status (Admin only)
+  app.post(
+    '/v1/appeals/:appealId/transition',
+    { preHandler: [authenticateApiKey] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { appealId } = request.params as { appealId: string };
+      const { status, adminComment } = request.body as { status: string; adminComment?: string };
+      if (!status) {
+        return reply.status(400).send({ error: 'Missing status' });
+      }
+      try {
+        const result = await moderationService.transitionAppeal(appealId, status as any, adminComment);
+        return reply.send(result);
+      } catch (error) {
+        if (error instanceof ModerationError) {
+          return reply.status(error.statusCode).send({ error: error.message });
+        }
+        throw error;
+      }
+    }
+  );
 
   // GET /v1/communities/:communityId/memberships/:wallet — list membership communities for a wallet
   app.get('/v1/communities/:communityId/memberships/:wallet', { schema: getMembershipsSchema }, async (request: FastifyRequest, reply: FastifyReply) => {
@@ -69,7 +253,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // POST /v1/communities/:communityId/members/:wallet/roles — assign a role to a member
-  app.post('/v1/communities/:communityId/members/:wallet/roles', { schema: assignMemberRoleSchema }, async (request: FastifyRequest, reply: FastifyReply) => {
+  app.post('/v1/communities/:communityId/members/:wallet/roles', { schema: assignMemberRoleSchema, preHandler: [authenticateApiKey] }, async (request: FastifyRequest, reply: FastifyReply) => {
     const { communityId, wallet } = request.params as { communityId: string; wallet: string };
     const body = request.body as { role?: string };
     const role = body?.role ?? '';
@@ -103,7 +287,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // DELETE /v1/communities/:communityId/members/:wallet/roles/:role — remove an assigned role
-  app.delete('/v1/communities/:communityId/members/:wallet/roles/:role', { schema: removeMemberRoleSchema }, async (request: FastifyRequest, reply: FastifyReply) => {
+  app.delete('/v1/communities/:communityId/members/:wallet/roles/:role', { schema: removeMemberRoleSchema, preHandler: [authenticateApiKey] }, async (request: FastifyRequest, reply: FastifyReply) => {
     const { communityId, wallet, role } = request.params as { communityId: string; wallet: string; role: string };
     const requesterWallet = getRequesterWallet(request);
 
@@ -135,7 +319,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // POST /v1/communities/:communityId/overrides — create or update an access override for a wallet/resource
-  app.post('/v1/communities/:communityId/overrides', { schema: createAccessOverrideSchema }, async (request: FastifyRequest, reply: FastifyReply) => {
+  app.post('/v1/communities/:communityId/overrides', { schema: createAccessOverrideSchema, preHandler: [authenticateApiKey] }, async (request: FastifyRequest, reply: FastifyReply) => {
     const { communityId } = request.params as { communityId: string };
     const body = request.body as {
       wallet?: string;
@@ -167,7 +351,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // DELETE /v1/communities/:communityId/overrides/:wallet/:resource — revoke an access override
-  app.delete('/v1/communities/:communityId/overrides/:wallet/:resource', { schema: revokeAccessOverrideSchema }, async (request: FastifyRequest, reply: FastifyReply) => {
+  app.delete('/v1/communities/:communityId/overrides/:wallet/:resource', { schema: revokeAccessOverrideSchema, preHandler: [authenticateApiKey] }, async (request: FastifyRequest, reply: FastifyReply) => {
     const { communityId, wallet, resource } = request.params as { communityId: string; wallet: string; resource: string };
     const requesterWallet = getRequesterWallet(request);
     try {
@@ -204,7 +388,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // GET /v1/communities/:communityId/members — list members for admin
-  app.get('/v1/communities/:communityId/members', { schema: listCommunityMembersSchema }, async (request: FastifyRequest, reply: FastifyReply) => {
+  app.get('/v1/communities/:communityId/members', { schema: listCommunityMembersSchema, preHandler: [authenticateApiKey] }, async (request: FastifyRequest, reply: FastifyReply) => {
     const { communityId } = request.params as { communityId: string };
     const role = (request.query as { role?: string })?.role;
     // Ensure caller is an authenticated community admin by reusing mutation auth check.
@@ -246,7 +430,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
   // GET /v1/communities/:communityId/dead-letter-events — inspect webhook
   // deliveries that exhausted the outbox's retry budget
-  app.get('/v1/communities/:communityId/dead-letter-events', { schema: listDeadLetterEventsSchema }, async (request: FastifyRequest, reply: FastifyReply) => {
+  app.get('/v1/communities/:communityId/dead-letter-events', { schema: listDeadLetterEventsSchema, preHandler: [authenticateApiKey] }, async (request: FastifyRequest, reply: FastifyReply) => {
     const { communityId } = request.params as { communityId: string };
     const { status } = request.query as { status?: 'pending' | 'retried' | 'resolved' };
     const requesterWallet = getRequesterWallet(request);
@@ -266,7 +450,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
   // POST /v1/communities/:communityId/dead-letter-events/:id/retry — re-enqueue
   // a dead-lettered event as a fresh pending OutboxEvent
-  app.post('/v1/communities/:communityId/dead-letter-events/:id/retry', { schema: retryDeadLetterEventSchema }, async (request: FastifyRequest, reply: FastifyReply) => {
+  app.post('/v1/communities/:communityId/dead-letter-events/:id/retry', { schema: retryDeadLetterEventSchema, preHandler: [authenticateApiKey] }, async (request: FastifyRequest, reply: FastifyReply) => {
     const { communityId, id } = request.params as { communityId: string; id: string };
     const requesterWallet = getRequesterWallet(request);
     try {

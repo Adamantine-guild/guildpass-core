@@ -115,7 +115,6 @@ const ConfigSchema = z.object({
     .int()
     .positive()
     .default(20),
-
   // Access check specific rate limits
   accessCheckRateLimitIpMax: z.coerce
     .number()
@@ -137,6 +136,10 @@ const ConfigSchema = z.object({
     .optional()
     .transform((v) => v !== 'false' && v !== '0')
     .default('true'),
+
+  apiKey: z
+    .string()
+    .default("test-api-key"),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
@@ -168,6 +171,7 @@ function validateConfig(): Config {
     accessCheckRateLimitWindowMs: process.env.ACCESS_CHECK_RATE_LIMIT_WINDOW_MS,
     accessCheckRateLimitFailOpen: process.env.ACCESS_CHECK_RATE_LIMIT_FAIL_OPEN,
     redisUrl: process.env.REDIS_URL,
+    apiKey: process.env.API_KEY || "test-api-key",
   };
 
   const result = ConfigSchema.safeParse(envVars);

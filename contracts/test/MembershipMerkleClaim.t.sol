@@ -31,9 +31,11 @@ contract MembershipMerkleClaimTest is Test {
     bytes32 constant RENEWED_SIG = keccak256("MembershipRenewed(uint256,uint256)");
     bytes32 constant CLAIMED_SIG =
         keccak256("MembershipClaimed(address,uint256,string,uint256,uint256)");
+    bytes32 constant TRANSFER_SIG = keccak256("Transfer(address,address,uint256)");
+    bytes32 constant LOCKED_SIG = keccak256("Locked(uint256)");
 
     function setUp() public {
-        nft = new MembershipNFT("GuildPass Membership", "GPM");
+        nft = new MembershipNFT("GuildPass Membership", "GPM", "https://guildpass.example.com/metadata/");
         nft.setAdmin(admin, true);
     }
 
@@ -564,9 +566,13 @@ contract MembershipMerkleClaimTest is Test {
         nft.claimMembership(COMMUNITY_A, 0, entries[0].wallet, entries[0].expiresAt, proof);
         Vm.Log[] memory logs = vm.getRecordedLogs();
 
-        assertEq(logs.length, 2, "mint path must emit exactly Minted + Claimed");
-        assertEq(logs[0].topics[0], MINTED_SIG, "MembershipMinted must fire first");
-        assertEq(logs[1].topics[0], CLAIMED_SIG, "MembershipClaimed must fire second");
+        // Mint path now emits 4 events: Transfer + Locked + Minted + Claimed
+        // (Transfer and Locked are additive ERC-721/ERC-5192 compliance events)
+        assertEq(logs.length, 4, "mint path must emit Transfer + Locked + Minted + Claimed");
+        assertEq(logs[0].topics[0], TRANSFER_SIG, "Transfer must fire first");
+        assertEq(logs[1].topics[0], LOCKED_SIG, "Locked must fire second");
+        assertEq(logs[2].topics[0], MINTED_SIG, "MembershipMinted must fire third");
+        assertEq(logs[3].topics[0], CLAIMED_SIG, "MembershipClaimed must fire fourth");
     }
 
     function testClaim_EventOrder_RenewPath() public {

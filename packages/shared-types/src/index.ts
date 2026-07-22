@@ -4,6 +4,45 @@ export type MembershipState = "invited" | "active" | "expired" | "suspended";
 
 export type Role = "admin" | "member" | "contributor";
 
+// --- Wallet Linking Types ---
+
+export interface Challenge {
+  nonce: string;
+  expiresAt: string; // ISO datetime
+  issuedAt: string; // ISO datetime
+  primaryWallet: WalletAddress;
+  secondaryWallet: WalletAddress;
+  communityId?: string; // Optional, if linking in a specific community context
+}
+
+export interface LinkWalletInput {
+  challenge: Challenge;
+  signature: string;
+}
+
+export interface LinkedWallet {
+  id: string;
+  primaryWalletId: string; // Foreign key to Wallet (the identity's primary)
+  secondaryWalletId: string; // Foreign key to Wallet
+  primaryWalletAddress: WalletAddress;
+  secondaryWalletAddress: WalletAddress;
+  linkedAt: string; // ISO datetime
+}
+
+// Aggregated RoleContext that includes state from all linked wallets
+export interface AggregatedRoleContext {
+  primaryWallet: WalletAddress;
+  linkedWallets: WalletAddress[];
+  // Union of all assignments from primary and linked wallets
+  assignments: RoleAssignment[];
+  // If ANY linked wallet has an active membership in the community, we consider it active
+  membershipState: MembershipState;
+  // All overrides that apply to ANY linked wallet
+  overrides: AccessOverride[];
+  communityId?: string;
+  resource?: string;
+}
+
 export interface DecisionReason {
   code: string;
   message: string;
@@ -180,7 +219,8 @@ export type OutboxEventType =
   | "POLICY_DELETED"
   | "ACCESS_DECISION"
   | "ACCESS_OVERRIDE_CREATED"
-  | "ACCESS_OVERRIDE_REVOKED";
+  | "ACCESS_OVERRIDE_REVOKED"
+  | "MEMBER_ATTENDED";
 
 export type OutboxEventStatus = "pending" | "delivered" | "failed";
 

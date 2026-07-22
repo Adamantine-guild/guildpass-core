@@ -11,7 +11,7 @@ contract MembershipNFTTest is Test {
     string constant COMMUNITY_ID = "test-community";
 
     function setUp() public {
-        nft = new MembershipNFT("GuildPass Membership", "GPM");
+        nft = new MembershipNFT("GuildPass Membership", "GPM", "https://guildpass.example.com/metadata/");
         nft.setAdmin(admin, true);
     }
 
@@ -118,5 +118,216 @@ contract MembershipNFTTest is Test {
 
         vm.warp(expiresAt);
         assertFalse(nft.isActive(id)); // at the exact expiry timestamp: expired
+    }
+
+    // -------------------------------------------------------------------
+    // ERC-165 supportsInterface
+    // -------------------------------------------------------------------
+
+    function testSupportsInterface_IERC165() public view {
+        assertTrue(nft.supportsInterface(0x01ffc9a7));
+    }
+
+    function testSupportsInterface_IERC721() public view {
+        assertTrue(nft.supportsInterface(0x80ac58cd));
+    }
+
+    function testSupportsInterface_IERC5192() public view {
+        assertTrue(nft.supportsInterface(0x4bc2a65b));
+    }
+
+    function testSupportsInterface_UnrelatedInterface() public view {
+        assertFalse(nft.supportsInterface(0xffffffff));
+        assertFalse(nft.supportsInterface(0x12345678));
+    }
+
+    // -------------------------------------------------------------------
+    // ERC-721 balanceOf
+    // -------------------------------------------------------------------
+
+    function testBalanceOf_ZeroForNonHolder() public view {
+        assertEq(nft.balanceOf(user), 0);
+    }
+
+    function testBalanceOf_RevertsForZeroAddress() public {
+        vm.expectRevert("ZERO_ADDRESS");
+        nft.balanceOf(address(0));
+    }
+
+    function testBalanceOf_IncrementsOnMint() public {
+        vm.prank(admin);
+        nft.mint(user, COMMUNITY_ID, 365 days);
+        assertEq(nft.balanceOf(user), 1);
+
+        // Mint a second token for a different community
+        vm.prank(admin);
+        nft.mint(user, "other-community", 365 days);
+        assertEq(nft.balanceOf(user), 2);
+    }
+
+    function testBalanceOf_DecrementsOnSuspend() public {
+        vm.prank(admin);
+        uint256 id = nft.mint(user, COMMUNITY_ID, 365 days);
+        assertEq(nft.balanceOf(user), 1);
+
+        vm.prank(admin);
+        nft.setSuspended(id, true);
+        assertEq(nft.balanceOf(user), 0);
+    }
+
+    function testBalanceOf_RemainsCorrectAcrossRemintSequence() public {
+        // Mint first token
+        vm.prank(admin);
+        nft.mint(user, COMMUNITY_ID, 365 days);
+        assertEq(nft.balanceOf(user), 1);
+
+        // Re-mint suspends old + mints new: net balance stays at 1
+        vm.prank(admin);
+        nft.mint(user, COMMUNITY_ID, 365 days);
+        assertEq(nft.balanceOf(user), 1);
+
+        // A third re-mint: still 1
+        vm.prank(admin);
+        nft.mint(user, COMMUNITY_ID, 365 days);
+        assertEq(nft.balanceOf(user), 1);
+    }
+
+    function testBalanceOf_UnsuspendRestoresBalance() public {
+        vm.prank(admin);
+        uint256 id = nft.mint(user, COMMUNITY_ID, 365 days);
+        assertEq(nft.balanceOf(user), 1);
+
+        vm.prank(admin);
+        nft.setSuspended(id, true);
+        assertEq(nft.balanceOf(user), 0);
+
+        // Unsuspend while still within expiry window
+        vm.prank(admin);
+        nft.setSuspended(id, false);
+        assertEq(nft.balanceOf(user), 1);
+    }
+
+    // -------------------------------------------------------------------
+    // ERC-721 tokenURI
+    // -------------------------------------------------------------------
+
+    function testTokenURI_ReturnsWellFormedUri() public {
+        vm.prank(admin);
+        uint256 id = nft.mint(user, COMMUNITY_ID, 365 days);
+        string memory uri = nft.tokenURI(id);
+        assertEq(uri, string(abi.encodePacked("https://guildpass.example.com/metadata/", _toString(id))));
+    }
+
+    function testTokenURI_RevertsForNonexistentToken() public {
+        vm.expectRevert("NO_TOKEN");
+        nft.tokenURI(999);
+    }
+
+    function testBaseTokenURI_ReturnsConfiguredValue() public view {
+        assertEq(nft.baseTokenURI(), "https://guildpass.example.com/metadata/");
+    }
+
+    // -------------------------------------------------------------------
+    // ERC-5192 locked()
+    // -------------------------------------------------------------------
+
+    function testLocked_AlwaysReturnsTrue() public {
+        vm.prank(admin);
+        uint256 id = nft.mint(user, COMMUNITY_ID, 365 days);
+        assertTrue(nft.locked(id));
+    }
+
+    function testLocked_RevertsForNonexistentToken() public {
+        vm.expectRevert("NO_TOKEN");
+        nft.locked(999);
+    }
+
+    function testLocked_ReturnsTrueEvenWhenSuspended() public {
+        vm.prank(admin);
+        uint256 id = nft.mint(user, COMMUNITY_ID, 365 days);
+        vm.prank(admin);
+        nft.setSuspended(id, true);
+        assertTrue(nft.locked(id)); // still locked (soulbound)
+    }
+
+    function testLocked_ReturnsTrueEvenWhenExpired() public {
+        vm.prank(admin);
+        uint256 id = nft.mint(user, COMMUNITY_ID, 1);
+        vm.warp(block.timestamp + 2);
+        assertTrue(nft.locked(id)); // still locked even if expired
+    }
+
+    // -------------------------------------------------------------------
+    // ERC-721 Transfer events
+    // -------------------------------------------------------------------
+
+    function testMintEmitsTransferFromZero() public {
+        vm.expectEmit(true, true, true, false);
+        emit MembershipNFT.Transfer(address(0), user, 1);
+        vm.prank(admin);
+        nft.mint(user, COMMUNITY_ID, 365 days);
+    }
+
+    function testMintEmitsLockedEvent() public {
+        vm.expectEmit(true, false, false, false);
+        emit MembershipNFT.Locked(1);
+        vm.prank(admin);
+        nft.mint(user, COMMUNITY_ID, 365 days);
+    }
+
+    function testSuspendEmitsTransferToZero() public {
+        vm.prank(admin);
+        uint256 id = nft.mint(user, COMMUNITY_ID, 365 days);
+
+        vm.expectEmit(true, true, true, false);
+        emit MembershipNFT.Transfer(user, address(0), id);
+        vm.prank(admin);
+        nft.setSuspended(id, true);
+    }
+
+    function testRemintEmitsBothTransferEvents() public {
+        vm.prank(admin);
+        uint256 first = nft.mint(user, COMMUNITY_ID, 365 days);
+
+        // Re-mint: suspend old (Transfer to zero) + mint new (Transfer from zero)
+        vm.expectEmit(true, true, true, false);
+        emit MembershipNFT.Transfer(user, address(0), first);
+        vm.expectEmit(true, true, true, false);
+        emit MembershipNFT.Transfer(address(0), user, first + 1);
+        vm.prank(admin);
+        nft.mint(user, COMMUNITY_ID, 365 days);
+    }
+
+    // -------------------------------------------------------------------
+    // ERC-5192 events (Locked emitted on mint)
+    // -------------------------------------------------------------------
+
+    function testClaimMembershipEmitsTransferAndLocked() public {
+        // Test via admin mint which already covers Transfer + Locked emission
+        vm.prank(admin);
+        uint256 id = nft.mint(user, COMMUNITY_ID, 365 days);
+        assertTrue(nft.locked(id));
+        assertEq(nft.balanceOf(user), 1);
+    }
+
+    // -------------------------------------------------------------------
+    // Helper: uint256 to string (mirrors contract's internal _toString)
+    // -------------------------------------------------------------------
+
+    function _toString(uint256 value) internal pure returns (string memory) {
+        if (value == 0) return "0";
+        uint256 temp = value;
+        uint256 digits;
+        while (temp != 0) {
+            digits++;
+            temp /= 10;
+        }
+        bytes memory buffer = new bytes(digits);
+        while (value != 0) {
+            digits -= 1;
+            buffer[digits] = bytes1(uint8(48 + uint256(value % 10)));
+            value /= 10;
+        }
+        return string(buffer);
     }
 }

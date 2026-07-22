@@ -10,10 +10,12 @@ import {
   AssignRoleInput,
   RemoveRoleInput,
   RoleMutationResult,
+  WalletAddress,
 } from "@guildpass/shared-types";
 import { evaluate } from "@guildpass/policy-engine";
 import { logEvent } from "./auditService";
 import { logOutboxEventTx } from "./outboxService";
+import { getIdentityService } from "./identityService";
 
 import { config } from "../config";
 import { createDefaultCacheService } from "./redisCacheService";
@@ -45,7 +47,7 @@ function getNormalizedMembershipState(
   return state;
 }
 
-function accessDecisionCacheKey({
+export function accessDecisionCacheKey({
   communityId,
   wallet,
   resource,
@@ -98,6 +100,7 @@ export function getMemberService(prismaClient: PrismaClient) {
     config.accessDecisionCacheEnabled,
     config.redisUrl,
   );
+  const identityService = getIdentityService(prismaClient);
 
   const versionTtlSeconds = config.accessDecisionCacheVersionTtlSeconds;
   const decisionTtlSeconds = config.accessDecisionCacheTtlSeconds;
@@ -175,13 +178,17 @@ export function getMemberService(prismaClient: PrismaClient) {
     const communityId = input.communityId;
     const resource = input.resource;
 
+    // Get primary wallet and all linked wallets
+    const primaryWallet = await identityService.getPrimaryWallet(wallet as WalletAddress);
+    const allLinkedWallets = await identityService.getLinkedWallets(primaryWallet);
+
     // Generate correlation ID for this access check
     const correlationId = `access_${communityId}_${wallet}_${resource}_${Date.now()}`;
 
     const versions = await getVersionedKeyParts(communityId);
     const cacheKey = accessDecisionCacheKey({
       communityId,
-      wallet,
+      wallet: primaryWallet,
       resource,
       ...versions,
     });
@@ -194,10 +201,6 @@ export function getMemberService(prismaClient: PrismaClient) {
     });
 
     const ruleType = policy ? policy.ruleType : "MEMBERS_ONLY";
-    const overrides = await prismaClient.accessOverride.findMany({
-      where: { communityId, resource, wallet },
-    });
-
     const basePolicy = {
       id: policy?.id ?? "default",
       communityId,
@@ -206,11 +209,42 @@ export function getMemberService(prismaClient: PrismaClient) {
       params: policy?.params as Record<string, any> | undefined,
     };
 
+    // Aggregate state from ALL linked wallets (primary + secondaries)
+    // 1. Get all wallets
+    const wallets = await prismaClient.wallet.findMany({
+      where: {
+        address: { in: allLinkedWallets.map(normaliseWallet) },
+      },
+    });
+
+    // 2. Get all members for these wallets in the community
+    const members = await prismaClient.member.findMany({
+      where: {
+        walletId: { in: wallets.map(w => w.id) },
+        communityId,
+      },
+      include: {
+        roles: true,
+        membership: true,
+      },
+    });
+
+    // 3. Get all overrides that apply to any of these wallets
+    const overrides = await prismaClient.accessOverride.findMany({
+      where: {
+        communityId,
+        resource,
+        wallet: { in: allLinkedWallets.map(normaliseWallet) },
+      },
+    });
+
+    // If there are any overrides, they take precedence (policy engine handles this)
     if (overrides.length > 0) {
+      // Find the most permissive or first applicable override (policy engine uses first one)
       const ctx: RoleContext = {
         assignments: [],
         membershipState: "invited",
-        wallet,
+        wallet: primaryWallet,
         communityId,
         resource,
         overrides: overrides.map((override: AccessOverride) => ({
@@ -227,116 +261,56 @@ export function getMemberService(prismaClient: PrismaClient) {
       const reasonCode = decision.reasons?.[0]?.code ?? null;
       const allowedDecision = decision.allowed ? "ALLOW" : "DENY";
       await auditAccess({
-        walletId: wallet,
+        walletId: primaryWallet,
         communityId,
         resource,
         policyRule: policy?.ruleType ?? null,
         decision: allowedDecision,
         reasonCode,
         details: (decision as any).details ?? null,
-      });
-      await cacheService.setJSON(cacheKey, decision, decisionTtlSeconds);
-      return decision;
-    }
-
-    const w = await prismaClient.wallet.findUnique({
-      where: { address: wallet },
-    });
-
-    if (!w) {
-      const decision: AccessDecision = {
-        allowed: false,
-        code: "DENY",
-        reasons: [{ code: "NO_WALLET", message: "Wallet not known" }],
-        membershipState: "invited",
-        effectiveRoles: [],
-      };
-      await auditAccess({
-        walletId: wallet,
-        communityId,
-        resource,
-        policyRule: null,
-        decision: "DENY",
-        reasonCode: decision.reasons?.[0]?.code ?? null,
         correlationId,
       });
       await cacheService.setJSON(cacheKey, decision, decisionTtlSeconds);
       return decision;
     }
 
-    const member = await prismaClient.member.findFirst({
-      where: { walletId: w.id, communityId },
-      include: { roles: true, membership: true },
-    });
-
-    if (!member) {
-      const decision: AccessDecision = {
-        allowed: false,
-        code: "DENY",
-        reasons: [
-          {
-            code: "NOT_MEMBER",
-            message: "Wallet is not a member of community",
-          },
-        ],
-        membershipState: "invited",
-        effectiveRoles: [],
-      };
-      await auditAccess({
-        walletId: wallet,
-        communityId,
-        resource,
-        policyRule: null,
-        decision: "DENY",
-        reasonCode: decision.reasons?.[0]?.code ?? null,
-        correlationId,
-      });
-      await cacheService.setJSON(cacheKey, decision, decisionTtlSeconds);
-      return decision;
-    }
-
-    const effectiveState = getNormalizedMembershipState(
-      (member.membership?.state as any) ?? "invited",
-      member.membership?.expiresAt,
+    // Aggregate roles: union of all roles from all members
+    const allAssignments = members.flatMap(member =>
+      member.roles.map(role => ({
+        role: role.role as Role,
+        source: role.source as "manual" | "auto",
+        active: role.active,
+        expiresAt: role.expiresAt,
+      }))
     );
 
-    // Capture state snapshot for audit trail
-    const membershipStateSnapshot = member.membership ? {
-      id: member.membership.id,
-      tokenId: member.membership.tokenId,
-      state: member.membership.state,
-      expiresAt: member.membership.expiresAt?.toISOString(),
-      effectiveState,
-    } : null;
-
-    const roleStateSnapshot = member.roles.map((r) => ({
-      id: r.id,
-      role: r.role,
-      source: r.source,
-      active: r.active,
-      expiresAt: r.expiresAt?.toISOString(),
-    }));
+    // Aggregate membership state: if ANY member has active membership, state is active
+    let membershipState: "invited" | "active" | "expired" | "suspended" = "invited";
+    for (const member of members) {
+      if (!member.membership) continue;
+      const state = getNormalizedMembershipState(
+        member.membership.state as any,
+        member.membership.expiresAt,
+      );
+      if (state === "active") {
+        membershipState = "active";
+        break; // No need to check further if we have an active one
+      }
+      if (state === "suspended") {
+        membershipState = "suspended";
+      }
+      if (state === "expired" && membershipState !== "suspended") {
+        membershipState = "expired";
+      }
+    }
 
     const ctx: RoleContext = {
-      assignments: member.roles.map((r) => ({
-        role: r.role as any,
-        source: r.source as any,
-        active: r.active,
-        expiresAt: r.expiresAt,
-      })),
-      membershipState: effectiveState as any,
-      wallet,
+      assignments: allAssignments,
+      membershipState,
+      wallet: primaryWallet,
       communityId,
       resource,
-      overrides: overrides.map((override: AccessOverride) => ({
-        id: override.id,
-        wallet: override.wallet,
-        communityId: override.communityId,
-        resource: override.resource,
-        effect: override.effect as any,
-        expiresAt: override.expiresAt,
-        reason: override.reason,
-      })),
+      overrides: [],
     };
 
     const decision = evaluate(basePolicy, ctx);
@@ -345,7 +319,7 @@ export function getMemberService(prismaClient: PrismaClient) {
     const allowedDecision = decision.allowed ? "ALLOW" : "DENY";
 
     await auditAccess({
-      walletId: wallet,
+      walletId: primaryWallet,
       communityId,
       resource,
       policyRule: policy?.ruleType ?? null,
@@ -353,8 +327,8 @@ export function getMemberService(prismaClient: PrismaClient) {
       reasonCode,
       details: (decision as any).details ?? null,
       correlationId,
-      membershipState: membershipStateSnapshot,
-      roleState: roleStateSnapshot,
+      membershipState: null,
+      roleState: null,
     });
 
     await cacheService.setJSON(cacheKey, decision, decisionTtlSeconds);

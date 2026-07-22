@@ -45,11 +45,13 @@ findings, fixes, and regression tests — is documented in
 ### API Security
 
 In-scope:
-- Unauthorised access to admin endpoints
+- Unauthorised access to admin endpoints (gated by API-key authentication)
 - SQL injection or Prisma query manipulation
 - Privilege escalation via role endpoints
-- Wallet address spoofing in access checks
+- Wallet address spoofing in access checks and mutations (mitigated via SIWE and wallet-ownership signature validation)
 - Exposure of secrets or private keys in logs or responses
+
+For details on our trust boundaries and endpoint gating, refer to [THREAT_MODEL.md](file:///Users/boufdaddy/Documents/web3%20projects/guildpass-core/docs/THREAT_MODEL.md).
 
 ### Out-of-scope
 

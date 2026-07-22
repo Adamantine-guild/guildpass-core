@@ -1,5 +1,5 @@
 import { keccak256 } from 'js-sha3';
-import { PrismaClient, Prisma } from '@prisma/client';
+import { PrismaClient, Prisma, EventType } from '@prisma/client';
 import { getPrisma } from './prisma';
 import { metrics } from '../observability/metrics';
 
@@ -257,7 +257,7 @@ export async function writeChainedAuditEvent(
   const result = await tx.auditEvent.create({
     data: {
       id: data.id,
-      eventType: data.eventType,
+      eventType: data.eventType as EventType,
       walletId: data.walletId ?? null,
       communityId: data.communityId ?? null,
       resource: data.resource ?? null,

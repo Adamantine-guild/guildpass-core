@@ -35,7 +35,7 @@ contract GasBenchmarkTest is Test {
     }
 
     function _benchmarkAdminMint(uint256 n) internal {
-        MembershipNFT nft = new MembershipNFT("GuildPass Membership", "GPM");
+        MembershipNFT nft = new MembershipNFT("GuildPass Membership", "GPM", "https://guildpass.example.com/metadata/");
         nft.setAdmin(admin, true);
 
         uint256 gasStart = gasleft();
@@ -50,7 +50,7 @@ contract GasBenchmarkTest is Test {
     }
 
     function _benchmarkAdminRenew(uint256 n) internal {
-        MembershipNFT nft = new MembershipNFT("GuildPass Membership", "GPM");
+        MembershipNFT nft = new MembershipNFT("GuildPass Membership", "GPM", "https://guildpass.example.com/metadata/");
         nft.setAdmin(admin, true);
         uint256[] memory tokenIds = new uint256[](n);
         for (uint256 i = 0; i < n; i++) {
@@ -70,7 +70,7 @@ contract GasBenchmarkTest is Test {
     }
 
     function _benchmarkMerklePath(uint256 n) internal {
-        MembershipNFT nft = new MembershipNFT("GuildPass Membership", "GPM");
+        MembershipNFT nft = new MembershipNFT("GuildPass Membership", "GPM", "https://guildpass.example.com/metadata/");
         nft.setAdmin(admin, true);
 
         bytes32[] memory leaves = new bytes32[](n);
