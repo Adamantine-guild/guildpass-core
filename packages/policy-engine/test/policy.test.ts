@@ -384,3 +384,94 @@ describe('unknown rule fallback', () => {
     expect(reasonCodes(d)).toContain('RULE_UNHANDLED');
   });
 });
+describe('role and membership access matrix', () => {
+  type MatrixRole = 'none' | 'contributor' | 'admin';
+
+  const memberships: RoleContext['membershipState'][] = [
+    'active',
+    'expired',
+    'suspended',
+  ];
+  const matrixRoles: MatrixRole[] = ['none', 'contributor', 'admin'];
+
+  function matrixCtx(membershipState: RoleContext['membershipState'], role: MatrixRole): RoleContext {
+    return {
+      assignments: role === 'none'
+        ? []
+        : [{ role, source: 'manual', active: true }],
+      membershipState,
+    };
+  }
+
+  function expected(ruleType: string, membershipState: RoleContext['membershipState'], role: MatrixRole) {
+    switch (ruleType) {
+      case 'PUBLIC':
+        return {
+          allowed: true,
+          reasonCode: 'RULE_PUBLIC',
+          reasonMessage: 'Resource is public',
+        };
+      case 'MEMBERS_ONLY':
+        return membershipState === 'active'
+          ? {
+              allowed: true,
+              reasonCode: 'HAS_ACTIVE_MEMBERSHIP',
+              reasonMessage: 'Active membership grants access',
+            }
+          : {
+              allowed: false,
+              reasonCode: 'NEEDS_ACTIVE',
+              reasonMessage: 'Requires active membership',
+            };
+      case 'ADMINS_ONLY':
+        return role === 'admin'
+          ? {
+              allowed: true,
+              reasonCode: 'HAS_ADMIN',
+              reasonMessage: 'Admin role grants access',
+            }
+          : {
+              allowed: false,
+              reasonCode: 'NEEDS_ADMIN',
+              reasonMessage: 'Admin role required',
+            };
+      case 'CONTRIBUTORS_OR_ADMINS':
+        return role === 'admin' || role === 'contributor'
+          ? {
+              allowed: true,
+              reasonCode: 'HAS_REQUIRED_ROLE',
+              reasonMessage: 'Contributor or admin grants access',
+            }
+          : {
+              allowed: false,
+              reasonCode: 'NEEDS_CONTRIBUTOR_OR_ADMIN',
+              reasonMessage: 'Contributor or admin required',
+            };
+      default:
+        throw new Error(`Unhandled matrix rule: ${ruleType}`);
+    }
+  }
+
+  describe.each(['PUBLIC', 'MEMBERS_ONLY', 'ADMINS_ONLY', 'CONTRIBUTORS_OR_ADMINS'])('%s', (ruleType) => {
+    test.each(
+      memberships.flatMap((membershipState) =>
+        matrixRoles.map((role) => ({ membershipState, role })),
+      ),
+    )('membership=$membershipState role=$role returns the expected decision and reason', ({ membershipState, role }) => {
+      const d = evaluate(policy(ruleType), matrixCtx(membershipState, role));
+      const expectation = expected(ruleType, membershipState, role);
+      const decisionReason = d.reasons.find((r) => r.code === expectation.reasonCode);
+
+      expect(d.allowed).toBe(expectation.allowed);
+      expect(d.code).toBe(expectation.allowed ? 'ALLOW' : 'DENY');
+      expect(decisionReason).toBeDefined();
+      expect(decisionReason?.message).toBe(expectation.reasonMessage);
+    });
+  });
+
+  test('active membership auto-assigns member while explicit contributor and admin roles keep hierarchy', () => {
+    expect(resolveEffectiveRoles(matrixCtx('active', 'none'))).toEqual(['member']);
+    expect(resolveEffectiveRoles(matrixCtx('suspended', 'contributor'))).toEqual(['contributor', 'member']);
+    expect(resolveEffectiveRoles(matrixCtx('expired', 'admin'))).toEqual(['admin', 'contributor', 'member']);
+  });
+});
