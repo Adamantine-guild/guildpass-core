@@ -13,7 +13,7 @@ import { buildPinoHttp } from './observability/logger';
 import { registry, metrics } from './observability/metrics';
 import { registerRoutes } from './routes';
 import { getPrisma } from './services/prisma';
-import { createApiError } from './errors';
+import { createApiError, unauthorized } from './errors';
 import { config } from './config';
 import accessCheckRateLimiter from './plugins/accessCheckRateLimiter';
 
