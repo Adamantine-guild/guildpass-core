@@ -11,6 +11,7 @@ import { disconnectPrisma } from './services/prisma';
 import { createReconciliationWorker } from './workers/reconciliationWorker';
 import { createOutboxWorker } from './workers/outboxWorker';
 import { createIndexerWorker, ChainProvider } from './workers/indexerWorker';
+import { createContributionScoreHandler } from './handlers/contributionScoreHandler';
 
 async function main() {
   const app = await buildApp();
@@ -18,9 +19,10 @@ async function main() {
   const worker = createReconciliationWorker(config.reconciliationIntervalMs);
   worker.start();
 
+  const contributionHandler = createContributionScoreHandler();
   const outboxWorker = createOutboxWorker({
     intervalMs: config.outboxWorkerIntervalMs,
-    handler: undefined, // Use default no-op handler; replace for production
+    handler: contributionHandler,
     db: undefined, // Use default Prisma client
     maxBatchSize: config.outboxWorkerBatchSize,
     minBatchSize: config.outboxWorkerMinBatchSize,
