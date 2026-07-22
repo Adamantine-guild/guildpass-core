@@ -100,35 +100,30 @@ export const addresses: ContractAddresses = {
   chainId: parseInt(process.env.CHAIN_ID || '31337', 10),
 };
 
-// Minimal ABI fragment for events the backend may subscribe to later
-export const MembershipNFTAbi = [
-  {
-    "anonymous": false,
-    "inputs": [
-      { "indexed": true, "internalType": "address", "name": "to", "type": "address" },
-      { "indexed": true, "internalType": "uint256", "name": "tokenId", "type": "uint256" },
-      { "indexed": false, "internalType": "string", "name": "communityId", "type": "string" },
-      { "indexed": false, "internalType": "uint256", "name": "expiresAt", "type": "uint256" }
-    ],
-    "name": "MembershipMinted",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      { "indexed": true, "internalType": "uint256", "name": "tokenId", "type": "uint256" },
-      { "indexed": false, "internalType": "uint256", "name": "newExpiresAt", "type": "uint256" }
-    ],
-    "name": "MembershipRenewed",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      { "indexed": true, "internalType": "uint256", "name": "tokenId", "type": "uint256" },
-      { "indexed": false, "internalType": "bool", "name": "isSuspended", "type": "bool" }
-    ],
-    "name": "MembershipSuspended",
-    "type": "event"
-  }
-] as const;
+// ---------------------------------------------------------------------------
+// Re-export everything from the events module — the single source of truth
+// for contract ABI, typed event definitions, and log decoders.
+// ---------------------------------------------------------------------------
+export {
+  MembershipNFTAbi,
+  EVENT_TOPICS,
+  decodeEventLog,
+  getAbiEvent,
+  getTopicHash,
+} from './events';
+
+export type {
+  AbiEvent,
+  AbiEventParameter,
+  RawLog,
+  EventMetadata,
+  DecodedContractEvent,
+  DecodedMembershipMintedEvent,
+  DecodedMembershipRenewedEvent,
+  DecodedMembershipSuspendedEvent,
+  DecodedAdminUpdatedEvent,
+  DecodedOwnershipTransferProposedEvent,
+  DecodedOwnershipTransferredEvent,
+  DecodedMembershipMerkleRootUpdatedEvent,
+  DecodedMembershipClaimedEvent,
+} from './events';

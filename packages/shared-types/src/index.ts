@@ -219,7 +219,8 @@ export type OutboxEventType =
   | "POLICY_DELETED"
   | "ACCESS_DECISION"
   | "ACCESS_OVERRIDE_CREATED"
-  | "ACCESS_OVERRIDE_REVOKED";
+  | "ACCESS_OVERRIDE_REVOKED"
+  | "MEMBER_ATTENDED";
 
 export type OutboxEventStatus = "pending" | "delivered" | "failed";
 

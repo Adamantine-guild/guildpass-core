@@ -115,6 +115,9 @@ const ConfigSchema = z.object({
     .int()
     .positive()
     .default(20),
+  apiKey: z
+    .string()
+    .default("test-api-key"),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
@@ -142,6 +145,7 @@ function validateConfig(): Config {
     rateLimitDefaultMax: process.env.RATE_LIMIT_DEFAULT_MAX,
     rateLimitExpensiveMax: process.env.RATE_LIMIT_EXPENSIVE_MAX,
     redisUrl: process.env.REDIS_URL,
+    apiKey: process.env.API_KEY || "test-api-key",
   };
 
   const result = ConfigSchema.safeParse(envVars);

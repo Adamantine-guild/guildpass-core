@@ -31,7 +31,8 @@ function buildMockPrisma(state: MockState) {
   return {
     // --- identity resolution ---
     linkedWallet: {
-      findUnique: jest.fn().mockResolvedValue(null), // not a secondary wallet
+      findUnique: jest.fn().mockResolvedValue(null),
+      findFirst: jest.fn().mockResolvedValue(null),
     },
     wallet: {
       findUnique: jest.fn().mockResolvedValue({ ...wallet, primaryLinkedWallets: [] }),
