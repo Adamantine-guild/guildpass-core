@@ -162,6 +162,44 @@ export interface RoleMutationResult {
   message?: string;
 }
 
+// --- Badge Types ---
+
+export interface BadgeDto {
+  id: string;
+  memberId: string;
+  label: string;
+  issuedAt: string; // ISO datetime
+}
+
+export interface AssignBadgeInput {
+  requesterWallet: WalletAddress;
+  communityId: string;
+  targetWallet: WalletAddress;
+  label: string;
+}
+
+export interface RevokeBadgeInput {
+  requesterWallet: WalletAddress;
+  communityId: string;
+  targetWallet: WalletAddress;
+  badgeId: string;
+}
+
+export interface BadgeMutationResult {
+  communityId: string;
+  wallet: WalletAddress;
+  badge?: BadgeDto;
+  assigned: boolean;
+  removed: boolean;
+  message?: string;
+}
+
+export interface ListBadgesResult {
+  communityId: string;
+  wallet: WalletAddress;
+  badges: BadgeDto[];
+}
+
 export interface RoleContext {
   assignments: RoleAssignment[];
   membershipState: MembershipState;
@@ -220,7 +258,9 @@ export type OutboxEventType =
   | "ACCESS_DECISION"
   | "ACCESS_OVERRIDE_CREATED"
   | "ACCESS_OVERRIDE_REVOKED"
-  | "MEMBER_ATTENDED";
+  | "MEMBER_ATTENDED"
+  | "BADGE_ASSIGNED"
+  | "BADGE_REVOKED";
 
 export type OutboxEventStatus = "pending" | "delivered" | "failed";
 

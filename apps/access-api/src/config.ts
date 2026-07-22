@@ -115,6 +115,28 @@ const ConfigSchema = z.object({
     .int()
     .positive()
     .default(20),
+  // Access check specific rate limits
+  accessCheckRateLimitIpMax: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(100),
+  accessCheckRateLimitWalletMax: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(50),
+  accessCheckRateLimitWindowMs: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(60_000),
+  accessCheckRateLimitFailOpen: z
+    .string()
+    .optional()
+    .transform((v) => v !== 'false' && v !== '0')
+    .default('true'),
+
   apiKey: z
     .string()
     .default("test-api-key"),
@@ -144,6 +166,10 @@ function validateConfig(): Config {
     rateLimitWindowMs: process.env.RATE_LIMIT_WINDOW_MS,
     rateLimitDefaultMax: process.env.RATE_LIMIT_DEFAULT_MAX,
     rateLimitExpensiveMax: process.env.RATE_LIMIT_EXPENSIVE_MAX,
+    accessCheckRateLimitIpMax: process.env.ACCESS_CHECK_RATE_LIMIT_IP_MAX,
+    accessCheckRateLimitWalletMax: process.env.ACCESS_CHECK_RATE_LIMIT_WALLET_MAX,
+    accessCheckRateLimitWindowMs: process.env.ACCESS_CHECK_RATE_LIMIT_WINDOW_MS,
+    accessCheckRateLimitFailOpen: process.env.ACCESS_CHECK_RATE_LIMIT_FAIL_OPEN,
     redisUrl: process.env.REDIS_URL,
     apiKey: process.env.API_KEY || "test-api-key",
   };

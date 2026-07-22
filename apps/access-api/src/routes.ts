@@ -4,6 +4,7 @@ import { getIdentityService, IdentityServiceError } from './services/identitySer
 import { getGovernanceService } from './services/governanceService';
 import { registerGovernanceRoutes } from './routes/governanceRoutes';
 import { getModerationService, ModerationError } from './services/moderation/moderationService';
+import { queryAuditEvents } from './services/auditService';
 import { getPrisma } from './services/prisma';
 import { notFound, validationError, validationErrorWithReason } from './errors';
 import {
@@ -18,12 +19,16 @@ import {
   getMemberProfileSchema,
   assignMemberRoleSchema,
   removeMemberRoleSchema,
+  assignBadgeSchema,
+  listBadgesSchema,
+  revokeBadgeSchema,
   createAccessOverrideSchema,
   revokeAccessOverrideSchema,
   accessCheckSchema,
   listCommunityMembersSchema,
   listDeadLetterEventsSchema,
   retryDeadLetterEventSchema,
+  listAuditEventsSchema,
 } from './schemas';
 import { authenticateApiKey, authenticateSessionOrApiKey, verifySiweSignature } from './lib/auth/auth';
 import crypto from 'crypto';
@@ -320,6 +325,86 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 
+  // POST /v1/communities/:communityId/members/:wallet/badges — assign a badge to a member
+  app.post('/v1/communities/:communityId/members/:wallet/badges', { schema: assignBadgeSchema, preHandler: [authenticateApiKey] }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const { communityId, wallet } = request.params as { communityId: string; wallet: string };
+    const body = request.body as { label?: string };
+    const label = body?.label ?? '';
+    const requesterWallet = getRequesterWallet(request);
+
+    if (!wallet || !/^0x[0-9a-fA-F]{40}$/.test(wallet)) {
+      return reply.status(400).send(validationErrorWithReason('INVALID_WALLET', 'Invalid wallet format'));
+    }
+
+    const community = await prisma.community.findUnique({ where: { id: communityId } });
+    if (!community) {
+      return reply.status(400).send(validationErrorWithReason('UNKNOWN_COMMUNITY', 'Unknown communityId'));
+    }
+
+    if (!label.trim()) {
+      return reply.status(400).send(validationError('Missing required field: label'));
+    }
+
+    try {
+      const result = await memberService.assignBadge({
+        requesterWallet: requesterWallet as import('@guildpass/shared-types').WalletAddress,
+        communityId,
+        targetWallet: wallet as import('@guildpass/shared-types').WalletAddress,
+        label,
+      });
+      return reply.status(200).send(result);
+    } catch (error) {
+      return sendRoleMutationError(reply, error);
+    }
+  });
+
+  // GET /v1/communities/:communityId/members/:wallet/badges — list badges for a member
+  app.get('/v1/communities/:communityId/members/:wallet/badges', { schema: listBadgesSchema }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const { communityId, wallet } = request.params as { communityId: string; wallet: string };
+
+    if (!wallet || !/^0x[0-9a-fA-F]{40}$/.test(wallet)) {
+      return reply.status(400).send(validationErrorWithReason('INVALID_WALLET', 'Invalid wallet format'));
+    }
+
+    const community = await prisma.community.findUnique({ where: { id: communityId } });
+    if (!community) {
+      return reply.status(400).send(validationErrorWithReason('UNKNOWN_COMMUNITY', 'Unknown communityId'));
+    }
+
+    const result = await memberService.listBadgesForMember(communityId, wallet);
+    if (!result) {
+      return reply.status(404).send(notFound('Member not found'));
+    }
+    return reply.status(200).send(result);
+  });
+
+  // DELETE /v1/communities/:communityId/members/:wallet/badges/:badgeId — revoke a badge
+  app.delete('/v1/communities/:communityId/members/:wallet/badges/:badgeId', { schema: revokeBadgeSchema, preHandler: [authenticateApiKey] }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const { communityId, wallet, badgeId } = request.params as { communityId: string; wallet: string; badgeId: string };
+    const requesterWallet = getRequesterWallet(request);
+
+    if (!wallet || !/^0x[0-9a-fA-F]{40}$/.test(wallet)) {
+      return reply.status(400).send(validationErrorWithReason('INVALID_WALLET', 'Invalid wallet format'));
+    }
+
+    const community = await prisma.community.findUnique({ where: { id: communityId } });
+    if (!community) {
+      return reply.status(400).send(validationErrorWithReason('UNKNOWN_COMMUNITY', 'Unknown communityId'));
+    }
+
+    try {
+      const result = await memberService.revokeBadge({
+        requesterWallet: requesterWallet as import('@guildpass/shared-types').WalletAddress,
+        communityId,
+        targetWallet: wallet as import('@guildpass/shared-types').WalletAddress,
+        badgeId,
+      });
+      return reply.status(200).send(result);
+    } catch (error) {
+      return sendRoleMutationError(reply, error);
+    }
+  });
+
   // POST /v1/communities/:communityId/overrides — create or update an access override for a wallet/resource
   app.post('/v1/communities/:communityId/overrides', { schema: createAccessOverrideSchema, preHandler: [authenticateApiKey] }, async (request: FastifyRequest, reply: FastifyReply) => {
     const { communityId } = request.params as { communityId: string };
@@ -371,7 +456,10 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // POST /v1/access/check — check access for wallet/resource
-  app.post('/v1/access/check', { schema: accessCheckSchema }, async (request: FastifyRequest, reply: FastifyReply) => {
+  app.post('/v1/access/check', { 
+    schema: accessCheckSchema,
+    preHandler: app.accessCheckRateLimitHook ? [app.accessCheckRateLimitHook] : undefined,
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
     const body = request.body as {
       wallet: `0x${string}`;
       communityId: string;
@@ -472,11 +560,60 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 
-  // --- Governance rule management + approval workflow ---
-  registerGovernanceRoutes(app, {
-    governanceService: getGovernanceService(prisma),
-    requireCommunityAdmin,
-    getRequesterWallet,
+  // GET /v1/communities/:communityId/audit-events — filterable, paginated audit events for community admin
+  app.get('/v1/communities/:communityId/audit-events', { schema: listAuditEventsSchema, preHandler: [authenticateApiKey] }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const { communityId } = request.params as { communityId: string };
+    const { actorWallet, eventType, resource, from, to, page, limit } = request.query as {
+      actorWallet?: string;
+      eventType?: string;
+      resource?: string;
+      from?: string;
+      to?: string;
+      page?: number;
+      limit?: number;
+    };
+    const requesterWallet = getRequesterWallet(request);
+    try {
+      if (!(await requireCommunityAdmin(communityId, requesterWallet))) {
+        return reply.status(403).send({ error: 'Forbidden' });
+      }
+
+      let parsedFrom: Date | undefined = undefined;
+      let parsedTo: Date | undefined = undefined;
+
+      if (from) {
+        parsedFrom = new Date(from);
+        if (isNaN(parsedFrom.getTime())) {
+          return reply.status(400).send(validationError('Invalid from date format'));
+        }
+      }
+
+      if (to) {
+        parsedTo = new Date(to);
+        if (isNaN(parsedTo.getTime())) {
+          return reply.status(400).send(validationError('Invalid to date format'));
+        }
+      }
+
+      const result = await queryAuditEvents(getPrisma(), {
+        communityId,
+        actorWallet,
+        eventType,
+        resource,
+        from: parsedFrom,
+        to: parsedTo,
+        page: page ? Number(page) : undefined,
+        limit: limit ? Number(limit) : undefined,
+      });
+
+      return result;
+    } catch (error) {
+      if (error instanceof MemberServiceError) {
+        return reply.status(error.statusCode).send({ error: error.message });
+      }
+      return reply.status(500).send({ error: 'Internal server error' });
+    }
   });
 
 }
+

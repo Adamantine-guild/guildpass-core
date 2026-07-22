@@ -245,6 +245,10 @@ model AuditEvent {
   @@index([correlationId])
   @@index([txHash])
   @@index([previousRecordHash])
+  @@index([communityId, createdAt])
+  @@index([communityId, walletId])
+  @@index([communityId, eventType])
+  @@index([communityId, resource])
 }
 
 // --- Integration Event Outbox ---
