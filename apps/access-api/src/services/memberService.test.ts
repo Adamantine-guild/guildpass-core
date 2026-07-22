@@ -35,6 +35,12 @@ const mockPrisma = {
   auditEvent: {
     create: jest.fn(),
   },
+  governanceRule: {
+    findMany: jest.fn(),
+  },
+  contributionScore: {
+    findUnique: jest.fn(),
+  },
   $transaction: jest.fn((callback) => callback(mockPrisma)),
 } as unknown as PrismaClient;
 
@@ -47,6 +53,9 @@ describe('getMemberService - Membership State Normalization', () => {
     (mockPrisma.accessOverride.findFirst as jest.Mock).mockResolvedValue(null);
     (mockPrisma.outboxEvent.create as jest.Mock).mockResolvedValue({ id: 'outbox-event-id' });
     (mockPrisma.auditEvent.create as jest.Mock).mockResolvedValue({ id: 'audit-event-id' });
+    // Default: no governance rules → checkAccess behaviour is unchanged.
+    (mockPrisma.governanceRule.findMany as jest.Mock).mockResolvedValue([]);
+    (mockPrisma.contributionScore.findUnique as jest.Mock).mockResolvedValue(null);
     memberService = getMemberService(mockPrisma);
   });
 

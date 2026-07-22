@@ -1,6 +1,7 @@
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 model Community {
@@ -24,7 +25,9 @@ model Wallet {
   // Wallet linking: this wallet is linked to a primary
   secondaryLinkedWallets LinkedWallet[] @relation("secondaryWallet")
   // Stored challenges for this wallet as primary
-  challenges            Challenge[]
+  challenges            Challenge[]     @relation("challengePrimaryWallet")
+  // Challenges where this wallet is the secondary (wallet being linked)
+  secondaryChallenges   Challenge[]     @relation("challengeSecondaryWallet")
 }
 
 // --- Wallet Linking Models ---

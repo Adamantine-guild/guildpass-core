@@ -20,6 +20,21 @@ import {
 import { RoleContext } from '@guildpass/shared-types';
 import { getPrisma } from './prisma';
 
+/**
+ * Error thrown by {@link GovernanceService} for known, client-mappable failures.
+ * `statusCode` lets HTTP routes translate it to the right response without
+ * string-matching on messages.
+ */
+export class GovernanceServiceError extends Error {
+  statusCode: number;
+
+  constructor(message: string, statusCode: number = 500) {
+    super(message);
+    this.name = 'GovernanceServiceError';
+    this.statusCode = statusCode;
+  }
+}
+
 export interface CreateGovernanceRuleInput {
   name: string;
   description: string;
@@ -73,7 +88,7 @@ export class GovernanceService {
     // Validate AST
     const validation = validateRuleAST(input.ast);
     if (!validation.valid) {
-      throw new Error(`Invalid rule AST: ${validation.errors.join(', ')}`);
+      throw new GovernanceServiceError(`Invalid rule AST: ${validation.errors.join(", ")}`, 400);
     }
 
     const rule = await this.prisma.governanceRule.create({
@@ -108,7 +123,7 @@ export class GovernanceService {
     if (input.ast) {
       const validation = validateRuleAST(input.ast);
       if (!validation.valid) {
-        throw new Error(`Invalid rule AST: ${validation.errors.join(', ')}`);
+        throw new GovernanceServiceError(`Invalid rule AST: ${validation.errors.join(", ")}`, 400);
       }
     }
 
@@ -229,7 +244,7 @@ export class GovernanceService {
     });
 
     if (existing) {
-      throw new Error('Approval already submitted by this wallet');
+      throw new GovernanceServiceError('Approval already submitted by this wallet', 409);
     }
 
     // Create approval
@@ -330,11 +345,11 @@ export class GovernanceService {
     // Get the rule
     const rule = await this.getRule(input.ruleId);
     if (!rule) {
-      throw new Error(`Governance rule not found: ${input.ruleId}`);
+      throw new GovernanceServiceError(`Governance rule not found: ${input.ruleId}`, 404);
     }
 
     if (!rule.active) {
-      throw new Error(`Governance rule is inactive: ${input.ruleId}`);
+      throw new GovernanceServiceError(`Governance rule is inactive: ${input.ruleId}`, 400);
     }
 
     // Get contribution score

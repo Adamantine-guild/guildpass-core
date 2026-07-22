@@ -1,6 +1,8 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { getMemberService, MemberServiceError } from './services/memberService';
 import { getIdentityService, IdentityServiceError } from './services/identityService';
+import { getGovernanceService } from './services/governanceService';
+import { registerGovernanceRoutes } from './routes/governanceRoutes';
 import { getPrisma } from './services/prisma';
 import { notFound, validationError, validationErrorWithReason } from './errors';
 import {
@@ -349,6 +351,13 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       }
       return reply.status(500).send({ error: 'Internal server error' });
     }
+  });
+
+  // --- Governance rule management + approval workflow ---
+  registerGovernanceRoutes(app, {
+    governanceService: getGovernanceService(prisma),
+    requireCommunityAdmin,
+    getRequesterWallet,
   });
 
 }
