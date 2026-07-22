@@ -50,6 +50,14 @@ export interface CommunityMembersResult {
   }>;
 }
 
+export interface CommunityRolesResult {
+  roles: Array<{
+    name: string;
+    description: string;
+    implies: string[];
+  }>;
+}
+
 export type CommunityRole = 'admin' | 'member' | 'contributor';
 
 export interface RoleMutationInput {
@@ -168,6 +176,19 @@ export class GuildPassClient {
       : '';
     return this._request<CommunityMembersResult>(
       `/v1/communities/${encodePathSegment(communityId)}/members${query}`,
+      { method: 'GET' },
+    );
+  }
+
+  /**
+   * Fetch roles and hierarchy metadata for a community.
+   *
+   * @throws {GuildPassApiError} when the request fails, the response is not
+   *   JSON, or a successful response carries an unexpected shape.
+   */
+  async getCommunityRoles(communityId: string): Promise<CommunityRolesResult> {
+    return this._request<CommunityRolesResult>(
+      `/v1/communities/${encodePathSegment(communityId)}/roles`,
       { method: 'GET' },
     );
   }

@@ -1050,4 +1050,58 @@ describe('Membership Integration: Contract Events → API Access', () => {
       expect(totalAccessDecisions).toBeGreaterThanOrEqual(2);
     });
   });
+
+  describe('Community Roles Endpoint', () => {
+    const TEST_COMMUNITY_ID = 'roles-test-community';
+
+    beforeAll(async () => {
+      await prisma.community.upsert({
+        where: { id: TEST_COMMUNITY_ID },
+        update: {},
+        create: {
+          id: TEST_COMMUNITY_ID,
+          name: 'Roles Test Community',
+        },
+      });
+    });
+
+    test('should return 404 for a non-existent community', async () => {
+      const response = await app.inject({
+        method: 'GET',
+        url: '/v1/communities/non-existent-community-id/roles',
+      });
+      expect(response.statusCode).toBe(404);
+      const body = JSON.parse(response.body);
+      expect(body.error).toBe('NOT_FOUND');
+    });
+
+    test('should return community roles and hierarchy metadata', async () => {
+      const response = await app.inject({
+        method: 'GET',
+        url: `/v1/communities/${TEST_COMMUNITY_ID}/roles`,
+      });
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.body);
+      
+      expect(body.roles).toBeDefined();
+      expect(body.roles).toHaveLength(3);
+
+      const adminRole = body.roles.find((r: any) => r.name === 'admin');
+      expect(adminRole).toBeDefined();
+      expect(adminRole.description).toBe('Administrator with full permissions');
+      expect(adminRole.implies).toContain('contributor');
+      expect(adminRole.implies).toContain('member');
+
+      const contributorRole = body.roles.find((r: any) => r.name === 'contributor');
+      expect(contributorRole).toBeDefined();
+      expect(contributorRole.description).toBe('Contributor with write permissions');
+      expect(contributorRole.implies).toContain('member');
+      expect(contributorRole.implies).not.toContain('admin');
+
+      const memberRole = body.roles.find((r: any) => r.name === 'member');
+      expect(memberRole).toBeDefined();
+      expect(memberRole.description).toBe('Standard member with basic permissions');
+      expect(memberRole.implies).toHaveLength(0);
+    });
+  });
 });

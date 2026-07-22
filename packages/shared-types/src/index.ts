@@ -2,7 +2,9 @@ export type WalletAddress = `0x${string}`;
 
 export type MembershipState = "invited" | "active" | "expired" | "suspended";
 
-export type Role = "admin" | "member" | "contributor";
+export const VALID_ROLES = ["admin", "member", "contributor"] as const;
+
+export type Role = (typeof VALID_ROLES)[number];
 
 // --- Role Hierarchy & Delegation Types ---
 export interface RoleDefinition {

@@ -18,6 +18,8 @@
  *    generated OpenAPI spec gives consumers real type information.
  */
 
+import { VALID_ROLES } from '@guildpass/shared-types';
+
 // ---------------------------------------------------------------------------
 // Shared primitive fragments
 // ---------------------------------------------------------------------------
@@ -55,7 +57,7 @@ const forbiddenSchema = {
 } as const;
 
 /** Role enum values mirroring shared-types Role. */
-const roleEnum = ['admin', 'member', 'contributor'] as const;
+const roleEnum = VALID_ROLES;
 
 /** MembershipState enum values mirroring shared-types MembershipState. */
 const membershipStateEnum = ['invited', 'active', 'expired', 'suspended'] as const;
@@ -1217,6 +1219,51 @@ export const listApprovalsSchema = {
       properties: {
         approvals: { type: 'array', items: { type: 'object', additionalProperties: true } },
       },
+    },
+    500: { description: 'Internal server error', ...errorSchema },
+  },
+} as const;
+
+// ---------------------------------------------------------------------------
+// GET /v1/communities/:communityId/roles
+// ---------------------------------------------------------------------------
+
+export const getCommunityRolesSchema = {
+  summary: 'Get community roles and hierarchy metadata',
+  tags: ['Communities', 'Roles'],
+  params: {
+    type: 'object',
+    required: ['communityId'],
+    properties: {
+      communityId: { type: 'string', description: 'Community identifier' },
+    },
+  },
+  response: {
+    200: {
+      description: 'List of community roles and hierarchy metadata',
+      type: 'object',
+      required: ['roles'],
+      properties: {
+        roles: {
+          type: 'array',
+          items: {
+            type: 'object',
+            required: ['name', 'description', 'implies'],
+            properties: {
+              name: { type: 'string', enum: roleEnum },
+              description: { type: 'string' },
+              implies: {
+                type: 'array',
+                items: { type: 'string', enum: roleEnum },
+              },
+            },
+          },
+        },
+      },
+    },
+    404: {
+      description: 'Community not found',
+      ...errorSchema,
     },
     500: { description: 'Internal server error', ...errorSchema },
   },
