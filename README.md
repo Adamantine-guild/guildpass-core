@@ -128,6 +128,8 @@ CI will automatically verify that the OpenAPI specification is up-to-date with y
 
 Prisma schema includes: `communities`, `wallets`, `members`, `memberships`, `roles`, `access policies`, `profiles`, `badges` (placeholder), `audit_events`, and `outbox_events`.
 
+For an entity-relationship diagram and a per-table explanation of how these models connect (e.g. how `memberships` ties to `wallets` and `communities`, or how `access policies` reference roles), see [`docs/data-model.md`](docs/data-model.md).
+
 ---
 
 ## Integration Event Outbox
