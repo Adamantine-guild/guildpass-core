@@ -10,6 +10,10 @@ import {
   AssignRoleInput,
   RemoveRoleInput,
   RoleMutationResult,
+  AssignBadgeInput,
+  RevokeBadgeInput,
+  BadgeMutationResult,
+  ListBadgesResult,
   WalletAddress,
 } from "@guildpass/shared-types";
 import { evaluate } from "@guildpass/policy-engine";
@@ -634,6 +638,151 @@ export function getMemberService(prismaClient: PrismaClient) {
 
       await bumpRoleVersion(communityId);
       return { communityId, wallet: targetWallet, role, assigned: false, removed: true };
+    },
+
+    async assignBadge(input: AssignBadgeInput): Promise<BadgeMutationResult> {
+      const { requesterWallet, communityId, targetWallet, label } = input;
+      if (!label || !label.trim()) {
+        throw new MemberServiceError("Badge label is required", 400);
+      }
+
+      const requester = await prismaClient.wallet.findUnique({
+        where: { address: normaliseWallet(requesterWallet) },
+      });
+      if (!requester) throw new MemberServiceError("Requester not found", 403);
+
+      const requesterMember = await prismaClient.member.findFirst({
+        where: { walletId: requester.id, communityId },
+        include: { roles: true },
+      });
+      const isRequesterAdmin = requesterMember?.roles.some(
+        (r) => r.role === "admin" && r.active,
+      );
+      if (!isRequesterAdmin) throw new MemberServiceError("Not authorized", 403);
+
+      const target = await prismaClient.wallet.findUnique({
+        where: { address: normaliseWallet(targetWallet) },
+      });
+      if (!target) throw new MemberServiceError("Target wallet not found", 404);
+
+      const targetMember = await prismaClient.member.findFirst({
+        where: { walletId: target.id, communityId },
+      });
+      if (!targetMember) throw new MemberServiceError("Target not a member", 404);
+
+      const badge = await prismaClient.$transaction(async (tx: any) => {
+        const created = await tx.badge.create({
+          data: {
+            memberId: targetMember.id,
+            label,
+          },
+        });
+
+        await logOutboxEventTx(tx, {
+          eventType: "BADGE_ASSIGNED",
+          entityId: created.id,
+          entityType: "Badge",
+          communityId,
+          payload: {
+            wallet: normaliseWallet(targetWallet),
+            label: created.label,
+          },
+        });
+
+        return created;
+      });
+
+      return {
+        communityId,
+        wallet: targetWallet,
+        badge: {
+          id: badge.id,
+          memberId: badge.memberId,
+          label: badge.label,
+          issuedAt: badge.issuedAt.toISOString(),
+        },
+        assigned: true,
+        removed: false,
+      };
+    },
+
+    async revokeBadge(input: RevokeBadgeInput): Promise<BadgeMutationResult> {
+      const { requesterWallet, communityId, targetWallet, badgeId } = input;
+
+      const requester = await prismaClient.wallet.findUnique({
+        where: { address: normaliseWallet(requesterWallet) },
+      });
+      if (!requester) throw new MemberServiceError("Requester not found", 403);
+
+      const requesterMember = await prismaClient.member.findFirst({
+        where: { walletId: requester.id, communityId },
+        include: { roles: true },
+      });
+      const isRequesterAdmin = requesterMember?.roles.some(
+        (r) => r.role === "admin" && r.active,
+      );
+      if (!isRequesterAdmin) throw new MemberServiceError("Not authorized", 403);
+
+      const target = await prismaClient.wallet.findUnique({
+        where: { address: normaliseWallet(targetWallet) },
+      });
+      if (!target) throw new MemberServiceError("Target wallet not found", 404);
+
+      const targetMember = await prismaClient.member.findFirst({
+        where: { walletId: target.id, communityId },
+      });
+      if (!targetMember) throw new MemberServiceError("Target not a member", 404);
+
+      const existing = await prismaClient.badge.findFirst({
+        where: { id: badgeId, memberId: targetMember.id },
+      });
+      if (!existing) {
+        return { communityId, wallet: targetWallet, assigned: false, removed: false, message: "Badge not found" };
+      }
+
+      await prismaClient.$transaction(async (tx: any) => {
+        await tx.badge.delete({ where: { id: existing.id } });
+        await logOutboxEventTx(tx, {
+          eventType: "BADGE_REVOKED",
+          entityId: existing.id,
+          entityType: "Badge",
+          communityId,
+          payload: {
+            wallet: normaliseWallet(targetWallet),
+            label: existing.label,
+          },
+        });
+      });
+
+      return { communityId, wallet: targetWallet, assigned: false, removed: true };
+    },
+
+    async listBadgesForMember(communityId: string, wallet: string): Promise<ListBadgesResult | null> {
+      const target = await prismaClient.wallet.findUnique({
+        where: { address: normaliseWallet(wallet) },
+      });
+      if (!target) return null;
+
+      const targetMember = await prismaClient.member.findFirst({
+        where: { walletId: target.id, communityId },
+      });
+      if (!targetMember) return null;
+
+      const badges = await prismaClient.badge.findMany({
+        where: { memberId: targetMember.id },
+        orderBy: { issuedAt: "desc" },
+      });
+
+      return {
+        communityId,
+        wallet: wallet as WalletAddress,
+        badges: badges.map((b) => ({
+          id: b.id,
+          memberId: b.memberId,
+          label: b.label,
+          issuedAt: b.issuedAt.toISOString(),
+        })),
+      };
     },
 
     bumpMembershipVersion,

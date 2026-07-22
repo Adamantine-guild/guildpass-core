@@ -29,6 +29,12 @@ const mockPrisma = {
     update: jest.fn(),
     delete: jest.fn(),
   },
+  badge: {
+    findFirst: jest.fn(),
+    findMany: jest.fn(),
+    create: jest.fn(),
+    delete: jest.fn(),
+  },
   outboxEvent: {
     create: jest.fn(),
   },
@@ -1054,6 +1060,198 @@ describe('getMemberService - Membership State Normalization', () => {
 
       expect(result.allowed).toBe(false);
       expect(result.code).toBe('DENY');
+    });
+  });
+
+  describe('Badges', () => {
+    const requesterWallet = '0xrequester0000000000000000000000000000000000';
+    const targetWallet = '0xwallet1234567890abcdef1234567890abcdef12';
+    const communityId = 'community-1';
+
+    test('assignBadge rejects non-admin requesters with 403', async () => {
+      (mockPrisma.wallet.findUnique as jest.Mock).mockResolvedValueOnce({ id: 'req-wallet-id' });
+      (mockPrisma.member.findFirst as jest.Mock).mockResolvedValueOnce({
+        id: 'req-member-id',
+        roles: [{ role: 'member', active: true }], // not admin
+      });
+
+      await expect(
+        memberService.assignBadge({
+          requesterWallet,
+          communityId,
+          targetWallet,
+          label: 'Top Contributor',
+        })
+      ).rejects.toMatchObject({ statusCode: 403 });
+    });
+
+    test('assignBadge rejects a blank label with 400', async () => {
+      await expect(
+        memberService.assignBadge({
+          requesterWallet,
+          communityId,
+          targetWallet,
+          label: '   ',
+        })
+      ).rejects.toMatchObject({ statusCode: 400 });
+    });
+
+    test('assignBadge returns 404 when target is not a member', async () => {
+      (mockPrisma.wallet.findUnique as jest.Mock)
+        .mockResolvedValueOnce({ id: 'req-wallet-id' })
+        .mockResolvedValueOnce({ id: 'target-wallet-id' });
+      (mockPrisma.member.findFirst as jest.Mock)
+        .mockResolvedValueOnce({ id: 'req-member-id', roles: [{ role: 'admin', active: true }] })
+        .mockResolvedValueOnce(null);
+
+      await expect(
+        memberService.assignBadge({
+          requesterWallet,
+          communityId,
+          targetWallet,
+          label: 'Top Contributor',
+        })
+      ).rejects.toMatchObject({ statusCode: 404 });
+    });
+
+    test('assignBadge creates a badge and emits a BADGE_ASSIGNED outbox event', async () => {
+      (mockPrisma.wallet.findUnique as jest.Mock)
+        .mockResolvedValueOnce({ id: 'req-wallet-id' })
+        .mockResolvedValueOnce({ id: 'target-wallet-id' });
+      (mockPrisma.member.findFirst as jest.Mock)
+        .mockResolvedValueOnce({ id: 'req-member-id', roles: [{ role: 'admin', active: true }] })
+        .mockResolvedValueOnce({ id: 'target-member-id' });
+      (mockPrisma.badge.create as jest.Mock).mockResolvedValueOnce({
+        id: 'badge-1',
+        memberId: 'target-member-id',
+        label: 'Top Contributor',
+        issuedAt: new Date('2026-01-01T00:00:00.000Z'),
+      });
+
+      const result = await memberService.assignBadge({
+        requesterWallet,
+        communityId,
+        targetWallet,
+        label: 'Top Contributor',
+      });
+
+      expect(result.assigned).toBe(true);
+      expect(result.badge?.label).toBe('Top Contributor');
+      expect(mockPrisma.badge.create).toHaveBeenCalledWith({
+        data: { memberId: 'target-member-id', label: 'Top Contributor' },
+      });
+      expect(mockPrisma.outboxEvent.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            eventType: 'BADGE_ASSIGNED',
+            entityId: 'badge-1',
+            entityType: 'Badge',
+            communityId,
+          }),
+        })
+      );
+    });
+
+    test('revokeBadge rejects non-admin requesters with 403', async () => {
+      (mockPrisma.wallet.findUnique as jest.Mock).mockResolvedValueOnce({ id: 'req-wallet-id' });
+      (mockPrisma.member.findFirst as jest.Mock).mockResolvedValueOnce({
+        id: 'req-member-id',
+        roles: [{ role: 'member', active: true }],
+      });
+
+      await expect(
+        memberService.revokeBadge({
+          requesterWallet,
+          communityId,
+          targetWallet,
+          badgeId: 'badge-1',
+        })
+      ).rejects.toMatchObject({ statusCode: 403 });
+    });
+
+    test('revokeBadge returns removed=false when the badge does not exist', async () => {
+      (mockPrisma.wallet.findUnique as jest.Mock)
+        .mockResolvedValueOnce({ id: 'req-wallet-id' })
+        .mockResolvedValueOnce({ id: 'target-wallet-id' });
+      (mockPrisma.member.findFirst as jest.Mock)
+        .mockResolvedValueOnce({ id: 'req-member-id', roles: [{ role: 'admin', active: true }] })
+        .mockResolvedValueOnce({ id: 'target-member-id' });
+      (mockPrisma.badge.findFirst as jest.Mock).mockResolvedValueOnce(null);
+
+      const result = await memberService.revokeBadge({
+        requesterWallet,
+        communityId,
+        targetWallet,
+        badgeId: 'missing-badge',
+      });
+
+      expect(result.removed).toBe(false);
+      expect(mockPrisma.badge.delete).not.toHaveBeenCalled();
+    });
+
+    test('revokeBadge deletes the badge and emits a BADGE_REVOKED outbox event', async () => {
+      (mockPrisma.wallet.findUnique as jest.Mock)
+        .mockResolvedValueOnce({ id: 'req-wallet-id' })
+        .mockResolvedValueOnce({ id: 'target-wallet-id' });
+      (mockPrisma.member.findFirst as jest.Mock)
+        .mockResolvedValueOnce({ id: 'req-member-id', roles: [{ role: 'admin', active: true }] })
+        .mockResolvedValueOnce({ id: 'target-member-id' });
+      (mockPrisma.badge.findFirst as jest.Mock).mockResolvedValueOnce({
+        id: 'badge-1',
+        memberId: 'target-member-id',
+        label: 'Top Contributor',
+      });
+
+      const result = await memberService.revokeBadge({
+        requesterWallet,
+        communityId,
+        targetWallet,
+        badgeId: 'badge-1',
+      });
+
+      expect(result.removed).toBe(true);
+      expect(mockPrisma.badge.delete).toHaveBeenCalledWith({ where: { id: 'badge-1' } });
+      expect(mockPrisma.outboxEvent.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            eventType: 'BADGE_REVOKED',
+            entityId: 'badge-1',
+            entityType: 'Badge',
+            communityId,
+          }),
+        })
+      );
+    });
+
+    test('listBadgesForMember returns null when the wallet is not a member', async () => {
+      (mockPrisma.wallet.findUnique as jest.Mock).mockResolvedValueOnce({ id: 'target-wallet-id' });
+      (mockPrisma.member.findFirst as jest.Mock).mockResolvedValueOnce(null);
+
+      const result = await memberService.listBadgesForMember(communityId, targetWallet);
+
+      expect(result).toBeNull();
+    });
+
+    test('listBadgesForMember returns the badges for a known member', async () => {
+      (mockPrisma.wallet.findUnique as jest.Mock).mockResolvedValueOnce({ id: 'target-wallet-id' });
+      (mockPrisma.member.findFirst as jest.Mock).mockResolvedValueOnce({ id: 'target-member-id' });
+      (mockPrisma.badge.findMany as jest.Mock).mockResolvedValueOnce([
+        {
+          id: 'badge-1',
+          memberId: 'target-member-id',
+          label: 'Top Contributor',
+          issuedAt: new Date('2026-01-01T00:00:00.000Z'),
+        },
+      ]);
+
+      const result = await memberService.listBadgesForMember(communityId, targetWallet);
+
+      expect(result?.badges).toHaveLength(1);
+      expect(result?.badges[0].label).toBe('Top Contributor');
+      expect(mockPrisma.badge.findMany).toHaveBeenCalledWith({
+        where: { memberId: 'target-member-id' },
+        orderBy: { issuedAt: 'desc' },
+      });
     });
   });
 });

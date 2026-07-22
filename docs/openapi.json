@@ -58,6 +58,40 @@
           "message": { "type": "string" }
         }
       },
+      "BadgeItem": {
+        "type": "object",
+        "required": ["id", "memberId", "label", "issuedAt"],
+        "properties": {
+          "id": { "type": "string" },
+          "memberId": { "type": "string" },
+          "label": { "type": "string" },
+          "issuedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "BadgeMutationResult": {
+        "type": "object",
+        "required": ["communityId", "wallet", "assigned", "removed"],
+        "properties": {
+          "communityId": { "type": "string" },
+          "wallet": { "$ref": "#/components/schemas/WalletAddress" },
+          "badge": { "$ref": "#/components/schemas/BadgeItem" },
+          "assigned": { "type": "boolean" },
+          "removed": { "type": "boolean" },
+          "message": { "type": "string" }
+        }
+      },
+      "ListBadgesResult": {
+        "type": "object",
+        "required": ["communityId", "wallet", "badges"],
+        "properties": {
+          "communityId": { "type": "string" },
+          "wallet": { "$ref": "#/components/schemas/WalletAddress" },
+          "badges": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/BadgeItem" }
+          }
+        }
+      },
       "DeadLetterEvent": {
         "type": "object",
         "required": ["id", "originalEventId", "eventType", "failureReason", "retryCount", "status", "createdAt"],
@@ -414,6 +448,206 @@
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/ForbiddenResponse" }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ForbiddenResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/communities/{communityId}/members/{wallet}/badges": {
+      "post": {
+        "summary": "Assign a badge to a community member",
+        "tags": ["Members", "Badges"],
+        "parameters": [
+          {
+            "schema": { "type": "string" },
+            "in": "path",
+            "name": "communityId",
+            "required": true,
+            "description": "Community identifier"
+          },
+          {
+            "schema": { "type": "string", "pattern": "^0x[0-9a-fA-F]{40}$" },
+            "in": "path",
+            "name": "wallet",
+            "required": true
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["label"],
+                "properties": {
+                  "label": { "type": "string", "minLength": 1, "description": "Badge label to assign" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Badge assigned successfully",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/BadgeMutationResult" }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error (invalid wallet, unknown community, or missing label)",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — requester does not have permission",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ForbiddenResponse" }
+              }
+            }
+          },
+          "404": {
+            "description": "Target wallet is not a member of the community",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ForbiddenResponse" }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "List badges assigned to a community member",
+        "tags": ["Members", "Badges"],
+        "parameters": [
+          {
+            "schema": { "type": "string" },
+            "in": "path",
+            "name": "communityId",
+            "required": true,
+            "description": "Community identifier"
+          },
+          {
+            "schema": { "type": "string", "pattern": "^0x[0-9a-fA-F]{40}$" },
+            "in": "path",
+            "name": "wallet",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Badges for the member",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ListBadgesResult" }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error (invalid wallet or unknown community)",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "404": {
+            "description": "Target wallet is not a member of the community",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ForbiddenResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/communities/{communityId}/members/{wallet}/badges/{badgeId}": {
+      "delete": {
+        "summary": "Revoke a badge from a community member",
+        "tags": ["Members", "Badges"],
+        "parameters": [
+          {
+            "schema": { "type": "string" },
+            "in": "path",
+            "name": "communityId",
+            "required": true,
+            "description": "Community identifier"
+          },
+          {
+            "schema": { "type": "string", "pattern": "^0x[0-9a-fA-F]{40}$" },
+            "in": "path",
+            "name": "wallet",
+            "required": true
+          },
+          {
+            "schema": { "type": "string" },
+            "in": "path",
+            "name": "badgeId",
+            "required": true,
+            "description": "Badge identifier"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Badge revoked (or was already absent)",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/BadgeMutationResult" }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error (invalid wallet or unknown community)",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — requester does not have permission",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ForbiddenResponse" }
+              }
+            }
+          },
+          "404": {
+            "description": "Target wallet is not a member of the community",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
               }
             }
           },

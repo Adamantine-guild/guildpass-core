@@ -375,6 +375,172 @@ export const revokeAccessOverrideSchema = {
 } as const;
 
 // ---------------------------------------------------------------------------
+// Badge shared fragments
+// ---------------------------------------------------------------------------
+
+const badgeItemSchema = {
+  type: 'object',
+  required: ['id', 'memberId', 'label', 'issuedAt'],
+  properties: {
+    id: { type: 'string' },
+    memberId: { type: 'string' },
+    label: { type: 'string' },
+    issuedAt: { type: 'string', format: 'date-time' },
+  },
+} as const;
+
+// ---------------------------------------------------------------------------
+// POST /v1/communities/:communityId/members/:wallet/badges
+// ---------------------------------------------------------------------------
+
+export const assignBadgeSchema = {
+  summary: 'Assign a badge to a community member',
+  tags: ['Members', 'Badges'],
+  params: {
+    type: 'object',
+    required: ['communityId', 'wallet'],
+    properties: {
+      communityId: { type: 'string', description: 'Community identifier' },
+      wallet: walletAddressSchema,
+    },
+  },
+  body: {
+    type: 'object',
+    required: ['label'],
+    properties: {
+      label: {
+        type: 'string',
+        minLength: 1,
+        description: 'Badge label to assign',
+      },
+    },
+  },
+  response: {
+    200: {
+      description: 'Badge assigned successfully',
+      type: 'object',
+      required: ['communityId', 'wallet', 'assigned', 'removed'],
+      properties: {
+        communityId: { type: 'string' },
+        wallet: walletAddressSchema,
+        badge: badgeItemSchema,
+        assigned: { type: 'boolean' },
+        removed: { type: 'boolean' },
+        message: { type: 'string' },
+      },
+    },
+    400: {
+      description: 'Validation error (invalid wallet, unknown community, or missing label)',
+      ...errorSchema,
+    },
+    403: {
+      description: 'Forbidden — requester does not have permission',
+      ...forbiddenSchema,
+    },
+    404: {
+      description: 'Target wallet is not a member of the community',
+      ...errorSchema,
+    },
+    500: {
+      description: 'Internal server error',
+      ...forbiddenSchema,
+    },
+  },
+} as const;
+
+// ---------------------------------------------------------------------------
+// GET /v1/communities/:communityId/members/:wallet/badges
+// ---------------------------------------------------------------------------
+
+export const listBadgesSchema = {
+  summary: 'List badges assigned to a community member',
+  tags: ['Members', 'Badges'],
+  params: {
+    type: 'object',
+    required: ['communityId', 'wallet'],
+    properties: {
+      communityId: { type: 'string', description: 'Community identifier' },
+      wallet: walletAddressSchema,
+    },
+  },
+  response: {
+    200: {
+      description: 'Badges for the member',
+      type: 'object',
+      required: ['communityId', 'wallet', 'badges'],
+      properties: {
+        communityId: { type: 'string' },
+        wallet: walletAddressSchema,
+        badges: {
+          type: 'array',
+          items: badgeItemSchema,
+        },
+      },
+    },
+    400: {
+      description: 'Validation error (invalid wallet or unknown community)',
+      ...errorSchema,
+    },
+    404: {
+      description: 'Target wallet is not a member of the community',
+      ...errorSchema,
+    },
+    500: {
+      description: 'Internal server error',
+      ...forbiddenSchema,
+    },
+  },
+} as const;
+
+// ---------------------------------------------------------------------------
+// DELETE /v1/communities/:communityId/members/:wallet/badges/:badgeId
+// ---------------------------------------------------------------------------
+
+export const revokeBadgeSchema = {
+  summary: 'Revoke a badge from a community member',
+  tags: ['Members', 'Badges'],
+  params: {
+    type: 'object',
+    required: ['communityId', 'wallet', 'badgeId'],
+    properties: {
+      communityId: { type: 'string', description: 'Community identifier' },
+      wallet: walletAddressSchema,
+      badgeId: { type: 'string', description: 'Badge identifier' },
+    },
+  },
+  response: {
+    200: {
+      description: 'Badge revoked (or was already absent)',
+      type: 'object',
+      required: ['communityId', 'wallet', 'assigned', 'removed'],
+      properties: {
+        communityId: { type: 'string' },
+        wallet: walletAddressSchema,
+        assigned: { type: 'boolean' },
+        removed: { type: 'boolean' },
+        message: { type: 'string' },
+      },
+    },
+    400: {
+      description: 'Validation error (invalid wallet or unknown community)',
+      ...errorSchema,
+    },
+    403: {
+      description: 'Forbidden — requester does not have permission',
+      ...forbiddenSchema,
+    },
+    404: {
+      description: 'Target wallet is not a member of the community',
+      ...errorSchema,
+    },
+    500: {
+      description: 'Internal server error',
+      ...forbiddenSchema,
+    },
+  },
+} as const;
+
+// ---------------------------------------------------------------------------
 // POST /v1/access/check
 // ---------------------------------------------------------------------------
 

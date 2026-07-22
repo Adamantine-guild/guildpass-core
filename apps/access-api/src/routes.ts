@@ -16,6 +16,9 @@ import {
   getMemberProfileSchema,
   assignMemberRoleSchema,
   removeMemberRoleSchema,
+  assignBadgeSchema,
+  listBadgesSchema,
+  revokeBadgeSchema,
   createAccessOverrideSchema,
   revokeAccessOverrideSchema,
   accessCheckSchema,
@@ -311,6 +314,86 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
         communityId,
         targetWallet: wallet as import('@guildpass/shared-types').WalletAddress,
         role: role as import('@guildpass/shared-types').Role,
+      });
+      return reply.status(200).send(result);
+    } catch (error) {
+      return sendRoleMutationError(reply, error);
+    }
+  });
+
+  // POST /v1/communities/:communityId/members/:wallet/badges — assign a badge to a member
+  app.post('/v1/communities/:communityId/members/:wallet/badges', { schema: assignBadgeSchema, preHandler: [authenticateApiKey] }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const { communityId, wallet } = request.params as { communityId: string; wallet: string };
+    const body = request.body as { label?: string };
+    const label = body?.label ?? '';
+    const requesterWallet = getRequesterWallet(request);
+
+    if (!wallet || !/^0x[0-9a-fA-F]{40}$/.test(wallet)) {
+      return reply.status(400).send(validationErrorWithReason('INVALID_WALLET', 'Invalid wallet format'));
+    }
+
+    const community = await prisma.community.findUnique({ where: { id: communityId } });
+    if (!community) {
+      return reply.status(400).send(validationErrorWithReason('UNKNOWN_COMMUNITY', 'Unknown communityId'));
+    }
+
+    if (!label.trim()) {
+      return reply.status(400).send(validationError('Missing required field: label'));
+    }
+
+    try {
+      const result = await memberService.assignBadge({
+        requesterWallet: requesterWallet as import('@guildpass/shared-types').WalletAddress,
+        communityId,
+        targetWallet: wallet as import('@guildpass/shared-types').WalletAddress,
+        label,
+      });
+      return reply.status(200).send(result);
+    } catch (error) {
+      return sendRoleMutationError(reply, error);
+    }
+  });
+
+  // GET /v1/communities/:communityId/members/:wallet/badges — list badges for a member
+  app.get('/v1/communities/:communityId/members/:wallet/badges', { schema: listBadgesSchema }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const { communityId, wallet } = request.params as { communityId: string; wallet: string };
+
+    if (!wallet || !/^0x[0-9a-fA-F]{40}$/.test(wallet)) {
+      return reply.status(400).send(validationErrorWithReason('INVALID_WALLET', 'Invalid wallet format'));
+    }
+
+    const community = await prisma.community.findUnique({ where: { id: communityId } });
+    if (!community) {
+      return reply.status(400).send(validationErrorWithReason('UNKNOWN_COMMUNITY', 'Unknown communityId'));
+    }
+
+    const result = await memberService.listBadgesForMember(communityId, wallet);
+    if (!result) {
+      return reply.status(404).send(notFound('Member not found'));
+    }
+    return reply.status(200).send(result);
+  });
+
+  // DELETE /v1/communities/:communityId/members/:wallet/badges/:badgeId — revoke a badge
+  app.delete('/v1/communities/:communityId/members/:wallet/badges/:badgeId', { schema: revokeBadgeSchema, preHandler: [authenticateApiKey] }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const { communityId, wallet, badgeId } = request.params as { communityId: string; wallet: string; badgeId: string };
+    const requesterWallet = getRequesterWallet(request);
+
+    if (!wallet || !/^0x[0-9a-fA-F]{40}$/.test(wallet)) {
+      return reply.status(400).send(validationErrorWithReason('INVALID_WALLET', 'Invalid wallet format'));
+    }
+
+    const community = await prisma.community.findUnique({ where: { id: communityId } });
+    if (!community) {
+      return reply.status(400).send(validationErrorWithReason('UNKNOWN_COMMUNITY', 'Unknown communityId'));
+    }
+
+    try {
+      const result = await memberService.revokeBadge({
+        requesterWallet: requesterWallet as import('@guildpass/shared-types').WalletAddress,
+        communityId,
+        targetWallet: wallet as import('@guildpass/shared-types').WalletAddress,
+        badgeId,
       });
       return reply.status(200).send(result);
     } catch (error) {
