@@ -76,17 +76,18 @@ model Profile {
 }
 
 model Member {
-  id          String           @id @default(cuid())
-  communityId String
-  walletId    String
-  profileId   String?
-  community   Community        @relation(fields: [communityId], references: [id])
-  wallet      Wallet           @relation(fields: [walletId], references: [id])
-  profile     Profile?         @relation(fields: [profileId], references: [id])
-  membership  Membership?
-  roles       RoleAssignment[]
-  badges      Badge[]
-  appeals     Appeal[]
+  id               String            @id @default(cuid())
+  communityId      String
+  walletId         String
+  profileId        String?
+  community        Community         @relation(fields: [communityId], references: [id])
+  wallet           Wallet            @relation(fields: [walletId], references: [id])
+  profile          Profile?          @relation(fields: [profileId], references: [id])
+  membership       Membership?
+  membershipTokens MembershipToken[]
+  roles            RoleAssignment[]
+  badges           Badge[]
+  appeals          Appeal[]
 
   @@unique([communityId, walletId])
 }
@@ -99,17 +100,25 @@ enum MembershipState {
 }
 
 model Membership {
-  id        String          @id @default(cuid())
-  memberId  String          @unique
-  tokenId   Int?            @unique
+  id            String           @id @default(cuid())
+  memberId      String           @unique
+  activeTokenId Int?             @unique
+  member        Member           @relation(fields: [memberId], references: [id])
+  activeToken   MembershipToken? @relation("ActiveToken", fields: [activeTokenId], references: [tokenId])
+}
+
+model MembershipToken {
+  tokenId   Int             @id
+  memberId  String
   state     MembershipState
   expiresAt DateTime?
   renewedAt DateTime?
   createdAt DateTime        @default(now())
   member    Member          @relation(fields: [memberId], references: [id])
+  activeOf  Membership?     @relation("ActiveToken")
 
   @@index([state, expiresAt])
-  @@index([tokenId])
+  @@index([memberId])
 }
 
 enum Role {

@@ -15,20 +15,33 @@ export async function findOrCreateProfile(
   return prisma.profile.create({ data: { displayName } });
 }
 
-/**
- * Idempotent: upsert membership by memberId. `memberId` has a `@unique`
- * constraint, so the second call updates the existing row to the seeded
- * state/expiresAt instead of erroring on duplicate.
- */
 export async function upsertMembership(
   prisma: PrismaClient,
   memberId: string,
-  data: { state: 'active' | 'expired' | 'invited' | 'suspended'; expiresAt: Date | null }
+  data: { state: 'active' | 'expired' | 'invited' | 'suspended'; expiresAt: Date | null },
+  tokenId?: number
 ) {
+  const resolvedTokenId = tokenId ?? Math.abs(memberId.split('').reduce((acc, char) => (acc << 5) - acc + char.charCodeAt(0), 0)) % 1000000;
+
+  await prisma.membershipToken.upsert({
+    where: { tokenId: resolvedTokenId },
+    update: {
+      memberId,
+      state: data.state as any,
+      expiresAt: data.expiresAt,
+    },
+    create: {
+      tokenId: resolvedTokenId,
+      memberId,
+      state: data.state as any,
+      expiresAt: data.expiresAt,
+    },
+  });
+
   return prisma.membership.upsert({
     where: { memberId },
-    create: { memberId, state: data.state, expiresAt: data.expiresAt },
-    update: { state: data.state, expiresAt: data.expiresAt },
+    create: { memberId, activeTokenId: resolvedTokenId },
+    update: { activeTokenId: resolvedTokenId },
   });
 }
 

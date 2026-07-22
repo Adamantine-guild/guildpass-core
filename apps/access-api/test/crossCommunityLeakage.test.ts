@@ -67,8 +67,10 @@ describe('Cross-community leakage safeguards', () => {
   });
 
   beforeEach(async () => {
+    await prisma.processedEvent.deleteMany({});
     await prisma.roleAssignment.deleteMany({});
     await prisma.membership.deleteMany({});
+    await prisma.membershipToken.deleteMany({});
     await prisma.member.deleteMany({});
     await prisma.accessOverride.deleteMany({});
     await prisma.accessPolicy.deleteMany({});
@@ -128,9 +130,8 @@ describe('Cross-community leakage safeguards', () => {
     test('membership state is resolved within the requested community', async () => {
       await mintMembership(communityA, 101);
       await mintMembership(communityB, 202);
-      const memberB = await getMember(communityB);
-      await prisma.membership.update({
-        where: { memberId: memberB.id },
+      await prisma.membershipToken.update({
+        where: { tokenId: 202 },
         data: { state: 'suspended' },
       });
       await prisma.accessPolicy.createMany({
@@ -175,8 +176,8 @@ describe('Cross-community leakage safeguards', () => {
         getMember(communityA),
         getMember(communityB),
       ]);
-      await prisma.membership.updateMany({
-        where: { memberId: { in: [memberA.id, memberB.id] } },
+      await prisma.membershipToken.updateMany({
+        where: { tokenId: { in: [101, 202] } },
         data: { state: 'suspended' },
       });
       await prisma.accessPolicy.createMany({
@@ -201,8 +202,8 @@ describe('Cross-community leakage safeguards', () => {
         getMember(communityA),
         getMember(communityB),
       ]);
-      await prisma.membership.updateMany({
-        where: { memberId: { in: [memberA.id, memberB.id] } },
+      await prisma.membershipToken.updateMany({
+        where: { tokenId: { in: [101, 202] } },
         data: { state: 'suspended' },
       });
       await prisma.accessPolicy.createMany({

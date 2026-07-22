@@ -20,7 +20,7 @@
     "prisma:ci": "pnpm run prisma:validate && pnpm run prisma:generate && pnpm run prisma:migrate:safety && pnpm run prisma:migrate:deploy && pnpm run prisma:migrate:check",
     "seed": "ts-node prisma/seed.ts",
     "backfill:outbox-correlation-id": "ts-node scripts/backfillOutboxCorrelationId.ts",
-    "test": "jest --passWithNoTests"
+    "test": "jest --runInBand --passWithNoTests"
   },
   "dependencies": {
     "@fastify/rate-limit": "^9.1.0",

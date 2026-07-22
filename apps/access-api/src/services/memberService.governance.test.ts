@@ -60,6 +60,12 @@ function buildMockPrisma(state: MockState) {
     contributionScore: {
       findUnique: jest.fn().mockResolvedValue(state.contributionScore),
     },
+    roleDefinition: {
+      findMany: jest.fn().mockResolvedValue([]),
+    },
+    delegatedGrant: {
+      findMany: jest.fn().mockResolvedValue([]),
+    },
     outboxEvent: { create: jest.fn().mockResolvedValue({ id: 'outbox-1' }) },
     auditEvent: { create: jest.fn().mockResolvedValue({ id: 'audit-1' }) },
     $transaction: jest.fn(),

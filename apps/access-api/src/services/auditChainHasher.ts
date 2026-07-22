@@ -192,7 +192,7 @@ export async function getChainTipHash(
  * Must be called inside a Prisma $transaction callback.
  */
 export async function acquireAuditChainLock(tx: Prisma.TransactionClient): Promise<void> {
-  await tx.$queryRaw(
+  await tx.$executeRaw(
     Prisma.sql`SELECT pg_advisory_xact_lock(${AUDIT_CHAIN_LOCK_ID})`,
   );
 }
