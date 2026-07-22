@@ -32,6 +32,7 @@ import {
   createAccessOverrideSchema,
   revokeAccessOverrideSchema,
   listCommunityMembersSchema,
+  getCommunityRolesSchema,
 } from '../src/schemas';
 
 // ---------------------------------------------------------------------------
@@ -64,7 +65,9 @@ function extractPureJsonSchema(raw: Record<string, unknown>): JsonSchema {
     '$ref',
   ];
   for (const key of keys) {
-    if (raw[key] !== undefined) result[key] = raw[key];
+    if (raw[key] !== undefined) {
+      result[key] = JSON.parse(JSON.stringify(raw[key]));
+    }
   }
   return result;
 }
@@ -175,6 +178,11 @@ function extractCurrentContract(): ContractSnapshot {
       'GET',
       '/v1/communities/{communityId}/members',
       listCommunityMembersSchema as unknown as Record<string, unknown>,
+    ),
+    'GET /v1/communities/:communityId/roles': buildEndpoint(
+      'GET',
+      '/v1/communities/{communityId}/roles',
+      getCommunityRolesSchema as unknown as Record<string, unknown>,
     ),
   };
 

@@ -141,11 +141,13 @@ The API uses the **transactional outbox pattern** to emit reliable integration e
 | Concept | Description |
 | ------- | ----------- |
 | **Event creation** | Events are written atomically with the domain mutation inside a Prisma `$transaction`. If the mutation fails, no event is created. If the event write fails, the entire transaction rolls back. |
-| **Event types** | `MEMBERSHIP_CREATED`, `MEMBERSHIP_UPDATED`, `MEMBERSHIP_DELETED`, `ROLE_ASSIGNED`, `ROLE_REMOVED`, `RESOURCE_CREATED`, `RESOURCE_UPDATED`, `RESOURCE_ARCHIVED`, `POLICY_CREATED`, `POLICY_UPDATED`, `POLICY_DELETED`, `ACCESS_DECISION` |
+| **Event types** | `MEMBERSHIP_CREATED`, `MEMBERSHIP_UPDATED`, `MEMBERSHIP_DELETED`, `ROLE_ASSIGNED`, `ROLE_REMOVED`, `RESOURCE_CREATED`, `RESOURCE_UPDATED`, `RESOURCE_ARCHIVED`, `POLICY_CREATED`\*, `POLICY_UPDATED`\*, `POLICY_DELETED`\*, `ACCESS_DECISION`, `ACCESS_OVERRIDE_CREATED`, `ACCESS_OVERRIDE_UPDATED`, `ACCESS_OVERRIDE_REVOKED`, `MEMBER_ATTENDED`, `BADGE_ASSIGNED`, `BADGE_REVOKED` |
 | **Statuses** | `pending` (awaiting delivery), `delivered` (successfully processed), `failed` (permanently failed after max retries) |
 | **Retry strategy** | Exponential backoff: `nextRetryAt = now + 10 × 2^retryCount` seconds. Default max 5 retries. |
 | **Delivery worker** | `outboxWorker` polls for pending events every `OUTBOX_WORKER_INTERVAL_MS` (default 10s) and delegates to a pluggable handler. The default handler is a no-op logger. |
 | **Pruning** | Delivered events older than 7 days are automatically pruned to prevent unbounded table growth. |
+
+\* `POLICY_CREATED`/`POLICY_UPDATED`/`POLICY_DELETED` are reserved for future CRUD on the base `AccessPolicy` (per-resource `ruleType`) record, which today is only read, not managed via an API. Wallet-specific **access overrides** (see Policy Engine, above) are a separate concept with their own `ACCESS_OVERRIDE_*` event types.
 
 ### Configuration
 
@@ -257,10 +259,20 @@ Simple rules: `PUBLIC`, `MEMBERS_ONLY`, `ADMINS_ONLY`, `CONTRIBUTORS_OR_ADMINS`.
 
 Role resolution combines:
 - Membership state (adds `member` role when active)
-- Backend role assignments
-- Room for future manual override rules (TODO)
+- Backend role assignments (including custom role hierarchies and delegated grants)
+- **Manual access overrides** — an explicit `ALLOW`/`DENY` for a single `(wallet, communityId, resource)` triple, e.g. a temporary ban or a one-off grant for a partner wallet. An active override is checked **before** any rule evaluation and, if present, short-circuits the decision — it takes precedence over every role- or membership-derived outcome. Overrides are managed via the `/v1/communities/:communityId/overrides` admin routes below and expire automatically via their optional `expiresAt`.
 
-**Full spec** (policy semantics, exact role-resolution algorithm, precedence between membership-derived and backend-assigned roles, worked examples): [`packages/policy-engine/README.md`](./packages/policy-engine/README.md).
+**Full spec** (policy semantics, exact role-resolution algorithm, override precedence, worked examples): [`packages/policy-engine/README.md`](./packages/policy-engine/README.md).
+
+### Managing access overrides
+
+| Method | Path | Description |
+| ------ | ---- | ----------- |
+| POST | `/v1/communities/:communityId/overrides` | Create or update an override for a wallet/resource pair (admin only) |
+| GET | `/v1/communities/:communityId/overrides` | List overrides for a community, including expired ones (admin only) |
+| DELETE | `/v1/communities/:communityId/overrides/:wallet/:resource` | Revoke an override (admin only) |
+
+Every mutation is written transactionally with an `ACCESS_OVERRIDE_CREATED`, `ACCESS_OVERRIDE_UPDATED`, or `ACCESS_OVERRIDE_REVOKED` outbox event (see below).
 
 ---
 

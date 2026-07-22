@@ -268,5 +268,6 @@ compatibility but never indicate actual token transfers.
 | 5 | Missing ERC-721/ERC-165/ERC-5192 interface | Medium (tokens invisible to wallets/explorers/marketplaces) | Fixed (read-only ERC-721, ERC-165, ERC-5192 soulbound) |
 | — | Reentrancy | N/A | Reviewed, no external calls exist |
 | — | Integer overflow in expiry | N/A | Reviewed, checked arithmetic + admin-only input |
-| — | Timestamp manipulation | Low | Reviewed, not economically exploitable at this contract's timescales |
+| — | Timestamp manipulation | Low | Reviewed, not economically exploitable at this contract's timescales; covered by `testFuzz_expiryBoundary` |
+| — | Suspension/unsuspension transitions | Low | Reviewed; covered by `testFuzz_suspensionTransitions` and `testBalanceOf_UnsuspendRestoresBalance` |
 | — | DoS in public functions | N/A | Reviewed, all operations are O(1) |

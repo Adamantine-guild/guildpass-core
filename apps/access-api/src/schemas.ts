@@ -18,6 +18,8 @@
  *    generated OpenAPI spec gives consumers real type information.
  */
 
+import { VALID_ROLES } from '@guildpass/shared-types';
+
 // ---------------------------------------------------------------------------
 // Shared primitive fragments
 // ---------------------------------------------------------------------------
@@ -55,7 +57,7 @@ const forbiddenSchema = {
 } as const;
 
 /** Role enum values mirroring shared-types Role. */
-const roleEnum = ["admin", "member", "contributor"] as const;
+const roleEnum = VALID_ROLES;
 
 /** MembershipState enum values mirroring shared-types MembershipState. */
 const membershipStateEnum = [
@@ -135,7 +137,8 @@ export const getMemberProfileSchema = {
       description: "Member profile",
       type: "object",
       properties: {
-        communityId: { type: "string" },
+        wallet: walletAddressSchema,
+        communityId: { type: 'string' },
         profile: {
           type: "object",
           properties: {
@@ -345,6 +348,59 @@ export const createAccessOverrideSchema = {
     },
     500: {
       description: "Internal server error",
+      ...forbiddenSchema,
+    },
+  },
+} as const;
+
+// ---------------------------------------------------------------------------
+// GET /v1/communities/:communityId/overrides
+// ---------------------------------------------------------------------------
+
+export const listAccessOverridesSchema = {
+  summary: 'List access overrides for a community (admin)',
+  tags: ['Overrides'],
+  params: {
+    type: 'object',
+    required: ['communityId'],
+    properties: {
+      communityId: { type: 'string', description: 'Community identifier' },
+    },
+  },
+  response: {
+    200: {
+      description: 'Access overrides for the community',
+      type: 'object',
+      required: ['communityId', 'overrides'],
+      properties: {
+        communityId: { type: 'string' },
+        overrides: {
+          type: 'array',
+          items: {
+            type: 'object',
+            required: ['wallet', 'resource', 'effect', 'expired', 'createdAt'],
+            properties: {
+              wallet: walletAddressSchema,
+              resource: { type: 'string' },
+              effect: { type: 'string', enum: ['ALLOW', 'DENY'] },
+              reason: { type: 'string', nullable: true },
+              expiresAt: { type: 'string', format: 'date-time', nullable: true },
+              expired: {
+                type: 'boolean',
+                description: 'Whether expiresAt has passed; expired overrides no longer affect access decisions',
+              },
+              createdAt: { type: 'string', format: 'date-time' },
+            },
+          },
+        },
+      },
+    },
+    403: {
+      description: 'Forbidden — requester does not have permission',
+      ...forbiddenSchema,
+    },
+    500: {
+      description: 'Internal server error',
       ...forbiddenSchema,
     },
   },
@@ -971,5 +1027,319 @@ export const listAuditEventsSchema = {
       description: "Internal server error",
       ...forbiddenSchema,
     },
+  },
+} as const;
+
+const ruleAstSchema = {
+  type: 'object',
+  additionalProperties: true,
+} as const;
+
+/** Shared governance rule shape returned by the CRUD routes. */
+const governanceRuleObjectSchema = {
+  type: 'object',
+  additionalProperties: true,
+  properties: {
+    id: { type: 'string' },
+    name: { type: 'string' },
+    description: { type: 'string' },
+    communityId: { type: 'string' },
+    resource: { type: 'string' },
+    active: { type: 'boolean' },
+    ast: ruleAstSchema,
+  },
+} as const;
+
+// ---------------------------------------------------------------------------
+// POST /v1/communities/:communityId/governance-rules
+// ---------------------------------------------------------------------------
+
+export const createGovernanceRuleSchema = {
+  summary: 'Create a governance rule for a community resource',
+  tags: ['Governance'],
+  params: {
+    type: 'object',
+    required: ['communityId'],
+    properties: {
+      communityId: { type: 'string', description: 'Community identifier' },
+    },
+  },
+  body: {
+    type: 'object',
+    required: ['name', 'description', 'resource', 'ast'],
+    properties: {
+      name: { type: 'string', description: 'Unique rule name within the resource' },
+      description: { type: 'string', description: 'Human-readable description' },
+      resource: { type: 'string', description: 'Resource the rule governs' },
+      ast: ruleAstSchema,
+    },
+  },
+  response: {
+    201: { ...governanceRuleObjectSchema, description: 'Rule created' },
+    400: { description: 'Validation error (missing fields or invalid AST)', ...errorSchema },
+    403: { description: 'Forbidden — requester is not a community admin', ...forbiddenSchema },
+    409: { description: 'Duplicate rule name for the resource', ...errorSchema },
+    500: { description: 'Internal server error', ...errorSchema },
+  },
+} as const;
+
+// ---------------------------------------------------------------------------
+// GET /v1/communities/:communityId/governance-rules
+// ---------------------------------------------------------------------------
+
+export const listGovernanceRulesSchema = {
+  summary: 'List governance rules for a community',
+  tags: ['Governance'],
+  params: {
+    type: 'object',
+    required: ['communityId'],
+    properties: {
+      communityId: { type: 'string', description: 'Community identifier' },
+    },
+  },
+  querystring: {
+    type: 'object',
+    properties: {
+      resource: { type: 'string', description: 'Filter by resource' },
+      activeOnly: {
+        type: 'string',
+        enum: ['true', 'false'],
+        description: 'When "false", include inactive rules (default true)',
+      },
+    },
+  },
+  response: {
+    200: {
+      description: 'List of governance rules',
+      type: 'object',
+      required: ['rules'],
+      properties: {
+        rules: { type: 'array', items: governanceRuleObjectSchema },
+      },
+    },
+    403: { description: 'Forbidden — requester is not a community admin', ...forbiddenSchema },
+    500: { description: 'Internal server error', ...errorSchema },
+  },
+} as const;
+
+// ---------------------------------------------------------------------------
+// GET /v1/communities/:communityId/governance-rules/:ruleId
+// ---------------------------------------------------------------------------
+
+export const getGovernanceRuleSchema = {
+  summary: 'Get a single governance rule',
+  tags: ['Governance'],
+  params: {
+    type: 'object',
+    required: ['communityId', 'ruleId'],
+    properties: {
+      communityId: { type: 'string', description: 'Community identifier' },
+      ruleId: { type: 'string', description: 'Governance rule identifier' },
+    },
+  },
+  response: {
+    200: { ...governanceRuleObjectSchema, description: 'The governance rule' },
+    403: { description: 'Forbidden — requester is not a community admin', ...forbiddenSchema },
+    404: { description: 'Rule not found', ...errorSchema },
+    500: { description: 'Internal server error', ...errorSchema },
+  },
+} as const;
+
+// ---------------------------------------------------------------------------
+// PATCH /v1/communities/:communityId/governance-rules/:ruleId
+// ---------------------------------------------------------------------------
+
+export const updateGovernanceRuleSchema = {
+  summary: 'Update a governance rule (partial)',
+  tags: ['Governance'],
+  params: {
+    type: 'object',
+    required: ['communityId', 'ruleId'],
+    properties: {
+      communityId: { type: 'string', description: 'Community identifier' },
+      ruleId: { type: 'string', description: 'Governance rule identifier' },
+    },
+  },
+  body: {
+    type: 'object',
+    properties: {
+      name: { type: 'string' },
+      description: { type: 'string' },
+      ast: ruleAstSchema,
+      active: { type: 'boolean', description: 'Activate/deactivate the rule' },
+    },
+  },
+  response: {
+    200: { ...governanceRuleObjectSchema, description: 'Updated rule' },
+    400: { description: 'Validation error (invalid AST)', ...errorSchema },
+    403: { description: 'Forbidden — requester is not a community admin', ...forbiddenSchema },
+    404: { description: 'Rule not found', ...errorSchema },
+    500: { description: 'Internal server error', ...errorSchema },
+  },
+} as const;
+
+// ---------------------------------------------------------------------------
+// DELETE /v1/communities/:communityId/governance-rules/:ruleId
+// ---------------------------------------------------------------------------
+
+export const deleteGovernanceRuleSchema = {
+  summary: 'Delete a governance rule',
+  tags: ['Governance'],
+  params: {
+    type: 'object',
+    required: ['communityId', 'ruleId'],
+    properties: {
+      communityId: { type: 'string', description: 'Community identifier' },
+      ruleId: { type: 'string', description: 'Governance rule identifier' },
+    },
+  },
+  response: {
+    204: { description: 'Rule deleted', type: 'null' },
+    403: { description: 'Forbidden — requester is not a community admin', ...forbiddenSchema },
+    404: { description: 'Rule not found', ...errorSchema },
+    500: { description: 'Internal server error', ...errorSchema },
+  },
+} as const;
+
+// ---------------------------------------------------------------------------
+// POST /v1/communities/:communityId/governance-rules/:ruleId/approval-requests
+// ---------------------------------------------------------------------------
+
+export const createApprovalRequestSchema = {
+  summary: 'Open an approval request for a governance rule',
+  tags: ['Governance'],
+  params: {
+    type: 'object',
+    required: ['communityId', 'ruleId'],
+    properties: {
+      communityId: { type: 'string', description: 'Community identifier' },
+      ruleId: { type: 'string', description: 'Governance rule identifier' },
+    },
+  },
+  body: {
+    type: 'object',
+    properties: {
+      expiresAt: {
+        type: 'string',
+        format: 'date-time',
+        nullable: true,
+        description: 'Optional ISO 8601 expiry for the request',
+      },
+    },
+  },
+  response: {
+    201: { description: 'Approval request created', type: 'object', additionalProperties: true },
+    400: { description: 'Missing requester wallet', ...errorSchema },
+    404: { description: 'Rule not found', ...errorSchema },
+    500: { description: 'Internal server error', ...errorSchema },
+  },
+} as const;
+
+// ---------------------------------------------------------------------------
+// POST /v1/communities/:communityId/approval-requests/:requestId/approvals
+// ---------------------------------------------------------------------------
+
+export const submitApprovalSchema = {
+  summary: 'Submit an approval or rejection for an approval request',
+  tags: ['Governance'],
+  params: {
+    type: 'object',
+    required: ['communityId', 'requestId'],
+    properties: {
+      communityId: { type: 'string', description: 'Community identifier' },
+      requestId: { type: 'string', description: 'Approval request identifier' },
+    },
+  },
+  body: {
+    type: 'object',
+    required: ['approverRole', 'approved'],
+    properties: {
+      approverRole: {
+        type: 'string',
+        enum: ['admin', 'member', 'contributor'],
+        description: 'Role the approver is acting as',
+      },
+      approved: { type: 'boolean', description: 'true to approve, false to reject' },
+      signature: { type: 'string', description: 'Optional cryptographic signature' },
+    },
+  },
+  response: {
+    201: { description: 'Approval recorded', type: 'object', additionalProperties: true },
+    400: { description: 'Validation error', ...errorSchema },
+    409: { description: 'Approver already submitted for this request', ...errorSchema },
+    500: { description: 'Internal server error', ...errorSchema },
+  },
+} as const;
+
+// ---------------------------------------------------------------------------
+// GET /v1/communities/:communityId/approval-requests/:requestId/approvals
+// ---------------------------------------------------------------------------
+
+export const listApprovalsSchema = {
+  summary: 'List approvals submitted for an approval request',
+  tags: ['Governance'],
+  params: {
+    type: 'object',
+    required: ['communityId', 'requestId'],
+    properties: {
+      communityId: { type: 'string', description: 'Community identifier' },
+      requestId: { type: 'string', description: 'Approval request identifier' },
+    },
+  },
+  response: {
+    200: {
+      description: 'List of approvals',
+      type: 'object',
+      required: ['approvals'],
+      properties: {
+        approvals: { type: 'array', items: { type: 'object', additionalProperties: true } },
+      },
+    },
+    500: { description: 'Internal server error', ...errorSchema },
+  },
+} as const;
+
+// ---------------------------------------------------------------------------
+// GET /v1/communities/:communityId/roles
+// ---------------------------------------------------------------------------
+
+export const getCommunityRolesSchema = {
+  summary: 'Get community roles and hierarchy metadata',
+  tags: ['Communities', 'Roles'],
+  params: {
+    type: 'object',
+    required: ['communityId'],
+    properties: {
+      communityId: { type: 'string', description: 'Community identifier' },
+    },
+  },
+  response: {
+    200: {
+      description: 'List of community roles and hierarchy metadata',
+      type: 'object',
+      required: ['roles'],
+      properties: {
+        roles: {
+          type: 'array',
+          items: {
+            type: 'object',
+            required: ['name', 'description', 'implies'],
+            properties: {
+              name: { type: 'string', enum: roleEnum },
+              description: { type: 'string' },
+              implies: {
+                type: 'array',
+                items: { type: 'string', enum: roleEnum },
+              },
+            },
+          },
+        },
+      },
+    },
+    404: {
+      description: 'Community not found',
+      ...errorSchema,
+    },
+    500: { description: 'Internal server error', ...errorSchema },
   },
 } as const;

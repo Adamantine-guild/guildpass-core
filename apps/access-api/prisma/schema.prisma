@@ -12,6 +12,9 @@ model Community {
   resources   Resource[]
   overrides   AccessOverride[]
   rules       GovernanceRule[]
+  constitutionalRuleSets ConstitutionalRuleSet[]
+  delegatedGrants DelegatedGrant[]
+  roleDefinitions RoleDefinition[]
   createdAt   DateTime          @default(now())
 }
 
@@ -26,6 +29,8 @@ model Wallet {
   secondaryLinkedWallets LinkedWallet[] @relation("secondaryWallet")
   challenges            Challenge[] @relation("challengePrimaryWallet")
   secondaryChallenges   Challenge[] @relation("challengeSecondaryWallet")
+  delegatedGrantsAsGranter DelegatedGrant[] @relation("DelegatedGrantGranter")
+  delegatedGrantsAsGrantee DelegatedGrant[] @relation("DelegatedGrantGrantee")
 }
 
 // --- Wallet Linking Models ---
@@ -72,17 +77,18 @@ model Profile {
 }
 
 model Member {
-  id          String           @id @default(cuid())
-  communityId String
-  walletId    String
-  profileId   String?
-  community   Community        @relation(fields: [communityId], references: [id])
-  wallet      Wallet           @relation(fields: [walletId], references: [id])
-  profile     Profile?         @relation(fields: [profileId], references: [id])
-  membership  Membership?
-  roles       RoleAssignment[]
-  badges      Badge[]
-  appeals     Appeal[]
+  id               String            @id @default(cuid())
+  communityId      String
+  walletId         String
+  profileId        String?
+  community        Community         @relation(fields: [communityId], references: [id])
+  wallet           Wallet            @relation(fields: [walletId], references: [id])
+  profile          Profile?          @relation(fields: [profileId], references: [id])
+  membership       Membership?
+  membershipTokens MembershipToken[]
+  roles            RoleAssignment[]
+  badges           Badge[]
+  appeals          Appeal[]
 
   @@unique([communityId, walletId])
 }
@@ -95,17 +101,25 @@ enum MembershipState {
 }
 
 model Membership {
-  id        String          @id @default(cuid())
-  memberId  String          @unique
-  tokenId   Int?            @unique
+  id            String           @id @default(cuid())
+  memberId      String           @unique
+  activeTokenId Int?             @unique
+  member        Member           @relation(fields: [memberId], references: [id])
+  activeToken   MembershipToken? @relation("ActiveToken", fields: [activeTokenId], references: [tokenId])
+}
+
+model MembershipToken {
+  tokenId   Int             @id
+  memberId  String
   state     MembershipState
   expiresAt DateTime?
   renewedAt DateTime?
   createdAt DateTime        @default(now())
   member    Member          @relation(fields: [memberId], references: [id])
+  activeOf  Membership?     @relation("ActiveToken")
 
   @@index([state, expiresAt])
-  @@index([tokenId])
+  @@index([memberId])
 }
 
 enum Role {
@@ -119,10 +133,61 @@ enum RoleSource {
   auto
 }
 
+// Role definition for hierarchical roles
+model RoleDefinition {
+  id          String          @id @default(cuid())
+  name        String          // e.g. "moderator"
+  communityId String
+  description String?
+  parentRoleId String?
+  parentRole   RoleDefinition? @relation("RoleHierarchy", fields: [parentRoleId], references: [id])
+  childRoles   RoleDefinition[] @relation("RoleHierarchy")
+  // Built-in roles still exist as enum
+  builtInRole Role?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  community Community @relation(fields: [communityId], references: [id])
+  roleAssignments RoleAssignment[]
+
+  @@unique([communityId, name])
+  @@index([parentRoleId])
+}
+
+// Delegated grant: granter gives permissions to grantee with scope and expiry
+model DelegatedGrant {
+  id          String   @id @default(uuid())
+  communityId String
+  granterWalletId String
+  granteeWalletId String
+  // Which roles are granted
+  roles       String[] // array of role names
+  // Scope: which resources/communities?
+  scope       Json? // e.g. { resources: ["*"], communities: ["community-1"] }
+  // Expiry
+  expiresAt   DateTime?
+  // Revokable
+  revokedAt   DateTime?
+  revokedBy   String? // wallet that revoked
+  createdAt   DateTime @default(now())
+
+  granterWallet Wallet @relation("DelegatedGrantGranter", fields: [granterWalletId], references: [id])
+  granteeWallet Wallet @relation("DelegatedGrantGrantee", fields: [granteeWalletId], references: [id])
+  community     Community @relation(fields: [communityId], references: [id])
+
+  @@index([communityId])
+  @@index([granterWalletId])
+  @@index([granteeWalletId])
+  @@index([expiresAt])
+}
+
 model RoleAssignment {
   id        String     @id @default(cuid())
   memberId  String
-  role      Role
+  // Assign either built-in role enum OR a custom RoleDefinition
+  role      Role?
+  roleDefinitionId String?
+  roleDefinition RoleDefinition? @relation(fields: [roleDefinitionId], references: [id])
   source    RoleSource
   active    Boolean    @default(true)
   expiresAt DateTime?
@@ -203,6 +268,8 @@ enum EventType {
   MEMBERSHIP_DELETED
   POLICY_EVALUATION
   MEMBERSHIP_RECONCILED
+  CONTRACT_ADMIN_UPDATED
+  CONTRACT_OWNERSHIP_TRANSFERRED
   OTHER
 }
 
@@ -571,6 +638,43 @@ model AttendanceRecord {
   @@unique([walletId, eventId, source])
   @@index([communityId])
 }
+
+model ContractAdmin {
+  chainId   Int
+  address   String
+  enabled   Boolean
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@id([chainId, address])
+}
+
+model ContractOwnership {
+  chainId       Int      @id
+  owner         String
+  proposedOwner String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model ConstitutionalRuleSet {
+  id          String    @id @default(uuid())
+  communityId String
+  version     Int
+  rules       Json      // Array of ConstitutionalRule AST objects
+  active      Boolean   @default(true)
+  description String?
+  createdBy   String?   // Wallet address of creator
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  community Community @relation(fields: [communityId], references: [id])
+
+  @@unique([communityId, version])
+  @@index([communityId])
+  @@index([communityId, active])
+}
+
 
 
 

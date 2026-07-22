@@ -5,8 +5,8 @@ Explainable access-control engine. Given an [`AccessPolicy`](../../packages/shar
 human- and machine-readable reasons.
 
 This document is the authoritative spec for the four shipped policy rules, the exact role-resolution algorithm, and the
-precedence between membership-derived and backend-assigned roles. If you extend the engine (e.g. the manual-override
-work), treat this as the contract you must not silently break.
+precedence between manual access overrides, membership-derived roles, and backend-assigned roles. If you extend the
+engine, treat this as the contract you must not silently break.
 
 ---
 
@@ -14,6 +14,10 @@ work), treat this as the contract you must not silently break.
 
 Each rule inspects the **effective roles** set produced by `resolveEffectiveRoles` (section 3), except `MEMBERS_ONLY`,
 which also inspects raw membership state. The `RoleContext` is never mutated.
+
+Before any rule runs, `evaluate` checks for an active **manual access override** (section 4) on `ctx.overrides` for the
+exact `(wallet, communityId, resource)` triple. If one is found and unexpired, it short-circuits the decision — none of
+the rule types below are evaluated at all.
 
 | `ruleType` | Grants access when | Denies with reason code |
 | ---------- | ------------------ | ----------------------- |
@@ -114,11 +118,28 @@ Implementation reference: [`src/index.ts:43`](./src/index.ts).
 
 ---
 
-## 4. Precedence: membership-derived vs backend-assigned roles
+## 4. Precedence: overrides, membership-derived roles, and backend-assigned roles
 
-**The two sources are merged additively into one role set. There is no override today.** Membership state does not
-invalidate backend assignments, and backend assignments do not change membership state. They are combined before any
-rule is evaluated.
+Precedence is a strict three-tier hierarchy, evaluated top to bottom. A higher tier fully decides the outcome; lower
+tiers are never consulted once a higher tier applies.
+
+1. **Manual access overrides (highest precedence).** An `AccessOverride` is a `(wallet, communityId, resource, effect)`
+   record with an optional `expiresAt`, created via the `/v1/communities/:communityId/overrides` admin routes (see the
+   root README's "Policy Engine" section). `findActiveOverride` (`src/index.ts`) looks for an override matching the
+   exact wallet, community, and resource in `ctx.overrides`, skipping any whose `expiresAt` is in the past. If one
+   matches, its `effect` (`ALLOW` or `DENY`) **is** the decision — no rule (`PUBLIC`, `MEMBERS_ONLY`, etc.) is evaluated,
+   and no role resolution happens for the purpose of that decision. This is a deliberate escape hatch for cases role-
+   and membership-state logic can't express cleanly: a temporary ban on an otherwise-admin wallet, or a one-off grant
+   for a partner wallet that isn't a member at all.
+2. **Backend-assigned and membership-derived roles (no override present).** When no active override applies, evaluation
+   falls through to `resolveEffectiveRoles` and behaves exactly as described below: the two sources are merged
+   additively into one role set, and the matched policy rule evaluates that set.
+3. **Rule-specific fallback (`RULE_UNHANDLED`) / fail-closed default.** If the policy's `ruleType` isn't registered,
+   the decision is `DENY`. Malformed `params` are also fail-closed (`MALFORMED_POLICY`), checked after the override
+   lookup but before rule dispatch.
+
+**Within tier 2, membership-derived and backend-assigned roles are merged additively — neither cancels the other.**
+Membership state does not invalidate backend assignments, and backend assignments do not change membership state.
 
 Concretely:
 
@@ -133,12 +154,17 @@ Concretely:
    role set) but **fails `MEMBERS_ONLY`** (via the raw state check). This asymmetry is deliberate and is the most common
    source of surprise when extending the engine.
 
-### Why "no override" matters for the manual-override TODO
+### Implementation notes for the override tier
 
-The README notes "room for future manual override rules." Until that is built, **membership-derived and backend-assigned
-roles have equal weight and cannot cancel each other.** Any future override mechanism must be implemented inside
-`resolveEffectiveRoles` (or as a documented post-processing step) so that every policy rule sees one consistent
-effective-roles set. Do not special-case override logic into individual `case` branches, or rules will diverge.
+- Overrides are looked up by exact `(wallet, communityId, resource)` match — there is no wildcard or hierarchy-aware
+  matching (an override on one `resource` string does not apply to another, even within the same community).
+- Expiry is evaluated at decision time (`new Date()`), not at write time — an override with a past `expiresAt` is
+  treated as if it doesn't exist, and evaluation falls through to tier 2 as normal.
+- `ctx.overrides` must be populated by the caller (see `apps/access-api`'s `memberService.checkAccess`, which fetches
+  matching `AccessOverride` rows before calling `evaluate`). The engine itself never queries a database.
+- Override precedence is implemented once, in `findActiveOverride`/`evaluate` (`src/index.ts`) — not duplicated into
+  individual rule `case` branches — so every policy rule sees the same short-circuit behavior. Keep any future
+  extension to this tier in that single location.
 
 ---
 
@@ -176,6 +202,19 @@ All examples use `evaluate(policy, ctx)`. "Roles" = the effective set from `reso
 - **#10 — duplicate `member` via two sources:** Active membership and a backend `member` assignment both add `member`;
   `unique()` collapses them. `CONTRIBUTORS_OR_ADMINS` passes via the backend `contributor`.
 
+### Override examples
+
+These use the same `evaluate(policy, ctx)` call, but `ctx` now carries `wallet`, `communityId`, `resource`, and
+`overrides`. Compare #11 and #12 to #2/#3 above: an override changes the outcome even for a wallet that would otherwise
+pass `ADMINS_ONLY` on role grounds alone.
+
+| # | `membershipState` | `assignments` | `overrides` (for this wallet/community/resource) | Result | Why |
+| - | ----------------- | ------------- | -------------------------------------------------- | ------ | --- |
+| 11 | `active` | `[admin, active]` | `[{ effect: "DENY" }]` (unexpired) | **DENY** (`OVERRIDE_DENY`) | The DENY override short-circuits before `ADMINS_ONLY` is ever evaluated — an active admin can still be blocked from one specific resource. |
+| 12 | `invited` | `[]` | `[{ effect: "ALLOW" }]` (unexpired) | **ALLOW** (`OVERRIDE_ALLOW`) | A non-member with zero roles is granted access — the one-off "partner wallet" case. Every rule type (even `ADMINS_ONLY`) would otherwise deny. |
+| 13 | `active` | `[member, active]` | `[{ effect: "DENY", expiresAt: <past> }]` | Falls through to normal rule evaluation | The override is expired, so `findActiveOverride` skips it; the decision comes from tier 2 (role resolution) as if no override existed. |
+| 14 | `active` | `[]` | `[{ effect: "ALLOW", wallet: <different wallet> }]` | Falls through to normal rule evaluation | The override doesn't match this wallet, so it's not a candidate — exact-match only, no partial or wildcard matching. |
+
 ---
 
 ## 6. Contract types
@@ -185,6 +224,7 @@ Defined in [`@guildpass/shared-types`](../../packages/shared-types/src/index.ts)
 ```typescript
 type MembershipState = "invited" | "active" | "expired" | "suspended";
 type Role = "admin" | "member" | "contributor";
+type AccessOverrideEffect = "ALLOW" | "DENY";
 
 interface RoleAssignment {
   role: Role;
@@ -193,9 +233,27 @@ interface RoleAssignment {
   expiresAt?: string | Date | null;
 }
 
+interface AccessOverride {
+  id?: string;
+  wallet: string;
+  communityId: string;
+  resource: string;
+  effect: AccessOverrideEffect;
+  expiresAt?: string | Date | null;
+  reason?: string | null;
+  createdAt?: string | Date;
+}
+
 interface RoleContext {
   assignments: RoleAssignment[];
   membershipState: MembershipState;
+  // Required for override lookup (section 4, tier 1). Omit any of these
+  // three and findActiveOverride can't match — it falls through to normal
+  // role resolution as if no override existed.
+  wallet?: string;
+  communityId?: string;
+  resource?: string;
+  overrides?: AccessOverride[];
 }
 
 interface AccessPolicy {
@@ -211,15 +269,20 @@ interface AccessPolicy {
 
 ## 7. Extending the engine
 
-When adding a new rule type (including the manual-override rules):
+When adding a new rule type:
 
 1. **Types:** add the `ruleType` to `PolicyRuleType` in `@guildpass/shared-types`.
 2. **Validation:** add a `case` in `validatePolicy` (`src/index.ts`) so malformed params are caught before evaluation.
-3. **Resolution:** if the rule needs a new role or override semantics, modify `resolveEffectiveRoles` — never replicate
-   role logic in a `case` branch. Keep the single source of truth.
+3. **Resolution:** if the rule needs a new role, modify `resolveEffectiveRoles` — never replicate role logic in a
+   `case` branch. Keep the single source of truth.
 4. **Evaluation:** add a `case` in the `evaluate` switch returning `ALLOW`/`DENY` with a stable reason `code`.
 5. **Tests:** add gate tests in `test/policy.test.ts` covering allow, deny, and reason codes. New rule types must fail
    closed if any input is missing.
+
+When extending override semantics specifically (tier 1, section 4) — e.g. wildcard resource matching, or overrides
+scoped to a role instead of a wallet — modify `findActiveOverride` in `src/index.ts`, not `resolveEffectiveRoles` or an
+individual rule's `case` branch. Overrides intentionally bypass role resolution entirely; keeping that logic in one
+place is what lets every rule type see the same short-circuit behavior without re-implementing it.
 
 Run the suite locally:
 

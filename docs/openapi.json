@@ -6,119 +6,11 @@
     "version": "0.1.0"
   },
   "components": {
-    "schemas": {
-      "WalletAddress": {
-        "type": "string",
-        "pattern": "^0x[0-9a-fA-F]{40}$",
-        "description": "EVM-compatible wallet address (checksummed or lowercase)"
-      },
-      "ErrorResponse": {
-        "type": "object",
-        "required": ["error", "code", "message", "statusCode"],
-        "properties": {
-          "error": { "type": "string", "description": "Machine-readable error identifier" },
-          "code": { "type": "string", "description": "HTTP status phrase / error code" },
-          "message": { "type": "string", "description": "Human-readable description" },
-          "statusCode": { "type": "integer", "description": "HTTP status code" },
-          "details": {
-            "description": "Optional detail payload",
-            "oneOf": [{ "type": "string" }, { "type": "object" }]
-          }
-        }
-      },
-      "ForbiddenResponse": {
-        "type": "object",
-        "required": ["error"],
-        "properties": {
-          "error": { "type": "string" }
-        }
-      },
-      "RoleMutationResult": {
-        "type": "object",
-        "required": ["communityId", "wallet", "role", "assigned", "removed"],
-        "properties": {
-          "communityId": { "type": "string" },
-          "wallet": { "$ref": "#/components/schemas/WalletAddress" },
-          "role": { "type": "string", "enum": ["admin", "member", "contributor"] },
-          "assigned": { "type": "boolean" },
-          "removed": { "type": "boolean" },
-          "message": { "type": "string" }
-        }
-      },
-      "AccessOverrideMutationResult": {
-        "type": "object",
-        "required": ["communityId", "wallet", "resource", "effect", "created", "removed"],
-        "properties": {
-          "communityId": { "type": "string" },
-          "wallet": { "$ref": "#/components/schemas/WalletAddress" },
-          "resource": { "type": "string" },
-          "effect": { "type": "string", "enum": ["ALLOW", "DENY"] },
-          "created": { "type": "boolean" },
-          "removed": { "type": "boolean" },
-          "message": { "type": "string" }
-        }
-      },
-      "BadgeItem": {
-        "type": "object",
-        "required": ["id", "memberId", "label", "issuedAt"],
-        "properties": {
-          "id": { "type": "string" },
-          "memberId": { "type": "string" },
-          "label": { "type": "string" },
-          "issuedAt": { "type": "string", "format": "date-time" }
-        }
-      },
-      "BadgeMutationResult": {
-        "type": "object",
-        "required": ["communityId", "wallet", "assigned", "removed"],
-        "properties": {
-          "communityId": { "type": "string" },
-          "wallet": { "$ref": "#/components/schemas/WalletAddress" },
-          "badge": { "$ref": "#/components/schemas/BadgeItem" },
-          "assigned": { "type": "boolean" },
-          "removed": { "type": "boolean" },
-          "message": { "type": "string" }
-        }
-      },
-      "ListBadgesResult": {
-        "type": "object",
-        "required": ["communityId", "wallet", "badges"],
-        "properties": {
-          "communityId": { "type": "string" },
-          "wallet": { "$ref": "#/components/schemas/WalletAddress" },
-          "badges": {
-            "type": "array",
-            "items": { "$ref": "#/components/schemas/BadgeItem" }
-          }
-        }
-      },
-      "DeadLetterEvent": {
-        "type": "object",
-        "required": ["id", "originalEventId", "eventType", "failureReason", "retryCount", "status", "createdAt"],
-        "properties": {
-          "id": { "type": "string", "format": "uuid" },
-          "originalEventId": { "type": "string", "format": "uuid" },
-          "eventType": { "type": "string" },
-          "entityId": { "type": "string", "nullable": true },
-          "entityType": { "type": "string", "nullable": true },
-          "communityId": { "type": "string", "nullable": true },
-          "payload": { "type": "object", "additionalProperties": true },
-          "failureReason": { "type": "string" },
-          "retryCount": { "type": "integer", "minimum": 0 },
-          "status": { "type": "string", "enum": ["pending", "retried", "resolved"] },
-          "createdAt": { "type": "string", "format": "date-time" },
-          "resolvedAt": { "type": "string", "format": "date-time", "nullable": true }
-        }
-      }
-    }
+    "schemas": {}
   },
   "paths": {
     "/metrics": {
       "get": {
-        "summary": "Prometheus metrics scrape endpoint",
-        "tags": [
-          "Observability"
-        ],
         "responses": {
           "200": {
             "description": "Default Response"
@@ -128,77 +20,18 @@
     },
     "/health/live": {
       "get": {
-        "summary": "Liveness probe – is the process alive?",
-        "tags": [
-          "Health"
-        ],
         "responses": {
           "200": {
-            "description": "Default Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "status": {
-                      "type": "string"
-                    },
-                    "version": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
+            "description": "Default Response"
           }
         }
       }
     },
     "/health/ready": {
       "get": {
-        "summary": "Readiness probe – can we serve traffic?",
-        "tags": [
-          "Health"
-        ],
         "responses": {
           "200": {
-            "description": "Default Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "status": {
-                      "type": "string"
-                    },
-                    "db": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Default Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "status": {
-                      "type": "string"
-                    },
-                    "db": {
-                      "type": "string"
-                    },
-                    "error": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
+            "description": "Default Response"
           }
         }
       }
@@ -312,6 +145,171 @@
         "responses": {
           "200": {
             "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/v1/communities/{communityId}/roles": {
+      "get": {
+        "summary": "Get community roles and hierarchy metadata",
+        "tags": [
+          "Communities",
+          "Roles"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "communityId",
+            "required": true,
+            "description": "Community identifier"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of community roles and hierarchy metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "List of community roles and hierarchy metadata",
+                  "type": "object",
+                  "required": [
+                    "roles"
+                  ],
+                  "properties": {
+                    "roles": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "name",
+                          "description",
+                          "implies"
+                        ],
+                        "properties": {
+                          "name": {
+                            "type": "string",
+                            "enum": [
+                              "admin",
+                              "member",
+                              "contributor"
+                            ]
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "implies": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "enum": [
+                                "admin",
+                                "member",
+                                "contributor"
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Community not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Community not found",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Internal server error",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -495,6 +493,11 @@
                   "description": "Member profile",
                   "type": "object",
                   "properties": {
+                    "wallet": {
+                      "type": "string",
+                      "pattern": "^0x[0-9a-fA-F]{40}$",
+                      "description": "EVM-compatible wallet address (checksummed or lowercase)"
+                    },
                     "communityId": {
                       "type": "string"
                     },
@@ -1029,42 +1032,109 @@
     "/v1/communities/{communityId}/members/{wallet}/badges": {
       "post": {
         "summary": "Assign a badge to a community member",
-        "tags": ["Members", "Badges"],
+        "tags": [
+          "Members",
+          "Badges"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "label"
+                ],
+                "properties": {
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Badge label to assign"
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
         "parameters": [
           {
-            "schema": { "type": "string" },
+            "schema": {
+              "type": "string"
+            },
             "in": "path",
             "name": "communityId",
             "required": true,
             "description": "Community identifier"
           },
           {
-            "schema": { "type": "string", "pattern": "^0x[0-9a-fA-F]{40}$" },
+            "schema": {
+              "type": "string",
+              "pattern": "^0x[0-9a-fA-F]{40}$"
+            },
             "in": "path",
             "name": "wallet",
-            "required": true
+            "required": true,
+            "description": "EVM-compatible wallet address (checksummed or lowercase)"
           }
         ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": ["label"],
-                "properties": {
-                  "label": { "type": "string", "minLength": 1, "description": "Badge label to assign" }
-                }
-              }
-            }
-          }
-        },
         "responses": {
           "200": {
             "description": "Badge assigned successfully",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/BadgeMutationResult" }
+                "schema": {
+                  "description": "Badge assigned successfully",
+                  "type": "object",
+                  "required": [
+                    "communityId",
+                    "wallet",
+                    "assigned",
+                    "removed"
+                  ],
+                  "properties": {
+                    "communityId": {
+                      "type": "string"
+                    },
+                    "wallet": {
+                      "type": "string",
+                      "pattern": "^0x[0-9a-fA-F]{40}$",
+                      "description": "EVM-compatible wallet address (checksummed or lowercase)"
+                    },
+                    "badge": {
+                      "type": "object",
+                      "required": [
+                        "id",
+                        "memberId",
+                        "label",
+                        "issuedAt"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "memberId": {
+                          "type": "string"
+                        },
+                        "label": {
+                          "type": "string"
+                        },
+                        "issuedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      }
+                    },
+                    "assigned": {
+                      "type": "boolean"
+                    },
+                    "removed": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
               }
             }
           },
@@ -1072,7 +1142,45 @@
             "description": "Validation error (invalid wallet, unknown community, or missing label)",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+                "schema": {
+                  "description": "Validation error (invalid wallet, unknown community, or missing label)",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
               }
             }
           },
@@ -1080,7 +1188,18 @@
             "description": "Forbidden — requester does not have permission",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/ForbiddenResponse" }
+                "schema": {
+                  "description": "Forbidden — requester does not have permission",
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
               }
             }
           },
@@ -1088,7 +1207,45 @@
             "description": "Target wallet is not a member of the community",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+                "schema": {
+                  "description": "Target wallet is not a member of the community",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
               }
             }
           },
@@ -1096,7 +1253,18 @@
             "description": "Internal server error",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/ForbiddenResponse" }
+                "schema": {
+                  "description": "Internal server error",
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
               }
             }
           }
@@ -1104,20 +1272,29 @@
       },
       "get": {
         "summary": "List badges assigned to a community member",
-        "tags": ["Members", "Badges"],
+        "tags": [
+          "Members",
+          "Badges"
+        ],
         "parameters": [
           {
-            "schema": { "type": "string" },
+            "schema": {
+              "type": "string"
+            },
             "in": "path",
             "name": "communityId",
             "required": true,
             "description": "Community identifier"
           },
           {
-            "schema": { "type": "string", "pattern": "^0x[0-9a-fA-F]{40}$" },
+            "schema": {
+              "type": "string",
+              "pattern": "^0x[0-9a-fA-F]{40}$"
+            },
             "in": "path",
             "name": "wallet",
-            "required": true
+            "required": true,
+            "description": "EVM-compatible wallet address (checksummed or lowercase)"
           }
         ],
         "responses": {
@@ -1125,7 +1302,52 @@
             "description": "Badges for the member",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/ListBadgesResult" }
+                "schema": {
+                  "description": "Badges for the member",
+                  "type": "object",
+                  "required": [
+                    "communityId",
+                    "wallet",
+                    "badges"
+                  ],
+                  "properties": {
+                    "communityId": {
+                      "type": "string"
+                    },
+                    "wallet": {
+                      "type": "string",
+                      "pattern": "^0x[0-9a-fA-F]{40}$",
+                      "description": "EVM-compatible wallet address (checksummed or lowercase)"
+                    },
+                    "badges": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "memberId",
+                          "label",
+                          "issuedAt"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "memberId": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "issuedAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
               }
             }
           },
@@ -1133,7 +1355,45 @@
             "description": "Validation error (invalid wallet or unknown community)",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+                "schema": {
+                  "description": "Validation error (invalid wallet or unknown community)",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
               }
             }
           },
@@ -1141,7 +1401,45 @@
             "description": "Target wallet is not a member of the community",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+                "schema": {
+                  "description": "Target wallet is not a member of the community",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
               }
             }
           },
@@ -1149,7 +1447,18 @@
             "description": "Internal server error",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/ForbiddenResponse" }
+                "schema": {
+                  "description": "Internal server error",
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
               }
             }
           }
@@ -1159,23 +1468,34 @@
     "/v1/communities/{communityId}/members/{wallet}/badges/{badgeId}": {
       "delete": {
         "summary": "Revoke a badge from a community member",
-        "tags": ["Members", "Badges"],
+        "tags": [
+          "Members",
+          "Badges"
+        ],
         "parameters": [
           {
-            "schema": { "type": "string" },
+            "schema": {
+              "type": "string"
+            },
             "in": "path",
             "name": "communityId",
             "required": true,
             "description": "Community identifier"
           },
           {
-            "schema": { "type": "string", "pattern": "^0x[0-9a-fA-F]{40}$" },
+            "schema": {
+              "type": "string",
+              "pattern": "^0x[0-9a-fA-F]{40}$"
+            },
             "in": "path",
             "name": "wallet",
-            "required": true
+            "required": true,
+            "description": "EVM-compatible wallet address (checksummed or lowercase)"
           },
           {
-            "schema": { "type": "string" },
+            "schema": {
+              "type": "string"
+            },
             "in": "path",
             "name": "badgeId",
             "required": true,
@@ -1187,7 +1507,35 @@
             "description": "Badge revoked (or was already absent)",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/BadgeMutationResult" }
+                "schema": {
+                  "description": "Badge revoked (or was already absent)",
+                  "type": "object",
+                  "required": [
+                    "communityId",
+                    "wallet",
+                    "assigned",
+                    "removed"
+                  ],
+                  "properties": {
+                    "communityId": {
+                      "type": "string"
+                    },
+                    "wallet": {
+                      "type": "string",
+                      "pattern": "^0x[0-9a-fA-F]{40}$",
+                      "description": "EVM-compatible wallet address (checksummed or lowercase)"
+                    },
+                    "assigned": {
+                      "type": "boolean"
+                    },
+                    "removed": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
               }
             }
           },
@@ -1195,7 +1543,45 @@
             "description": "Validation error (invalid wallet or unknown community)",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+                "schema": {
+                  "description": "Validation error (invalid wallet or unknown community)",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
               }
             }
           },
@@ -1203,7 +1589,18 @@
             "description": "Forbidden — requester does not have permission",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/ForbiddenResponse" }
+                "schema": {
+                  "description": "Forbidden — requester does not have permission",
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
               }
             }
           },
@@ -1211,7 +1608,45 @@
             "description": "Target wallet is not a member of the community",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+                "schema": {
+                  "description": "Target wallet is not a member of the community",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
               }
             }
           },
@@ -1219,7 +1654,18 @@
             "description": "Internal server error",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/ForbiddenResponse" }
+                "schema": {
+                  "description": "Internal server error",
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
               }
             }
           }
@@ -1377,6 +1823,130 @@
                           "type": "object"
                         }
                       ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — requester does not have permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Forbidden — requester does not have permission",
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Internal server error",
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "List access overrides for a community (admin)",
+        "tags": [
+          "Overrides"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "communityId",
+            "required": true,
+            "description": "Community identifier"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Access overrides for the community",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Access overrides for the community",
+                  "type": "object",
+                  "required": [
+                    "communityId",
+                    "overrides"
+                  ],
+                  "properties": {
+                    "communityId": {
+                      "type": "string"
+                    },
+                    "overrides": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "wallet",
+                          "resource",
+                          "effect",
+                          "expired",
+                          "createdAt"
+                        ],
+                        "properties": {
+                          "wallet": {
+                            "type": "string",
+                            "pattern": "^0x[0-9a-fA-F]{40}$",
+                            "description": "EVM-compatible wallet address (checksummed or lowercase)"
+                          },
+                          "resource": {
+                            "type": "string"
+                          },
+                          "effect": {
+                            "type": "string",
+                            "enum": [
+                              "ALLOW",
+                              "DENY"
+                            ]
+                          },
+                          "reason": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "expiresAt": {
+                            "type": "string",
+                            "format": "date-time",
+                            "nullable": true
+                          },
+                          "expired": {
+                            "type": "boolean",
+                            "description": "Whether expiresAt has passed; expired overrides no longer affect access decisions"
+                          },
+                          "createdAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        }
+                      }
                     }
                   }
                 }
@@ -2158,6 +2728,25 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/admin/audit/trace/{*}": {
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "*",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
           }
         }
       }

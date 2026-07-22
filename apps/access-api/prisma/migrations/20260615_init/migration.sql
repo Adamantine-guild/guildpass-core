@@ -1,3 +1,5 @@
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
 -- Initial schema: base tables as they existed before incremental migrations.
 
 CREATE TYPE "MembershipState" AS ENUM ('invited', 'active', 'expired', 'suspended');

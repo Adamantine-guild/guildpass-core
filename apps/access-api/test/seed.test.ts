@@ -14,6 +14,7 @@ import {
 function createMockPrisma() {
   const profileByName = new Map();
   const membershipByMemberId = new Map();
+  const membershipTokensByTokenId = new Map();
   const rolesByMember = new Map();
   const communityById = new Map();
   const walletByAddress = new Map();
@@ -83,6 +84,25 @@ function createMockPrisma() {
     }),
   };
 
+  const membershipToken = {
+    upsert: jest.fn(async ({ where: { tokenId }, create, update }) => {
+      if (membershipTokensByTokenId.has(tokenId)) {
+        const existing = membershipTokensByTokenId.get(tokenId);
+        const updated = { ...existing, state: update.state, expiresAt: update.expiresAt };
+        membershipTokensByTokenId.set(tokenId, updated);
+        return updated;
+      }
+      const row = {
+        tokenId,
+        memberId: create.memberId,
+        state: create.state,
+        expiresAt: create.expiresAt,
+      };
+      membershipTokensByTokenId.set(tokenId, row);
+      return row;
+    }),
+  };
+
   const roleAssignment = {
     deleteMany: jest.fn(async ({ where: { memberId } }) => {
       rolesByMember.set(memberId, []);
@@ -113,11 +133,13 @@ function createMockPrisma() {
     profile,
     member,
     membership,
+    membershipToken,
     roleAssignment,
     accessPolicy,
     _state: {
       profileByName,
       membershipByMemberId,
+      membershipTokensByTokenId,
       rolesByMember,
       communityById,
       walletByAddress,
@@ -180,10 +202,11 @@ describe('upsertMembership', () => {
     const later = new Date('2026-02-01T00:00:00Z');
     await upsertMembership(prisma, 'm1', { state: 'active', expiresAt: initial });
     await upsertMembership(prisma, 'm1', { state: 'expired', expiresAt: later });
-    const row = prisma._state.membershipByMemberId.get('m1');
+    const resolvedTokenId = Math.abs('m1'.split('').reduce((acc, char) => (acc << 5) - acc + char.charCodeAt(0), 0)) % 1000000;
+    const row = prisma._state.membershipTokensByTokenId.get(resolvedTokenId);
     expect(row.state).toBe('expired');
     expect(row.expiresAt).toBe(later);
-    expect(prisma._state.membershipByMemberId.size).toBe(1);
+    expect(prisma._state.membershipTokensByTokenId.size).toBe(1);
   });
 });
 
