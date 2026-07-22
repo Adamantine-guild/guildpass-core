@@ -20,7 +20,7 @@ The outbox worker (`src/workers/outboxWorker.ts`) polls the `OutboxEvent` table 
 - `OUTBOX_WORKER_CLAIM_LEASE_MS` (optional, default `60000`) — see crash recovery above.
 
 **Signed webhook delivery:**
-- For production webhook delivery, use the signed outbox handler in `src/workers/handlers/webhook.ts` to send HMAC-SHA256 signatures with `x-guildpass-signature` and `x-guildpass-timestamp` headers.
+- For production webhook delivery, use `createWebhookHandler` from `src/handlers/webhookHandler.ts` to fan out HMAC-signed webhooks to all active `WebhookSubscription` rows per community. Each request carries `x-guildpass-signature`, `x-guildpass-timestamp`, and `x-guildpass-nonce` headers with anti-replay protection.
 - Receiver verification guidance is documented in [docs/webhook-signature-verification.md](../../docs/webhook-signature-verification.md).
 
 ## Audit Logging & Retention
