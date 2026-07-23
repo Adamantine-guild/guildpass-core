@@ -19,6 +19,7 @@ This monorepo contains a runnable MVP backend and protocol foundation. It is int
 | `packages/contracts` | TypeScript helpers for on-chain contract addresses and ABIs |
 | `packages/shared-types` | Shared types and enums for roles, membership, and decisions |
 | `packages/policy-engine` | Simple, explainable access policy engine |
+| `packages/contribution-engine` | Pluggable signal-based contribution scoring engine |
 | `packages/sdk-lite` | Minimal HTTP client for the access API |
 | `contracts/` | Foundry Solidity project (MembershipNFT + tests + deploy scripts) |
 
@@ -360,10 +361,8 @@ See [`.env.example`](./.env.example) for all required variables.
 ## Deferred Areas (Intentionally Not Implemented)
 
 - Advanced governance permissions
-- Constitutional rule engine
 - Complex moderation workflows / appeals / reinstatement
 - Rich reward distribution and advanced streak logic
-- Contribution scoring engine
 - Full event attendance ingestion
 - Multi-chain support (current: EVM only)
 - Advanced indexing pipeline

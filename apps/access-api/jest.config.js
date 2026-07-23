@@ -21,6 +21,7 @@ module.exports = {
     '^@guildpass/shared-types$': '<rootDir>/../../packages/shared-types/dist',
     '^@guildpass/policy-engine$': '<rootDir>/../../packages/policy-engine/dist/src',
     '^@guildpass/governance-engine$': '<rootDir>/../../packages/governance-engine/dist/src',
+    '^@guildpass/contribution-engine$': '<rootDir>/../../packages/contribution-engine/dist/src',
   },
 };
 
