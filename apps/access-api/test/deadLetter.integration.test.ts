@@ -500,7 +500,7 @@ describe("Dead-Letter Event Routes (Integration)", () => {
     test("requireCommunityAdmin check regression: ensure 403 is sent before calling service", async () => {
       // If the 403 check regresses, this test will fail when 404 is returned instead
       const response = await app.inject({
-        method: "GET",
+        method: "POST",
         url: `/v1/communities/${TEST_COMMUNITY_ID}/dead-letter-events/nonexistent/retry`,
         headers: { "x-wallet": NON_ADMIN_WALLET },
       });
