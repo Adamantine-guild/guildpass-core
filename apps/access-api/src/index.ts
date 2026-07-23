@@ -11,6 +11,7 @@ import { disconnectPrisma } from './services/prisma';
 import { createReconciliationWorker } from './workers/reconciliationWorker';
 import { createOutboxWorker } from './workers/outboxWorker';
 import { createIndexerWorker, ChainProvider } from './workers/indexerWorker';
+import { createOnChainReconciliationWorker, OnChainViewProvider } from './workers/onChainReconciliationWorker';
 import { createContributionScoreHandler } from './handlers/contributionScoreHandler';
 
 async function main() {
@@ -49,6 +50,58 @@ async function main() {
   );
   // indexerWorker.start(); // Keep disabled by default until provider is configured
 
+  // ---------------------------------------------------------------------------
+  // On-chain reconciliation worker
+  // ---------------------------------------------------------------------------
+  // This worker performs a systematic, field-by-field comparison between what
+  // the contract says is true (via view-function calls) and what the database
+  // says is true.  It raises RECONCILIATION_DISCREPANCY audit events for any
+  // mismatch found but does NOT auto-correct — see onChainReconciliationWorker.ts
+  // for rationale and full cost/sampling documentation.
+  //
+  // In production, replace `stubViewProvider` with a real implementation backed
+  // by your RPC endpoint (e.g. using ethers.js Contract.connect(provider)):
+  //
+  //   import { ethers } from 'ethers';
+  //   import { MembershipNFTAbi } from '@guildpass/contracts';
+  //   const rpcProvider = new ethers.JsonRpcProvider(process.env.RPC_URL);
+  //   const contract = new ethers.Contract(
+  //     process.env.MEMBERSHIP_NFT_ADDRESS,
+  //     MembershipNFTAbi,
+  //     rpcProvider,
+  //   );
+  //   const realViewProvider: OnChainViewProvider = {
+  //     async getTokenState(tokenId) {
+  //       const [owner, isActive, expiry, suspended, communityId] =
+  //         await Promise.all([
+  //           contract.ownerOf(tokenId),
+  //           contract.isActive(tokenId),
+  //           contract.expiry(tokenId),
+  //           contract.suspended(tokenId),
+  //           contract.communityOf(tokenId),
+  //         ]);
+  //       return {
+  //         owner: owner.toLowerCase(),
+  //         isActive,
+  //         expiry: Number(expiry),
+  //         suspended,
+  //         communityId,
+  //       };
+  //     },
+  //   };
+  const stubViewProvider: OnChainViewProvider = {
+    getTokenState: async (_tokenId: number) => {
+      throw new Error('No RPC provider configured — set up a real OnChainViewProvider');
+    },
+  };
+
+  const onChainReconciliationWorker = createOnChainReconciliationWorker(
+    config.onChainReconciliationIntervalMs,
+    stubViewProvider,
+    { sampleSize: config.onChainReconciliationSampleSize },
+  );
+  // onChainReconciliationWorker.start(); // Keep disabled by default until provider is configured
+
   await app.listen({ port: config.port, host: '0.0.0.0' });
 
   console.log(
@@ -66,6 +119,7 @@ async function main() {
       worker.stop();
       outboxWorker.stop();
       indexerWorker.stop();
+      onChainReconciliationWorker.stop();
       await disconnectPrisma();
       console.log('✅ Server and database connections closed cleanly.');
       process.exit(0);

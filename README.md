@@ -358,9 +358,73 @@ See [`.env.example`](./.env.example) for all required variables.
 
 ---
 
-## Deferred Areas (Intentionally Not Implemented)
+---
 
-- Advanced governance permissions
+## On-Chain Reconciliation Worker
+
+The `onChainReconciliationWorker` is a defense-in-depth mechanism that periodically cross-checks the database's membership state against the **actual current state returned by the contract's view functions** (`ownerOf`, `isActive`, `expiry`, `suspended`, `communityOf`).
+
+### Why this is needed
+
+The `IndexerWorker` keeps off-chain state current by applying live contract events, but its correctness depends entirely on every relevant event being captured and applied without error. If an event is missed (due to a reorg edge case, a missed event type, or a future application bug), the database will silently drift from on-chain truth. The `onChainReconciliationWorker` catches any such drift — regardless of cause — through a direct, systematic comparison.
+
+### What it does
+
+For each sampled `MembershipToken`, the worker:
+
+1. Reads the current on-chain state via `OnChainViewProvider.getTokenState(tokenId)` (five view-function calls: `ownerOf`, `isActive`, `expiry`, `suspended`, `communityOf`).
+2. Compares each field against the database record.
+3. On any mismatch, writes a `RECONCILIATION_DISCREPANCY` audit event with full structured detail (`beforeState` = on-chain snapshot, `afterState` = database snapshot).
+4. **Does not auto-correct either side** — a mismatch could mean the DB is stale, or that the RPC read is momentarily at a different block than the indexer. An operator must investigate and apply the correct remediation.
+
+### Discrepancy audit events
+
+Query for outstanding discrepancies:
+
+```sql
+SELECT * FROM audit_events
+WHERE event_type = 'RECONCILIATION_DISCREPANCY'
+ORDER BY created_at DESC;
+```
+
+Each event contains:
+- `walletId` / `communityId` — which member
+- `beforeState` — on-chain values at read time (`owner`, `isActive`, `expiry`, `suspended`, `communityId`)
+- `afterState` — database values (`owner`, `isActive`, `expiry`, `suspended`, `tokenId`, `memberId`)
+- `reasonCode: "ON_CHAIN_STATE_MISMATCH"`
+- `correlationId` — links the event to a specific reconciliation pass and tokenId
+
+### Sampling strategy and RPC cost
+
+| Option | Default | Description |
+| ------ | ------- | ----------- |
+| `sampleSize` | `50` | Max tokens checked per pass. Use `Infinity` for exhaustive (small communities only). |
+| `randomSample` | `true` | Randomly subsample so all tokens are reached over time, not just the oldest. |
+| `communityId` | – | Restrict sample to one community. |
+| `activeOnly` | `true` | Only check `active`/`suspended` tokens (highest operational relevance). |
+
+**RPC budget per pass (worst case):** `sampleSize × 5 eth_call`
+
+With defaults (sampleSize=50, interval=5 min): ≈250 calls/5 min — well within free-tier limits of all major managed RPC providers.
+
+### Configuration
+
+| Environment Variable | Default | Description |
+| -------------------- | ------- | ----------- |
+| `ON_CHAIN_RECONCILIATION_INTERVAL_MS` | `300000` | How often the worker runs (ms). Default: 5 minutes. |
+| `ON_CHAIN_RECONCILIATION_SAMPLE_SIZE` | `50` | Max tokens checked per pass. |
+
+### Enabling in production
+
+The worker is instantiated but **disabled by default** (`start()` is commented out in `index.ts`) until a real `OnChainViewProvider` is configured. To enable:
+
+1. Implement `OnChainViewProvider` backed by your RPC endpoint (see the comment block in `apps/access-api/src/index.ts` for a ready-to-paste `ethers.js` example).
+2. Set `MEMBERSHIP_NFT_ADDRESS` and `RPC_URL` in `.env`.
+3. Uncomment `onChainReconciliationWorker.start()` in `index.ts`.
+
+---
+
+## Deferred Areas (Intentionally Not Implemented)- Advanced governance permissions
 - Complex moderation workflows / appeals / reinstatement
 - Rich reward distribution and advanced streak logic
 - Full event attendance ingestion
