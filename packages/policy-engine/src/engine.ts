@@ -204,11 +204,13 @@ export class PolicyEngine {
 export function createDefaultEngine(): PolicyEngine {
   // Lazy load providers to avoid circular dependencies
   const { ValidationProvider } = require('./providers/validationProvider');
+  const { ComposablePolicyProvider } = require('./providers/composablePolicyProvider');
   const { StaticPolicyProvider } = require('./providers/staticPolicyProvider');
   const { FallbackProvider } = require('./providers/fallbackProvider');
 
   return new PolicyEngine([
     new ValidationProvider(),
+    new ComposablePolicyProvider(),
     new StaticPolicyProvider(),
     new FallbackProvider(),
   ]);

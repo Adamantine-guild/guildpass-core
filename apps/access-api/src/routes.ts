@@ -41,6 +41,7 @@ import {
   getConstitutionalRuleSetVersions,
   getActiveConstitutionalRuleSet,
 } from "./services/constitutionalService";
+import { validateRuleTree } from "@guildpass/policy-engine";
 import {
   getCommunityRolesSchema,
   getMembershipsSchema,
@@ -58,6 +59,7 @@ import {
   listDeadLetterEventsSchema,
   retryDeadLetterEventSchema,
   listAuditEventsSchema,
+  updateCustomPolicySchema,
 } from "./schemas";
 import {
   authenticateApiKey,
@@ -1063,4 +1065,35 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     }
     return active;
   });
+
+  // PUT /v1/communities/:communityId/resources/:resource/policy — Create or update custom rule tree policy
+  app.put(
+    '/v1/communities/:communityId/resources/:resource/policy',
+    { schema: updateCustomPolicySchema, preHandler: [authenticateApiKey] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { communityId, resource } = request.params as { communityId: string; resource: string };
+      const body = request.body as { ruleTree: any };
+
+      if (!body || !body.ruleTree) {
+        return reply.status(400).send(validationError('Missing required field: ruleTree'));
+      }
+
+      const validation = validateRuleTree(body.ruleTree);
+      if (!validation.valid) {
+        return reply.status(400).send(validationErrorWithReason('Invalid rule tree AST', validation.errors.join('; ')));
+      }
+
+      try {
+        const policy = await memberService.upsertAccessPolicy(
+          communityId,
+          resource,
+          'COMPOSABLE',
+          { ruleTree: body.ruleTree }
+        );
+        return reply.status(200).send({ success: true, policy });
+      } catch (error) {
+        return reply.status(500).send({ error: error instanceof Error ? error.message : 'Failed to update policy' });
+      }
+    }
+  );
 }

@@ -1343,3 +1343,59 @@ export const getCommunityRolesSchema = {
     500: { description: 'Internal server error', ...errorSchema },
   },
 } as const;
+
+// ---------------------------------------------------------------------------
+// PUT /v1/communities/:communityId/resources/:resource/policy
+// ---------------------------------------------------------------------------
+
+export const updateCustomPolicySchema = {
+  summary: 'Create or update a custom rule tree policy for a resource in a community',
+  tags: ['Policies', 'Governance'],
+  params: {
+    type: 'object',
+    required: ['communityId', 'resource'],
+    properties: {
+      communityId: { type: 'string', description: 'Community ID' },
+      resource: { type: 'string', description: 'Resource identifier' },
+    },
+  },
+  body: {
+    type: 'object',
+    required: ['ruleTree'],
+    properties: {
+      ruleTree: {
+        type: 'object',
+        description: 'Versioned, serializable rule tree AST',
+        additionalProperties: true,
+      },
+    },
+  },
+  response: {
+    200: {
+      description: 'Custom rule tree policy successfully saved',
+      type: 'object',
+      required: ['success', 'policy'],
+      properties: {
+        success: { type: 'boolean' },
+        policy: {
+          type: 'object',
+          required: ['id', 'communityId', 'resource', 'ruleType'],
+          properties: {
+            id: { type: 'string' },
+            communityId: { type: 'string' },
+            resource: { type: 'string' },
+            ruleType: { type: 'string' },
+            params: { type: 'object', additionalProperties: true, nullable: true },
+          },
+        },
+      },
+    },
+    400: {
+      description: 'Malformed or oversized rule tree validation error',
+      ...errorSchema,
+    },
+    401: { description: 'Unauthorized', ...errorSchema },
+    403: { description: 'Forbidden', ...errorSchema },
+    500: { description: 'Internal server error', ...errorSchema },
+  },
+} as const;
