@@ -18,6 +18,25 @@ import { config } from './config';
 import accessCheckRateLimiter from './plugins/accessCheckRateLimiter';
 
 // --------------------------------------------------------------------------
+// Helper: interpret the TRUST_PROXY setting for Fastify
+//
+// Fastify only derives request.ip from X-Forwarded-For when trustProxy is set.
+// Left off (the default), the header is ignored and request.ip is the socket
+// address — which is what rate limiting must key on, since an untrusted
+// X-Forwarded-For lets any caller mint a fresh bucket on every request.
+// --------------------------------------------------------------------------
+export function parseTrustProxy(value: string): boolean | number | string[] {
+  const raw = value.trim();
+  if (raw === '' || raw === 'false' || raw === '0') return false;
+  if (raw === 'true') return true;
+  if (/^\d+$/.test(raw)) return Number(raw);
+  return raw
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+// --------------------------------------------------------------------------
 // Helper: normalise a Fastify route URL into a stable label
 // --------------------------------------------------------------------------
 function normaliseRoute(url: string): string {
@@ -35,6 +54,10 @@ function normaliseRoute(url: string): string {
 
 export async function buildApp(): Promise<FastifyInstance> {
   const app = Fastify({
+    // When set, Fastify validates X-Forwarded-For against the trusted proxies
+    // and exposes the real client address as request.ip. When unset, the header
+    // is ignored entirely so it cannot be used to evade rate limits.
+    trustProxy: parseTrustProxy(config.trustProxy),
     logger: {
       level: process.env.LOG_LEVEL || 'info',
       redact: {
@@ -100,10 +123,14 @@ export async function buildApp(): Promise<FastifyInstance> {
       global: true,
       max: config.rateLimitDefaultMax,
       timeWindow: config.rateLimitWindowMs,
+      // Prefer the caller's API key so that integrators sharing an egress IP
+      // (cloud providers, NAT'd Discord bots) get independent budgets. Falls
+      // back to request.ip, which Fastify derives under the trustProxy policy
+      // above rather than from a raw, spoofable header.
       keyGenerator: (req) => {
-        const forwarded = req.headers['x-forwarded-for'];
-        const ip = Array.isArray(forwarded) ? forwarded[0] : forwarded?.split(',')[0]?.trim();
-        return ip ?? req.ip;
+        const apiKey = req.headers['x-api-key'];
+        const key = Array.isArray(apiKey) ? apiKey[0] : apiKey;
+        return key ? `key:${key}` : `ip:${req.ip}`;
       },
       errorResponseBuilder: (_req, context) => ({
         statusCode: 429,

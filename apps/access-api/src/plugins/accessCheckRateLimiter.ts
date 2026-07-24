@@ -64,16 +64,18 @@ export const accessCheckRateLimiter: FastifyPluginAsync = async (app) => {
   const accessCheckRateLimitHook = async (request: FastifyRequest, reply: FastifyReply) => {
     const body = request.body as { wallet?: string };
     const wallet = body?.wallet?.toLowerCase() ?? 'unknown-wallet';
-    
-    const forwarded = request.headers['x-forwarded-for'];
-    const ip = Array.isArray(forwarded)
-      ? forwarded[0]
-      : forwarded?.split(',')[0]?.trim();
-    const finalIp = ip ?? request.ip;
+
+    // Key on the caller's API key when present so integrators behind a shared
+    // egress do not share a bucket; otherwise fall back to request.ip. Fastify
+    // resolves request.ip under the configured trustProxy policy, so an
+    // untrusted X-Forwarded-For can no longer mint a fresh bucket per request.
+    const apiKeyHeader = request.headers['x-api-key'];
+    const apiKey = Array.isArray(apiKeyHeader) ? apiKeyHeader[0] : apiKeyHeader;
+    const callerKey = apiKey ? `key:${apiKey}` : `ip:${request.ip}`;
 
     try {
       const results = await Promise.all([
-        rateLimiterIp.consume(finalIp),
+        rateLimiterIp.consume(callerKey),
         rateLimiterWallet.consume(wallet)
       ]);
 
