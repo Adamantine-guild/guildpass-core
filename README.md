@@ -424,11 +424,30 @@ The worker is instantiated but **disabled by default** (`start()` is commented o
 
 ---
 
-## Deferred Areas (Intentionally Not Implemented)- Advanced governance permissions
+## Multi-Chain Architecture & Resolution
+
+GuildPass supports deploying and indexing `MembershipNFT` contracts across multiple EVM chains (e.g. Ethereum Mainnet, Polygon, Arbitrum) for the same community.
+
+### Key Concepts
+
+- **Community Contract Mapping**: A community can be configured with multiple `(chainId, contractAddress)` contracts via `CommunityContract`.
+- **Scoped Data Model**: `MembershipToken` records carry explicit `chainId` and `contractAddress` fields and are uniquely identified by `(chainId, contractAddress, tokenId)`.
+- **Collision-Free Event Ingestion**: `ProcessedEvent` idempotency records are scoped by `(chainId, contractAddress, transactionHash, logIndex)` to eliminate cross-chain collisions.
+- **Cross-Chain Resolution Policy**:
+  - **Suspension-First (Deny Overrides Allow)**: If a wallet's membership state on ANY configured chain is `suspended`, the resolved cross-chain membership status for that community is `suspended` (access denied).
+  - **Any-Active-Grants**: If not suspended on any chain, holding an active, non-expired membership token on AT LEAST ONE configured chain grants `active` membership (access allowed).
+  - **Expiration Fallback**: If not suspended or active, having an expired membership token on any chain resolves to `expired`.
+- **Single-Chain Backward Compatibility**: Single-chain setups using `MEMBERSHIP_NFT_ADDRESS` and `CHAIN_ID` environment variables continue to function seamlessly without extra configuration.
+
+---
+
+## Deferred Areas (Intentionally Not Implemented)
+
+- Advanced governance permissions
 - Complex moderation workflows / appeals / reinstatement
 - Rich reward distribution and advanced streak logic
 - Full event attendance ingestion
-- Multi-chain support (current: EVM only)
+- Multi-chain support (implemented: EVM multi-chain enabled per community)
 - Advanced indexing pipeline
 
 Clear interfaces and TODOs are left where appropriate.

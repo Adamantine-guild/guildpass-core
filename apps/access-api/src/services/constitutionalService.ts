@@ -15,7 +15,7 @@ import {
   MutationType,
   validateRuleSet,
 } from '@guildpass/constitutional-engine';
-import { createOutboxEvent } from './outboxService';
+import { logOutboxEventTx } from './outboxService';
 
 export class ConstitutionalViolationError extends Error {
   public statusCode: number = 403;
@@ -100,7 +100,7 @@ export async function createConstitutionalRuleSet(
 
   const validation = validateRuleSet(candidateRuleSet);
   if (!validation.valid) {
-    const errorDetails = validation.errors.map((e) => `${e.path}: ${e.message}`).join('; ');
+    const errorDetails = validation.errors.map((e: any) => `${e.path}: ${e.message}`).join('; ');
     throw new Error(`Invalid Constitutional RuleSet: ${errorDetails}`);
   }
 
@@ -140,7 +140,7 @@ export async function createConstitutionalRuleSet(
     });
 
     // Write outbox event
-    await createOutboxEvent(tx, {
+    await logOutboxEventTx(tx, {
       eventType: 'CONSTITUTIONAL_RULESET_CREATED',
       entityId: created.id,
       entityType: 'ConstitutionalRuleSet',

@@ -281,6 +281,10 @@ export type EventType =
 export type OutboxEventType =
   | "MEMBERSHIP_CREATED"
   | "MEMBERSHIP_UPDATED"
+  | "MEMBERSHIP_RENEWED"
+  | "MEMBERSHIP_SUSPENDED"
+  | "MEMBERSHIP_UNSUSPENDED"
+  | "MEMBERSHIP_REINSTATED"
   | "MEMBERSHIP_DELETED"
   | "ROLE_ASSIGNED"
   | "ROLE_REMOVED"
@@ -296,7 +300,9 @@ export type OutboxEventType =
   | "ACCESS_OVERRIDE_REVOKED"
   | "MEMBER_ATTENDED"
   | "BADGE_ASSIGNED"
-  | "BADGE_REVOKED";
+  | "BADGE_REVOKED"
+  | "CONSTITUTIONAL_RULESET_CREATED"
+  | (string & {});
 
 export type OutboxEventStatus = "pending" | "delivered" | "failed";
 

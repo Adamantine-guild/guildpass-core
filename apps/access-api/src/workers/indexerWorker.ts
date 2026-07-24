@@ -245,8 +245,8 @@ export class IndexerWorker {
             const tokenId = afterState?.tokenId;
             if (tokenId !== undefined) {
               if (beforeState && beforeState.state) {
-                await tx.membershipToken.update({
-                  where: { tokenId },
+                await tx.membershipToken.updateMany({
+                  where: { chainId: this.chainId, contractAddress: this.contractAddress, tokenId },
                   data: {
                     state: beforeState.state,
                     expiresAt: beforeState.expiresAt ? new Date(beforeState.expiresAt) : null,
@@ -254,12 +254,18 @@ export class IndexerWorker {
                 });
               } else if (audit.eventType === 'MEMBERSHIP_CREATED') {
                 // Token was created in an orphaned block — remove it
-                await tx.membership.updateMany({
-                  where: { activeTokenId: tokenId },
-                  data: { activeTokenId: null },
+                const orphanedTokens = await tx.membershipToken.findMany({
+                  where: { chainId: this.chainId, contractAddress: this.contractAddress, tokenId },
                 });
+                const orphanedIds = orphanedTokens.map((t) => t.id);
+                if (orphanedIds.length > 0) {
+                  await tx.membership.updateMany({
+                    where: { activeTokenId: { in: orphanedIds } },
+                    data: { activeTokenId: null },
+                  });
+                }
                 await tx.membershipToken.deleteMany({
-                  where: { tokenId },
+                  where: { chainId: this.chainId, contractAddress: this.contractAddress, tokenId },
                 });
               }
             }
@@ -272,7 +278,7 @@ export class IndexerWorker {
                 });
               } else {
                 await tx.contractAdmin.deleteMany({
-                  where: { chainId_address: { chainId: this.chainId, address: audit.walletId } },
+                  where: { chainId: this.chainId, address: audit.walletId },
                 });
               }
             }

@@ -61,8 +61,18 @@ pnpm test
 ```bash
 cd apps/access-api
 pnpm test -- membership-integration.test.ts
+pnpm test -- multichain-membership-integration.test.ts
 pnpm test -- contractEventHelpers.test.ts
 ```
+
+### Multi-Chain Testing Architecture
+
+The **Multi-Chain Membership Integration Test** (`apps/access-api/src/multichain-membership-integration.test.ts`) validates multi-chain event ingestion and policy resolution across simulated EVM chains (e.g. Chain 1 Ethereum & Chain 137 Polygon):
+
+- **Event Scoping & Collision Prevention**: Confirms events with matching `tokenId` on different chains are ingested independently without ID collisions.
+- **Cross-Chain Resolution Policy**:
+  - **Conflict Scenario (Active on Chain A, Suspended on Chain B)**: Proves that `suspended` status on any chain overrides active status (Suspension-First / Fail-Secure).
+  - **Multi-Chain Active Resolution (Expired on Chain A, Active on Chain B)**: Proves that holding an active token on at least one configured chain grants `active` membership status.
 
 ### Run with Coverage
 

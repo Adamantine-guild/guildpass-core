@@ -15,8 +15,24 @@ model Community {
   constitutionalRuleSets ConstitutionalRuleSet[]
   delegatedGrants DelegatedGrant[]
   roleDefinitions RoleDefinition[]
+  contracts   CommunityContract[]
   createdAt   DateTime          @default(now())
 }
+
+model CommunityContract {
+  id              String    @id @default(cuid())
+  communityId     String
+  chainId         Int
+  contractAddress String
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  community       Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+
+  @@unique([communityId, chainId, contractAddress])
+  @@index([communityId])
+}
+
 
 model Wallet {
   id                    String          @id @default(cuid())
@@ -89,6 +105,7 @@ model Member {
   roles            RoleAssignment[]
   badges           Badge[]
   appeals          Appeal[]
+  createdAt        DateTime          @default(now())
 
   @@unique([communityId, walletId])
 }
@@ -103,23 +120,28 @@ enum MembershipState {
 model Membership {
   id            String           @id @default(cuid())
   memberId      String           @unique
-  activeTokenId Int?             @unique
+  activeTokenId String?          @unique
   member        Member           @relation(fields: [memberId], references: [id])
-  activeToken   MembershipToken? @relation("ActiveToken", fields: [activeTokenId], references: [tokenId])
+  activeToken   MembershipToken? @relation("ActiveToken", fields: [activeTokenId], references: [id])
 }
 
 model MembershipToken {
-  tokenId   Int             @id
-  memberId  String
-  state     MembershipState
-  expiresAt DateTime?
-  renewedAt DateTime?
-  createdAt DateTime        @default(now())
-  member    Member          @relation(fields: [memberId], references: [id])
-  activeOf  Membership?     @relation("ActiveToken")
+  id              String          @id @default(cuid())
+  tokenId         Int
+  chainId         Int             @default(31337)
+  contractAddress String          @default("0x0000000000000000000000000000000000000000")
+  memberId        String
+  state           MembershipState
+  expiresAt       DateTime?
+  renewedAt       DateTime?
+  createdAt       DateTime        @default(now())
+  member          Member          @relation(fields: [memberId], references: [id])
+  activeOf        Membership?     @relation("ActiveToken")
 
+  @@unique([chainId, contractAddress, tokenId])
   @@index([state, expiresAt])
   @@index([memberId])
+  @@index([chainId, contractAddress])
 }
 
 enum Role {
@@ -291,6 +313,7 @@ model AuditEvent {
   
   // On-chain event metadata (when audit event originated from blockchain)
   chainId         Int?
+  contractAddress String?
   txHash          String?
   blockNumber     Int?
   logIndex        Int?
@@ -340,10 +363,11 @@ model OutboxEvent {
   correlationId String?
 
   // On-chain event metadata (when outbox event originated from blockchain)
-  chainId       Int?
-  txHash        String?
-  blockNumber   Int?
-  logIndex      Int?
+  chainId         Int?
+  contractAddress String?
+  txHash          String?
+  blockNumber     Int?
+  logIndex        Int?
 
   payload       Json              @default("{}")
   status        OutboxEventStatus @default(pending)
@@ -393,6 +417,8 @@ model OutboxEvent {
 
 model ProcessedEvent {
   id              String   @id @default(uuid())
+  chainId         Int      @default(31337)
+  contractAddress String   @default("0x0000000000000000000000000000000000000000")
   transactionHash String
   logIndex        Int
   blockHash       String
@@ -400,7 +426,7 @@ model ProcessedEvent {
   eventType       String
   processedAt     DateTime @default(now())
 
-  @@unique([transactionHash, logIndex])
+  @@unique([chainId, contractAddress, transactionHash, logIndex])
   @@index([blockHash])
   @@index([blockNumber])
 }

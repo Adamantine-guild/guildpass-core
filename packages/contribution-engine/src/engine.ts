@@ -75,17 +75,15 @@ export class ContributionEngine {
   }
 }
 
+import { TenureSignal } from './signals/tenureSignal';
+import { BadgeSignal } from './signals/badgeSignal';
+
 /**
  * Create a ContributionEngine with the two built-in signals registered:
  * - tenure: points for membership duration
  * - badge_count: points for badge count
  */
 export function createDefaultEngine(): ContributionEngine {
-  // Lazy import to avoid circular deps; the engine is self-contained
-  // but we import signals here so consumers don't have to.
-  const { TenureSignal } = require('./signals/tenureSignal');
-  const { BadgeSignal } = require('./signals/badgeSignal');
-
   const engine = new ContributionEngine();
   engine.register(new TenureSignal());
   engine.register(new BadgeSignal());

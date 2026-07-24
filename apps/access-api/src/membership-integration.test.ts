@@ -138,7 +138,7 @@ describe('Membership Integration: Contract Events → API Access', () => {
       await applyContractEvent(prisma, event);
 
       // Verify membership was created
-      const membership = await prisma.membershipToken.findUnique({
+      const membership = await prisma.membershipToken.findFirst({
         where: { tokenId: event.tokenId },
         include: { member: { include: { wallet: true } } },
       });
@@ -213,7 +213,7 @@ describe('Membership Integration: Contract Events → API Access', () => {
       const event = testFixtures.expiredMembership.event;
       await applyContractEvent(prisma, event);
 
-      const membership = await prisma.membershipToken.findUnique({
+      const membership = await prisma.membershipToken.findFirst({
         where: { tokenId: event.tokenId },
       });
 
@@ -285,7 +285,7 @@ describe('Membership Integration: Contract Events → API Access', () => {
       await applyContractEvent(prisma, event);
       await applyContractEvent(prisma, suspendedEvent);
 
-      const membership = await prisma.membershipToken.findUnique({
+      const membership = await prisma.membershipToken.findFirst({
         where: { tokenId: event.tokenId },
       });
 
@@ -402,10 +402,10 @@ describe('Membership Integration: Contract Events → API Access', () => {
       await applyContractEvent(prisma, suspend1);
 
       // Verify records on disk
-      const token101 = await prisma.membershipToken.findUnique({
+      const token101 = await prisma.membershipToken.findFirst({
         where: { tokenId: 101 },
       });
-      const token102 = await prisma.membershipToken.findUnique({
+      const token102 = await prisma.membershipToken.findFirst({
         where: { tokenId: 102 },
       });
 
@@ -490,10 +490,10 @@ describe('Membership Integration: Contract Events → API Access', () => {
       await applyContractEvent(prisma, mint2);
 
       // Verify records on disk
-      const token101 = await prisma.membershipToken.findUnique({
+      const token101 = await prisma.membershipToken.findFirst({
         where: { tokenId: 101 },
       });
-      const token102 = await prisma.membershipToken.findUnique({
+      const token102 = await prisma.membershipToken.findFirst({
         where: { tokenId: 102 },
       });
 
@@ -551,7 +551,7 @@ describe('Membership Integration: Contract Events → API Access', () => {
       // Apply initial mint
       await applyContractEvent(prisma, initialEvent);
 
-      const beforeRenewal = await prisma.membershipToken.findUnique({
+      const beforeRenewal = await prisma.membershipToken.findFirst({
         where: { tokenId: initialEvent.tokenId },
       });
 
@@ -561,7 +561,7 @@ describe('Membership Integration: Contract Events → API Access', () => {
       // Apply renewal
       await applyContractEvent(prisma, renewalEvent);
 
-      const afterRenewal = await prisma.membershipToken.findUnique({
+      const afterRenewal = await prisma.membershipToken.findFirst({
         where: { tokenId: initialEvent.tokenId },
       });
 
@@ -789,7 +789,7 @@ describe('Membership Integration: Contract Events → API Access', () => {
       await applyContractEvent(prisma, mintEvent);
 
       // 3. Verify the indexing worker successfully persisted state changes with correct metadata
-      const membership = await prisma.membershipToken.findUnique({
+      const membership = await prisma.membershipToken.findFirst({
         where: { tokenId: mintEvent.tokenId },
         include: { member: { include: { wallet: true } } },
       });
@@ -1225,7 +1225,7 @@ describe('Membership Integration: Contract Events → API Access', () => {
       await worker.runPass();
 
       // Verify token 99 is suspended
-      let token = await prisma.membershipToken.findUnique({ where: { tokenId: 99 } });
+      let token = await prisma.membershipToken.findFirst({ where: { tokenId: 99 } });
       expect(token?.state).toBe('suspended');
 
       // NOW REORG OCCURS: block 11 has hash '0xhash11-canonical' and no suspend event!
@@ -1236,7 +1236,7 @@ describe('Membership Integration: Contract Events → API Access', () => {
       await worker.runPass();
 
       // The indexer rewinds to LCA (block 10), rolls back token 99 state to active, and updates checkpoint
-      token = await prisma.membershipToken.findUnique({ where: { tokenId: 99 } });
+      token = await prisma.membershipToken.findFirst({ where: { tokenId: 99 } });
       expect(token?.state).toBe('active');
 
       const updatedCheckpoint = await prisma.indexerCheckpoint.findUnique({

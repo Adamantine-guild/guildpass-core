@@ -139,7 +139,7 @@ export function getModerationService(prisma: PrismaClient) {
       if (toStatus === 'reinstated') {
         if (appeal.member.membership?.activeTokenId) {
           await tx.membershipToken.update({
-            where: { tokenId: appeal.member.membership.activeTokenId },
+            where: { id: appeal.member.membership.activeTokenId },
             data: { state: 'active' },
           });
         }
