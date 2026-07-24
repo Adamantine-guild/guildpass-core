@@ -63,7 +63,7 @@ export function createContributionScoreHandler(
       const { getPrisma } = require('../services/prisma');
       prismaSingleton = getPrisma();
     }
-    return prismaSingleton;
+    return prismaSingleton!;
   }
 
   return async (event) => {

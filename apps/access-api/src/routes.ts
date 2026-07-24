@@ -36,6 +36,12 @@ import {
   ResourceServiceError,
 } from "./services/resourceService";
 import {
+  ConstitutionalViolationError,
+  createConstitutionalRuleSet,
+  getConstitutionalRuleSetVersions,
+  getActiveConstitutionalRuleSet,
+} from "./services/constitutionalService";
+import {
   getCommunityRolesSchema,
   getMembershipsSchema,
   getMemberProfileSchema,
@@ -52,10 +58,6 @@ import {
   listDeadLetterEventsSchema,
   retryDeadLetterEventSchema,
   listAuditEventsSchema,
-  createResourceSchema,
-  updateResourceSchema,
-  archiveResourceSchema,
-  listResourcesSchema,
 } from "./schemas";
 import {
   authenticateApiKey,
@@ -88,7 +90,7 @@ function getRequesterWallet(request: FastifyRequest): string {
   return "";
 }
 
-function sendRoleMutationError(reply: FastifyReply, error: unknown) {
+function sendRoleMutationError(reply: FastifyReply, error: any) {
   if (error instanceof ConstitutionalViolationError) {
     return reply.status(error.statusCode).send({
       error: error.message,

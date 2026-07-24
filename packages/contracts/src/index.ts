@@ -93,6 +93,34 @@ export function getContractAddresses(): ContractAddresses {
   };
 }
 
+export interface CommunityChainConfig {
+  communityId: string;
+  chainId: number;
+  contractAddress: string;
+}
+
+/**
+ * Resolves contract address for a given community and chainId.
+ * Checks provided configuration list first, then falls back to environment defaults.
+ */
+export function getContractAddressForCommunity(
+  communityId: string,
+  chainId: number,
+  configList?: CommunityChainConfig[],
+): string | null {
+  if (configList && configList.length > 0) {
+    const match = configList.find(
+      (c) => c.communityId === communityId && c.chainId === chainId,
+    );
+    if (match) return match.contractAddress;
+  }
+  const defaultChainId = process.env.CHAIN_ID ? parseInt(process.env.CHAIN_ID, 10) : 31337;
+  if (chainId === defaultChainId && process.env.MEMBERSHIP_NFT_ADDRESS) {
+    return process.env.MEMBERSHIP_NFT_ADDRESS;
+  }
+  return null;
+}
+
 // Legacy export — silently returns empty contract address in production.
 // Prefer getContractAddresses() which validates before returning.
 export const addresses: ContractAddresses = {

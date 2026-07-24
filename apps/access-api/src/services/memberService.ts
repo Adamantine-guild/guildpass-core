@@ -1,4 +1,4 @@
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, Prisma } from "@prisma/client";
 import {
   AccessCheckInput,
   AccessDecision,
@@ -350,6 +350,7 @@ export function getMemberService(prismaClient: PrismaClient) {
             activeToken: true,
           },
         },
+        membershipTokens: true,
       },
     });
 
@@ -364,6 +365,7 @@ export function getMemberService(prismaClient: PrismaClient) {
                 activeToken: true,
               },
             },
+            membershipTokens: true,
           },
         });
         if (m) {
@@ -382,37 +384,75 @@ export function getMemberService(prismaClient: PrismaClient) {
       }))
     );
 
-    // Aggregate membership state: if ANY member has active membership, state is active
+    // Aggregate multi-chain membership tokens across all members for this identity
+    const allTokens: Array<{
+      tokenId: number;
+      chainId: number;
+      contractAddress: string;
+      state: string;
+      expiresAt: Date | null;
+    }> = [];
+
+    for (const member of members) {
+      if (member.membershipTokens && member.membershipTokens.length > 0) {
+        for (const token of member.membershipTokens) {
+          allTokens.push({
+            tokenId: token.tokenId,
+            chainId: token.chainId,
+            contractAddress: token.contractAddress,
+            state: token.state,
+            expiresAt: token.expiresAt,
+          });
+        }
+      } else if (member.membership?.activeToken) {
+        const token = member.membership.activeToken;
+        allTokens.push({
+          tokenId: token.tokenId,
+          chainId: token.chainId,
+          contractAddress: token.contractAddress,
+          state: token.state,
+          expiresAt: token.expiresAt,
+        });
+      }
+    }
+
     let membershipState: "invited" | "active" | "expired" | "suspended" = "invited";
     let activeTokenId: number | null = null;
     let rawState: string | null = null;
-    for (const member of members) {
-      const activeToken = member.membership?.activeToken;
-      const legacyState = (member.membership as any)?.state;
-      const legacyExpiresAt = (member.membership as any)?.expiresAt;
-      const stateVal = activeToken?.state ?? legacyState;
-      if (!stateVal) continue;
-      const expiresAtVal = activeToken ? activeToken.expiresAt : (legacyExpiresAt ?? null);
 
-      const state = getNormalizedMembershipState(
-        stateVal as any,
-        expiresAtVal,
+    // Cross-Chain Membership Resolution Policy:
+    // 1. Suspension-First: If ANY token on ANY chain is suspended -> state is suspended
+    // 2. Any-Active-Grants: If not suspended & ANY token is active (and unexpired) -> state is active
+    // 3. Expiration Fallback: If not suspended/active & ANY token is expired -> state is expired
+    // 4. Default: invited
+    const hasSuspended = allTokens.some(
+      (t) => getNormalizedMembershipState(t.state, t.expiresAt) === "suspended",
+    );
+
+    if (hasSuspended) {
+      membershipState = "suspended";
+      const suspendedTok = allTokens.find(
+        (t) => getNormalizedMembershipState(t.state, t.expiresAt) === "suspended",
       );
-      if (state === "active") {
+      activeTokenId = suspendedTok?.tokenId ?? null;
+      rawState = suspendedTok?.state ?? "suspended";
+    } else {
+      const activeTok = allTokens.find(
+        (t) => getNormalizedMembershipState(t.state, t.expiresAt) === "active",
+      );
+      if (activeTok) {
         membershipState = "active";
-        activeTokenId = activeToken?.tokenId ?? null;
-        rawState = stateVal;
-        break; // No need to check further if we have an active one
-      }
-      if (state === "suspended") {
-        membershipState = "suspended";
-        activeTokenId = activeToken?.tokenId ?? null;
-        rawState = stateVal;
-      }
-      if (state === "expired" && membershipState !== "suspended") {
-        membershipState = "expired";
-        activeTokenId = activeToken?.tokenId ?? null;
-        rawState = stateVal;
+        activeTokenId = activeTok.tokenId;
+        rawState = activeTok.state;
+      } else {
+        const expiredTok = allTokens.find(
+          (t) => getNormalizedMembershipState(t.state, t.expiresAt) === "expired",
+        );
+        if (expiredTok) {
+          membershipState = "expired";
+          activeTokenId = expiredTok.tokenId;
+          rawState = expiredTok.state;
+        }
       }
     }
 
@@ -641,24 +681,36 @@ export function getMemberService(prismaClient: PrismaClient) {
       };
     }
 
-    // Status filter (with special handling for "expired")
+    // Status filter (using membershipTokens relation)
     if (status) {
       const now = new Date();
       switch (status) {
         case "active":
-          where.AND = [
-            { state: "active" },
-            { OR: [{ expiresAt: null }, { expiresAt: { gte: now } }] },
-          ];
-          break;
-        case "invited":
-          where.state = "invited";
+          where.membershipTokens = {
+            some: {
+              state: "active",
+              OR: [{ expiresAt: null }, { expiresAt: { gte: now } }],
+            },
+          };
           break;
         case "suspended":
-          where.state = "suspended";
+          where.membershipTokens = {
+            some: {
+              state: "suspended",
+            },
+          };
           break;
         case "expired":
-          where.OR = [{ state: "expired" }, { expiresAt: { lt: now } }];
+          where.membershipTokens = {
+            some: {
+              OR: [{ state: "expired" }, { expiresAt: { lt: now } }],
+            },
+          };
+          break;
+        case "invited":
+          where.membershipTokens = {
+            none: {},
+          };
           break;
         default:
           // ignore unknown status
@@ -673,12 +725,14 @@ export function getMemberService(prismaClient: PrismaClient) {
         include: {
           wallet: true,
           membership: true,
-          roles: true,
-          profile: true,
+          membershipTokens: true,
+          roles: {
+            where: { active: true },
+          },
         },
+        orderBy: { createdAt: "desc" },
         skip,
         take: safeLimit,
-        orderBy: { createdAt: "desc" },
       }),
       prismaClient.member.count({ where }),
     ]);

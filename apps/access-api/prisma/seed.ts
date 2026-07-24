@@ -19,12 +19,20 @@ export async function upsertMembership(
   prisma: PrismaClient,
   memberId: string,
   data: { state: 'active' | 'expired' | 'invited' | 'suspended'; expiresAt: Date | null },
-  tokenId?: number
+  tokenId?: number,
+  chainId: number = 31337,
+  contractAddress: string = '0x0000000000000000000000000000000000000000',
 ) {
   const resolvedTokenId = tokenId ?? Math.abs(memberId.split('').reduce((acc, char) => (acc << 5) - acc + char.charCodeAt(0), 0)) % 1000000;
 
-  await prisma.membershipToken.upsert({
-    where: { tokenId: resolvedTokenId },
+  const token = await prisma.membershipToken.upsert({
+    where: {
+      chainId_contractAddress_tokenId: {
+        chainId,
+        contractAddress,
+        tokenId: resolvedTokenId,
+      },
+    },
     update: {
       memberId,
       state: data.state as any,
@@ -32,6 +40,8 @@ export async function upsertMembership(
     },
     create: {
       tokenId: resolvedTokenId,
+      chainId,
+      contractAddress,
       memberId,
       state: data.state as any,
       expiresAt: data.expiresAt,
@@ -40,8 +50,8 @@ export async function upsertMembership(
 
   return prisma.membership.upsert({
     where: { memberId },
-    create: { memberId, activeTokenId: resolvedTokenId },
-    update: { activeTokenId: resolvedTokenId },
+    create: { memberId, activeTokenId: token.id },
+    update: { activeTokenId: token.id },
   });
 }
 

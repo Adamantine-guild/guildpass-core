@@ -245,6 +245,8 @@ export class IndexerWorker {
             const tokenId = afterState?.tokenId;
             if (tokenId !== undefined) {
               if (beforeState && beforeState.state) {
+                await tx.membershipToken.updateMany({
+                  where: { chainId: this.chainId, contractAddress: this.contractAddress, tokenId },
                 await tx.membershipToken.update({
                   where: { tokenId },
                   data: {
@@ -254,6 +256,18 @@ export class IndexerWorker {
                 });
               } else if (audit.eventType === 'MEMBERSHIP_CREATED') {
                 // Token was created in an orphaned block — remove it
+                const orphanedTokens = await tx.membershipToken.findMany({
+                  where: { chainId: this.chainId, contractAddress: this.contractAddress, tokenId },
+                });
+                const orphanedIds = orphanedTokens.map((t) => t.id);
+                if (orphanedIds.length > 0) {
+                  await tx.membership.updateMany({
+                    where: { activeTokenId: { in: orphanedIds } },
+                    data: { activeTokenId: null },
+                  });
+                }
+                await tx.membershipToken.deleteMany({
+                  where: { chainId: this.chainId, contractAddress: this.contractAddress, tokenId },
                 await tx.membership.updateMany({
                   where: { activeTokenId: tokenId },
                   data: { activeTokenId: null },
@@ -272,6 +286,7 @@ export class IndexerWorker {
                 });
               } else {
                 await tx.contractAdmin.deleteMany({
+                  where: { chainId: this.chainId, address: audit.walletId },
                   where: { chainId_address: { chainId: this.chainId, address: audit.walletId } },
                 });
               }
