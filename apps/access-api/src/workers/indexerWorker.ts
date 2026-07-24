@@ -247,6 +247,8 @@ export class IndexerWorker {
               if (beforeState && beforeState.state) {
                 await tx.membershipToken.updateMany({
                   where: { chainId: this.chainId, contractAddress: this.contractAddress, tokenId },
+                await tx.membershipToken.update({
+                  where: { tokenId },
                   data: {
                     state: beforeState.state,
                     expiresAt: beforeState.expiresAt ? new Date(beforeState.expiresAt) : null,
@@ -266,6 +268,12 @@ export class IndexerWorker {
                 }
                 await tx.membershipToken.deleteMany({
                   where: { chainId: this.chainId, contractAddress: this.contractAddress, tokenId },
+                await tx.membership.updateMany({
+                  where: { activeTokenId: tokenId },
+                  data: { activeTokenId: null },
+                });
+                await tx.membershipToken.deleteMany({
+                  where: { tokenId },
                 });
               }
             }
@@ -279,6 +287,7 @@ export class IndexerWorker {
               } else {
                 await tx.contractAdmin.deleteMany({
                   where: { chainId: this.chainId, address: audit.walletId },
+                  where: { chainId_address: { chainId: this.chainId, address: audit.walletId } },
                 });
               }
             }
