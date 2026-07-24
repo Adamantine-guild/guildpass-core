@@ -18,6 +18,7 @@ import {
   type DecodedMembershipRenewedEvent,
   type DecodedMembershipSuspendedEvent,
 } from './services/contractEventHelpers';
+import { createIndexerWorker, type ChainProvider, type BlockInfo } from './workers/indexerWorker';
 
 /**
  * Test Fixtures - Contract events that would be emitted by MembershipNFT
@@ -1102,6 +1103,147 @@ describe('Membership Integration: Contract Events → API Access', () => {
       expect(memberRole).toBeDefined();
       expect(memberRole.description).toBe('Standard member with basic permissions');
       expect(memberRole.implies).toHaveLength(0);
+    });
+  });
+
+  describe('Resilient Indexing Pipeline: Checkpoints, Reorgs, & Idempotency', () => {
+    const chainId = 31337;
+    const contractAddress = '0x1111111111111111111111111111111111111111';
+
+    beforeEach(async () => {
+      await prisma.processedEvent.deleteMany({});
+      await prisma.blockHeader.deleteMany({});
+      await prisma.indexerCheckpoint.deleteMany({});
+      await prisma.auditEvent.deleteMany({});
+      await prisma.outboxEvent.deleteMany({});
+      await prisma.membershipToken.deleteMany({});
+      await prisma.membership.deleteMany({});
+      await prisma.member.deleteMany({});
+      await prisma.community.deleteMany({});
+      await prisma.wallet.deleteMany({});
+    });
+
+    test('should persist checkpoint and resume safely across worker restarts', async () => {
+      const blocks: Record<number, BlockInfo> = {
+        100: { number: 100, hash: '0xblock100', parentHash: '0xblock99' },
+        101: { number: 101, hash: '0xblock101', parentHash: '0xblock100' },
+        102: { number: 102, hash: '0xblock102', parentHash: '0xblock101' },
+      };
+
+      const mockProvider: ChainProvider = {
+        getLatestBlockNumber: async () => 102,
+        getBlock: async (n) => blocks[n] || { number: n, hash: `0xblock${n}`, parentHash: `0xblock${n - 1}` },
+        getLogs: async () => [],
+      };
+
+      const worker1 = createIndexerWorker(mockProvider, 5000, 0, prisma, chainId, 10, contractAddress);
+      await worker1.runPass();
+
+      const checkpoint = await prisma.indexerCheckpoint.findUnique({
+        where: { chainId_contractAddress: { chainId, contractAddress } },
+      });
+      expect(checkpoint).toBeDefined();
+      expect(checkpoint?.lastProcessedBlockNumber).toBe(102);
+      expect(checkpoint?.lastProcessedBlockHash).toBe('0xblock102');
+
+      // Simulate new block added
+      blocks[103] = { number: 103, hash: '0xblock103', parentHash: '0xblock102' };
+      const mockProvider2: ChainProvider = {
+        getLatestBlockNumber: async () => 103,
+        getBlock: async (n) => blocks[n],
+        getLogs: async () => [],
+      };
+
+      const worker2 = createIndexerWorker(mockProvider2, 5000, 0, prisma, chainId, 10, contractAddress);
+      await worker2.runPass();
+
+      const resumedCheckpoint = await prisma.indexerCheckpoint.findUnique({
+        where: { chainId_contractAddress: { chainId, contractAddress } },
+      });
+      expect(resumedCheckpoint?.lastProcessedBlockNumber).toBe(103);
+      expect(resumedCheckpoint?.lastProcessedBlockHash).toBe('0xblock103');
+    });
+
+    test('should detect reorg via block-hash comparison and reconcile state', async () => {
+      const canonicalBlocks: Record<number, BlockInfo> = {
+        10: { number: 10, hash: '0xhash10', parentHash: '0xhash9' },
+        11: { number: 11, hash: '0xhash11-canonical', parentHash: '0xhash10' },
+      };
+
+      const logsBlock10 = [
+        {
+          type: 'MembershipMinted',
+          to: '0x9999999999999999999999999999999999999999',
+          tokenId: 99,
+          communityId: 'reorg-community',
+          expiresAt: Math.floor(Date.now() / 1000) + 86400,
+          chainId,
+          transactionHash: '0xtx10',
+          blockHash: '0xhash10',
+          logIndex: 0,
+          blockNumber: 10,
+        },
+      ];
+
+      const logsBlock11Orphaned = [
+        {
+          type: 'MembershipSuspended',
+          tokenId: 99,
+          isSuspended: true,
+          chainId,
+          transactionHash: '0xtx11-orphaned',
+          blockHash: '0xhash11-orphaned',
+          logIndex: 0,
+          blockNumber: 11,
+        },
+      ];
+
+      let currentLogs: Record<number, any[]> = {
+        10: logsBlock10,
+        11: logsBlock11Orphaned,
+      };
+      let currentBlocks: Record<number, BlockInfo> = {
+        10: { number: 10, hash: '0xhash10', parentHash: '0xhash9' },
+        11: { number: 11, hash: '0xhash11-orphaned', parentHash: '0xhash10' },
+      };
+
+      const provider: ChainProvider = {
+        getLatestBlockNumber: async () => 11,
+        getBlock: async (n) => currentBlocks[n] || { number: n, hash: `0xhash${n}`, parentHash: `0xhash${n - 1}` },
+        getLogs: async (from, to) => {
+          let res: any[] = [];
+          for (let b = from; b <= to; b++) {
+            if (currentLogs[b]) res.push(...currentLogs[b]);
+          }
+          return res;
+        },
+      };
+
+      const worker = createIndexerWorker(provider, 5000, 0, prisma, chainId, 10, contractAddress);
+
+      // Initial pass: processes 10 & 11
+      await worker.runPass();
+
+      // Verify token 99 is suspended
+      let token = await prisma.membershipToken.findUnique({ where: { tokenId: 99 } });
+      expect(token?.state).toBe('suspended');
+
+      // NOW REORG OCCURS: block 11 has hash '0xhash11-canonical' and no suspend event!
+      currentBlocks[11] = canonicalBlocks[11];
+      currentLogs[11] = [];
+
+      // Second pass detects reorg at block 11 (stored hash 0xhash11-orphaned != current 0xhash11-canonical)
+      await worker.runPass();
+
+      // The indexer rewinds to LCA (block 10), rolls back token 99 state to active, and updates checkpoint
+      token = await prisma.membershipToken.findUnique({ where: { tokenId: 99 } });
+      expect(token?.state).toBe('active');
+
+      const updatedCheckpoint = await prisma.indexerCheckpoint.findUnique({
+        where: { chainId_contractAddress: { chainId, contractAddress } },
+      });
+      expect(updatedCheckpoint?.lastProcessedBlockNumber).toBe(11);
+      expect(updatedCheckpoint?.lastProcessedBlockHash).toBe('0xhash11-canonical');
     });
   });
 });

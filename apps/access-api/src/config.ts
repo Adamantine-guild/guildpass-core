@@ -94,6 +94,11 @@ const ConfigSchema = z.object({
     .int()
     .nonnegative()
     .default(12), // e.g., 12 blocks for Ethereum mainnet-like safety
+  indexerConfirmationDepth: z.coerce
+    .number()
+    .int()
+    .nonnegative()
+    .default(12), // Number of confirmations before block is treated as final
 
   // On-chain reconciliation worker
   onChainReconciliationIntervalMs: z.coerce
@@ -179,6 +184,7 @@ function validateConfig(): Config {
     outboxWorkerMinBatchSize: process.env.OUTBOX_WORKER_MIN_BATCH_SIZE,
     indexerIntervalMs: process.env.INDEXER_INTERVAL_MS,
     indexerFinalityWindow: process.env.INDEXER_FINALITY_WINDOW,
+    indexerConfirmationDepth: process.env.INDEXER_CONFIRMATION_DEPTH || process.env.INDEXER_FINALITY_WINDOW,
     onChainReconciliationIntervalMs: process.env.ON_CHAIN_RECONCILIATION_INTERVAL_MS,
     onChainReconciliationSampleSize: process.env.ON_CHAIN_RECONCILIATION_SAMPLE_SIZE,
     rateLimitEnabled: process.env.RATE_LIMIT_ENABLED,
