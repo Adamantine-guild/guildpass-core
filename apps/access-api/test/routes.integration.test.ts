@@ -196,7 +196,7 @@ async function buildTestApp(
       }
 
       try {
-        return mockService.assignMemberRole({
+        return await mockService.assignMemberRole({
           requesterWallet,
           communityId,
           targetWallet: wallet,
@@ -257,7 +257,7 @@ async function buildTestApp(
       }
 
       try {
-        return mockService.removeMemberRole({
+        return await mockService.removeMemberRole({
           requesterWallet,
           communityId,
           targetWallet: wallet,
@@ -839,6 +839,100 @@ describe("POST /v1/communities/:communityId/members/:wallet/roles", () => {
 
     await app.close();
   });
+
+  test("returns 200 without assigning a duplicate role", async () => {
+    const mock = createMockMemberService({
+      assignMemberRole: jest.fn().mockResolvedValue({
+        communityId: "community-1",
+        wallet: "0x1234567890abcdef1234567890abcdef12345678",
+        role: "admin",
+        assigned: false,
+        removed: false,
+        message: "Role already assigned",
+      }),
+    });
+    const app = await buildTestApp(mock);
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/communities/community-1/members/0x1234567890abcdef1234567890abcdef12345678/roles",
+      headers: { "x-wallet": "0x1111111111111111111111111111111111111111" },
+      payload: { role: "admin" },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      assigned: false,
+      removed: false,
+      message: "Role already assigned",
+    });
+
+    await app.close();
+  });
+
+  test("returns 404 when the target wallet does not exist", async () => {
+    const mock = createMockMemberService({
+      assignMemberRole: jest
+        .fn()
+        .mockRejectedValue({ statusCode: 404, message: "Target wallet not found" }),
+    });
+    const app = await buildTestApp(mock);
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/communities/community-1/members/0x1234567890abcdef1234567890abcdef12345678/roles",
+      headers: { "x-wallet": "0x1111111111111111111111111111111111111111" },
+      payload: { role: "member" },
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json().error).toBe("Target wallet not found");
+
+    await app.close();
+  });
+
+  test("returns 403 when the requester is not a community admin", async () => {
+    const mock = createMockMemberService({
+      assignMemberRole: jest
+        .fn()
+        .mockRejectedValue({ statusCode: 403, message: "Not authorized" }),
+    });
+    const app = await buildTestApp(mock);
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/communities/community-1/members/0x1234567890abcdef1234567890abcdef12345678/roles",
+      headers: { "x-wallet": "0x1111111111111111111111111111111111111111" },
+      payload: { role: "member" },
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json().error).toBe("Not authorized");
+
+    await app.close();
+  });
+
+  test("does not assign a role to a wallet outside the scoped community", async () => {
+    const assignMemberRole = jest
+      .fn()
+      .mockRejectedValue({ statusCode: 404, message: "Target not a member" });
+    const mock = createMockMemberService({ assignMemberRole });
+    const app = await buildTestApp(mock);
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/communities/community-1/members/0x1234567890abcdef1234567890abcdef12345678/roles",
+      headers: { "x-wallet": "0x1111111111111111111111111111111111111111" },
+      payload: { role: "contributor" },
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(assignMemberRole).toHaveBeenCalledWith(
+      expect.objectContaining({ communityId: "community-1" }),
+    );
+
+    await app.close();
+  });
 });
 
 describe("DELETE /v1/communities/:communityId/members/:wallet/roles/:role", () => {
@@ -914,6 +1008,91 @@ describe("DELETE /v1/communities/:communityId/members/:wallet/roles/:role", () =
     expect(body.error).toBe("INVALID_ROLE");
     expect(body.code).toBe("INVALID_ROLE");
     expect(body.reasons[0].code).toBe("INVALID_ROLE");
+
+    await app.close();
+  });
+
+  test("returns 404 when the target wallet does not exist", async () => {
+    const mock = createMockMemberService({
+      removeMemberRole: jest
+        .fn()
+        .mockRejectedValue({ statusCode: 404, message: "Target wallet not found" }),
+    });
+    const app = await buildTestApp(mock);
+
+    const response = await app.inject({
+      method: "DELETE",
+      url: "/v1/communities/community-1/members/0x1234567890abcdef1234567890abcdef12345678/roles/member",
+      headers: { "x-wallet": "0x1111111111111111111111111111111111111111" },
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json().error).toBe("Target wallet not found");
+
+    await app.close();
+  });
+
+  test("returns 403 when the requester is not a community admin", async () => {
+    const mock = createMockMemberService({
+      removeMemberRole: jest
+        .fn()
+        .mockRejectedValue({ statusCode: 403, message: "Not authorized" }),
+    });
+    const app = await buildTestApp(mock);
+
+    const response = await app.inject({
+      method: "DELETE",
+      url: "/v1/communities/community-1/members/0x1234567890abcdef1234567890abcdef12345678/roles/member",
+      headers: { "x-wallet": "0x1111111111111111111111111111111111111111" },
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json().error).toBe("Not authorized");
+
+    await app.close();
+  });
+
+  test("returns 200 when the member does not hold the role", async () => {
+    const mock = createMockMemberService({
+      removeMemberRole: jest.fn().mockResolvedValue({
+        communityId: "community-1",
+        wallet: "0x1234567890abcdef1234567890abcdef12345678",
+        role: "contributor",
+        assigned: false,
+        removed: true,
+      }),
+    });
+    const app = await buildTestApp(mock);
+
+    const response = await app.inject({
+      method: "DELETE",
+      url: "/v1/communities/community-1/members/0x1234567890abcdef1234567890abcdef12345678/roles/contributor",
+      headers: { "x-wallet": "0x1111111111111111111111111111111111111111" },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ assigned: false, removed: true });
+
+    await app.close();
+  });
+
+  test("does not remove a role from a member outside the scoped community", async () => {
+    const removeMemberRole = jest
+      .fn()
+      .mockRejectedValue({ statusCode: 404, message: "Target not a member" });
+    const mock = createMockMemberService({ removeMemberRole });
+    const app = await buildTestApp(mock);
+
+    const response = await app.inject({
+      method: "DELETE",
+      url: "/v1/communities/community-1/members/0x1234567890abcdef1234567890abcdef12345678/roles/admin",
+      headers: { "x-wallet": "0x1111111111111111111111111111111111111111" },
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(removeMemberRole).toHaveBeenCalledWith(
+      expect.objectContaining({ communityId: "community-1" }),
+    );
 
     await app.close();
   });

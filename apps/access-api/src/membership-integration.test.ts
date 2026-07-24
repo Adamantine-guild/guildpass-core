@@ -1226,6 +1226,7 @@ describe('Membership Integration: Contract Events → API Access', () => {
 
       // Verify token 99 is suspended
       let token = await prisma.membershipToken.findFirst({ where: { tokenId: 99 } });
+      let token = await prisma.membershipToken.findUnique({ where: { tokenId: 99 } });
       expect(token?.state).toBe('suspended');
 
       // NOW REORG OCCURS: block 11 has hash '0xhash11-canonical' and no suspend event!
@@ -1237,6 +1238,7 @@ describe('Membership Integration: Contract Events → API Access', () => {
 
       // The indexer rewinds to LCA (block 10), rolls back token 99 state to active, and updates checkpoint
       token = await prisma.membershipToken.findFirst({ where: { tokenId: 99 } });
+      token = await prisma.membershipToken.findUnique({ where: { tokenId: 99 } });
       expect(token?.state).toBe('active');
 
       const updatedCheckpoint = await prisma.indexerCheckpoint.findUnique({
