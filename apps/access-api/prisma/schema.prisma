@@ -413,6 +413,44 @@ model OutboxEvent {
   @@index([correlationId])
 }
 
+// --- Client-Facing Request Idempotency (Issue #184) ---
+//
+// Guards mutating /v1 routes (role assignment, policy changes, resource
+// changes) against duplicate execution when a client retries a request
+// after a successful-but-unacknowledged response. This is distinct from
+// OutboxEvent/ProcessedEvent, which guarantee delivery of *outbound*
+// integration events and dedupe *inbound* on-chain events respectively —
+// IdempotencyKey dedupes the *inbound* HTTP mutation itself.
+//
+// requestHash is a hash of the normalised request body, so replaying the
+// same key with a different payload is detectable and rejected with 409
+// rather than silently returning a stale cached response.
+model IdempotencyKey {
+  id             String               @id @default(uuid())
+  key            String // client-supplied Idempotency-Key header value
+  route          String // "<METHOD> <route pattern>", e.g. "POST /v1/communities/:communityId/members/:wallet/roles"
+  requestHash    String // sha256 of the normalised (stable-sorted) request body
+  status         IdempotencyKeyStatus @default(pending)
+  responseStatus Int?
+  responseBody   Json?
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  // TTL cleanup boundary — rows past this point are safe to purge since the
+  // client is expected to have either received a response or given up.
+  expiresAt      DateTime
+
+  // One outcome per (key, route): the same Idempotency-Key is allowed to be
+  // reused across different routes (e.g. a client-generated UUID reused per
+  // logical operation), but must be unique per route.
+  @@unique([key, route])
+  @@index([expiresAt])
+}
+
+enum IdempotencyKeyStatus {
+  pending
+  completed
+}
+
 // --- Chain Indexer Reorg Safety & Idempotency ---
 
 model ProcessedEvent {
