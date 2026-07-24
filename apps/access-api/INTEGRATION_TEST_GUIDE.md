@@ -267,6 +267,9 @@ const exists = await tokenIdExists(prisma, 1);
 | **Expired memberships produce deny decisions** | `Scenario 2: Expired Membership` | ✅ |
 | **Tests run locally without live chain** | No external RPC calls | ✅ |
 | **Fixtures can be extended for role-based access** | Role assignment tests included | ✅ |
+| **Indexer checkpoint persistence & resume** | `Resilient Indexing Pipeline` tests | ✅ |
+| **Reorg detection & state reconciliation** | `Resilient Indexing Pipeline` tests | ✅ |
+| **Indexer health & lag metrics exposed** | `metrics.ts` (`indexer_lag_blocks`, `indexer_reorgs_detected_total`, `indexer_reconciliation_duration_seconds`) | ✅ |
 
 ## Implementation Details for Future Indexer
 

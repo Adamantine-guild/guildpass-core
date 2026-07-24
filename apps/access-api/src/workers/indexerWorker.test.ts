@@ -13,6 +13,12 @@ jest.mock('../observability/metrics', () => ({
     indexerLag: {
       set: jest.fn(),
     },
+    indexerReorgsDetectedTotal: {
+      inc: jest.fn(),
+    },
+    indexerReconciliationDuration: {
+      startTimer: jest.fn().mockReturnValue(jest.fn()),
+    },
   },
 }));
 
@@ -21,6 +27,7 @@ describe('IndexerWorker', () => {
   let provider: jest.Mocked<ChainProvider>;
   let worker: IndexerWorker;
   const chainId = 31337;
+  const contractAddress = '0x0000000000000000000000000000000000000000';
 
   beforeEach(() => {
     prisma = {
@@ -39,13 +46,21 @@ describe('IndexerWorker', () => {
         create: jest.fn(),
         deleteMany: jest.fn(),
       },
+      auditEvent: {
+        findMany: jest.fn().mockResolvedValue([]),
+        deleteMany: jest.fn(),
+      },
+      outboxEvent: {
+        deleteMany: jest.fn(),
+      },
       $transaction: jest.fn((cb) => cb(prisma)),
       wallet: { upsert: jest.fn() },
       community: { upsert: jest.fn() },
       member: { upsert: jest.fn() },
-      membership: { upsert: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
-      contractAdmin: { findUnique: jest.fn(), upsert: jest.fn() },
-      contractOwnership: { findUnique: jest.fn(), upsert: jest.fn() },
+      membership: { upsert: jest.fn(), findFirst: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
+      membershipToken: { upsert: jest.fn(), findUnique: jest.fn(), update: jest.fn(), deleteMany: jest.fn() },
+      contractAdmin: { findUnique: jest.fn(), upsert: jest.fn(), update: jest.fn(), deleteMany: jest.fn() },
+      contractOwnership: { findUnique: jest.fn(), upsert: jest.fn(), update: jest.fn(), deleteMany: jest.fn() },
     };
 
     provider = {
@@ -54,15 +69,17 @@ describe('IndexerWorker', () => {
       getLogs: jest.fn(),
     };
 
-    worker = new IndexerWorker(prisma as any, provider, 5000, 12, chainId, 100);
+    worker = new IndexerWorker(prisma as any, provider, 5000, 12, chainId, 100, contractAddress);
     jest.clearAllMocks();
   });
 
-  test('should process blocks and update indexerCheckpoint per chain', async () => {
+  test('should process blocks and update indexerCheckpoint per chain & contract', async () => {
     provider.getLatestBlockNumber.mockResolvedValue(100);
     prisma.indexerCheckpoint.findUnique.mockResolvedValue({
       chainId,
+      contractAddress,
       lastProcessedBlock: 80,
+      lastProcessedBlockNumber: 80,
       lastProcessedBlockHash: 'hash80',
     });
     provider.getBlock.mockImplementation(async (n) => ({
@@ -76,16 +93,18 @@ describe('IndexerWorker', () => {
 
     expect(provider.getLogs).toHaveBeenCalledWith(81, 88); // 100 - 12 = 88
     expect(prisma.indexerCheckpoint.upsert).toHaveBeenCalledWith(expect.objectContaining({
-      create: expect.objectContaining({ chainId, lastProcessedBlock: 88 }),
+      create: expect.objectContaining({ chainId, contractAddress, lastProcessedBlockNumber: 88 }),
     }));
     expect(metrics.indexerLag.set).toHaveBeenCalledWith({ chain_id: String(chainId) }, 20); // 100 - 80 = 20
   });
 
-  test('should detect reorg and rewind to last common ancestor (LCA)', async () => {
+  test('should detect reorg, trigger reconciliation duration metric, and rewind to LCA', async () => {
     provider.getLatestBlockNumber.mockResolvedValue(100);
     prisma.indexerCheckpoint.findUnique.mockResolvedValue({
       chainId,
+      contractAddress,
       lastProcessedBlock: 80,
+      lastProcessedBlockNumber: 80,
       lastProcessedBlockHash: 'hash80-old',
     });
 
@@ -107,9 +126,13 @@ describe('IndexerWorker', () => {
 
     await worker.runPass();
 
+    // Reorg metrics should be triggered
+    expect(metrics.indexerReorgsDetectedTotal.inc).toHaveBeenCalledWith({ chain_id: String(chainId) });
+    expect(metrics.indexerReconciliationDuration.startTimer).toHaveBeenCalledWith({ chain_id: String(chainId) });
+
     // Checkpoint should be updated to block 78 (common ancestor)
     expect(prisma.indexerCheckpoint.upsert).toHaveBeenCalledWith(expect.objectContaining({
-      update: expect.objectContaining({ lastProcessedBlock: 78, lastProcessedBlockHash: 'hash78' }),
+      update: expect.objectContaining({ lastProcessedBlockNumber: 78, lastProcessedBlockHash: 'hash78' }),
     }));
     // Should clear events and headers past block 78
     expect(prisma.processedEvent.deleteMany).toHaveBeenCalledWith({
@@ -130,10 +153,6 @@ describe('IndexerWorker', () => {
 
     await worker.backfill(50, 250);
 
-    // With batchSize 100:
-    // Batch 1: 50 to 149
-    // Batch 2: 150 to 249
-    // Batch 3: 250 to 250
     expect(provider.getLogs).toHaveBeenCalledTimes(3);
     expect(provider.getLogs).toHaveBeenNthCalledWith(1, 50, 149);
     expect(provider.getLogs).toHaveBeenNthCalledWith(2, 150, 249);

@@ -573,10 +573,14 @@ model Appeal {
 }
 
 model IndexerCheckpoint {
-  chainId             Int      @id
-  lastProcessedBlock  Int
-  lastProcessedBlockHash String
-  updatedAt           DateTime @updatedAt
+  chainId                  Int
+  contractAddress          String   @default("0x0000000000000000000000000000000000000000")
+  lastProcessedBlock       Int
+  lastProcessedBlockNumber Int      @default(0)
+  lastProcessedBlockHash   String
+  updatedAt                DateTime @updatedAt
+
+  @@id([chainId, contractAddress])
 }
 
 model BlockHeader {

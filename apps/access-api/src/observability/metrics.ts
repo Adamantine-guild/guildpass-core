@@ -166,6 +166,27 @@ const indexerLag = new Gauge({
   registers: [registry],
 });
 
+/**
+ * Tracks the total number of reorgs detected per chain.
+ */
+const indexerReorgsDetectedTotal = new Counter({
+  name: 'indexer_reorgs_detected_total',
+  help: 'Total number of blockchain reorganizations detected',
+  labelNames: ['chain_id'] as const,
+  registers: [registry],
+});
+
+/**
+ * Tracks the duration of indexer reorg state reconciliation in seconds.
+ */
+const indexerReconciliationDuration = new Histogram({
+  name: 'indexer_reconciliation_duration_seconds',
+  help: 'Duration of indexer reorg reconciliation in seconds',
+  labelNames: ['chain_id'] as const,
+  buckets: [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5],
+  registers: [registry],
+});
+
 export const metrics = {
   httpRequestDuration,
   httpRequestsTotal,
@@ -178,4 +199,6 @@ export const metrics = {
   outboxWorkerBatchSize,
   auditChainWriteDuration,
   indexerLag,
+  indexerReorgsDetectedTotal,
+  indexerReconciliationDuration,
 };
