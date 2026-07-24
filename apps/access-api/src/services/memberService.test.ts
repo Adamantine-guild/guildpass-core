@@ -2,6 +2,10 @@ import type { MembershipState } from "@guildpass/shared-types";
 import { PrismaClient } from "@prisma/client";
 import { getMemberService } from "./memberService";
 
+jest.mock("./auditService", () => ({
+  logEvent: jest.fn().mockResolvedValue(undefined),
+}));
+
 // Mock Prisma client
 const mockPrisma = {
   wallet: {
@@ -20,6 +24,7 @@ const mockPrisma = {
   member: {
     findMany: jest.fn(),
     findFirst: jest.fn(),
+    count: jest.fn(),
   },
   accessPolicy: {
     findFirst: jest.fn(),
@@ -57,6 +62,9 @@ const mockPrisma = {
   contributionScore: {
     findUnique: jest.fn(),
   },
+  constitutionalRuleSet: {
+    findFirst: jest.fn(),
+  },
   $transaction: jest.fn((callback) => callback(mockPrisma)),
 } as unknown as PrismaClient;
 
@@ -73,6 +81,7 @@ describe("getMemberService - Membership State Normalization", () => {
     (mockPrisma.linkedWallet.findFirst as jest.Mock).mockResolvedValue(null);
     (mockPrisma.member.findMany as jest.Mock).mockResolvedValue([]);
     (mockPrisma.member.findFirst as jest.Mock).mockResolvedValue(null);
+    (mockPrisma.member.count as jest.Mock).mockResolvedValue(0);
     (mockPrisma.accessPolicy.findFirst as jest.Mock).mockResolvedValue(null);
     (mockPrisma.community.findUnique as jest.Mock).mockResolvedValue(null);
     (mockPrisma.roleAssignment.findFirst as jest.Mock).mockResolvedValue(null);
@@ -89,6 +98,7 @@ describe("getMemberService - Membership State Normalization", () => {
     // Default: no governance rules → checkAccess behaviour is unchanged.
     (mockPrisma.governanceRule.findMany as jest.Mock).mockResolvedValue([]);
     (mockPrisma.contributionScore.findUnique as jest.Mock).mockResolvedValue(null);
+    (mockPrisma.constitutionalRuleSet.findFirst as jest.Mock).mockResolvedValue(null);
     // Default: custom role definitions or delegated grants are empty.
     (mockPrisma.roleDefinition.findMany as jest.Mock).mockResolvedValue([]);
     (mockPrisma.delegatedGrant.findMany as jest.Mock).mockResolvedValue([]);
@@ -576,12 +586,6 @@ describe("getMemberService - Membership State Normalization", () => {
           membership: { state: "active" as MembershipState, expiresAt: null },
           roles: [{ role: "admin", source: "manual", active: true }],
         },
-        {
-          wallet: { address: "0x2222222222222222" },
-          profile: { displayName: "Member" },
-          membership: { state: "active" as MembershipState, expiresAt: null },
-          roles: [{ role: "member", source: "auto", active: true }],
-        },
       ];
 
       (mockPrisma.member.findMany as jest.Mock).mockResolvedValue(mockMembers);
@@ -849,6 +853,87 @@ describe("getMemberService - Membership State Normalization", () => {
       ).rejects.toMatchObject({ statusCode: 403 });
     });
 
+    test("should reject a requester that does not exist with 403", async () => {
+      await expect(
+        memberService.assignMemberRole({
+          requesterWallet: "0x1111111111111111111111111111111111111111",
+          communityId: "community-1",
+          targetWallet: "0x2222222222222222222222222222222222222222",
+          role: "admin",
+        }),
+      ).rejects.toMatchObject({
+        statusCode: 403,
+        message: "Requester not found",
+      });
+    });
+
+    test("should reject a requester outside the community with 403", async () => {
+      (mockPrisma.wallet.findUnique as jest.Mock).mockResolvedValueOnce({
+        id: "wallet-req",
+      });
+      (mockPrisma.member.findFirst as jest.Mock).mockResolvedValueOnce(null);
+
+      await expect(
+        memberService.assignMemberRole({
+          requesterWallet: "0x1111111111111111111111111111111111111111",
+          communityId: "unknown-community",
+          targetWallet: "0x2222222222222222222222222222222222222222",
+          role: "admin",
+        }),
+      ).rejects.toMatchObject({ statusCode: 403, message: "Not authorized" });
+      expect(mockPrisma.member.findFirst).toHaveBeenCalledWith({
+        where: { walletId: "wallet-req", communityId: "unknown-community" },
+        include: { roles: true },
+      });
+      expect(mockPrisma.wallet.findUnique).toHaveBeenCalledTimes(1);
+    });
+
+    test("should return 404 when the target wallet does not exist", async () => {
+      (mockPrisma.wallet.findUnique as jest.Mock)
+        .mockResolvedValueOnce({ id: "wallet-req" })
+        .mockResolvedValueOnce(null);
+      (mockPrisma.member.findFirst as jest.Mock).mockResolvedValueOnce({
+        id: "member-req",
+        roles: [{ role: "admin", active: true }],
+      });
+
+      await expect(
+        memberService.assignMemberRole({
+          requesterWallet: "0x1111111111111111111111111111111111111111",
+          communityId: "community-1",
+          targetWallet: "0x2222222222222222222222222222222222222222",
+          role: "member",
+        }),
+      ).rejects.toMatchObject({
+        statusCode: 404,
+        message: "Target wallet not found",
+      });
+    });
+
+    test("should return 404 when the target wallet is not a community member", async () => {
+      (mockPrisma.wallet.findUnique as jest.Mock)
+        .mockResolvedValueOnce({ id: "wallet-req" })
+        .mockResolvedValueOnce({ id: "wallet-target" });
+      (mockPrisma.member.findFirst as jest.Mock)
+        .mockResolvedValueOnce({
+          id: "member-req",
+          roles: [{ role: "admin", active: true }],
+        })
+        .mockResolvedValueOnce(null);
+
+      await expect(
+        memberService.assignMemberRole({
+          requesterWallet: "0x1111111111111111111111111111111111111111",
+          communityId: "community-1",
+          targetWallet: "0x2222222222222222222222222222222222222222",
+          role: "member",
+        }),
+      ).rejects.toMatchObject({
+        statusCode: 404,
+        message: "Target not a member",
+      });
+    });
+
     test("should reject invalid role values", async () => {
       await expect(
         memberService.assignMemberRole({
@@ -900,6 +985,127 @@ describe("getMemberService - Membership State Normalization", () => {
 
       expect(result.removed).toBe(true);
       expect(mockPrisma.roleAssignment.updateMany).toHaveBeenCalled();
+    });
+
+    test("should reject a requester that does not exist with 403", async () => {
+      await expect(
+        memberService.removeMemberRole({
+          requesterWallet: "0x1111111111111111111111111111111111111111",
+          communityId: "community-1",
+          targetWallet: "0x2222222222222222222222222222222222222222",
+          role: "member",
+        }),
+      ).rejects.toMatchObject({
+        statusCode: 403,
+        message: "Requester not found",
+      });
+    });
+
+    test("should reject non-admin requesters with 403", async () => {
+      (mockPrisma.wallet.findUnique as jest.Mock).mockResolvedValueOnce({
+        id: "wallet-req",
+      });
+      (mockPrisma.member.findFirst as jest.Mock).mockResolvedValueOnce({
+        id: "member-req",
+        roles: [{ role: "member", active: true }],
+      });
+
+      await expect(
+        memberService.removeMemberRole({
+          requesterWallet: "0x1111111111111111111111111111111111111111",
+          communityId: "community-1",
+          targetWallet: "0x2222222222222222222222222222222222222222",
+          role: "member",
+        }),
+      ).rejects.toMatchObject({ statusCode: 403, message: "Not authorized" });
+    });
+
+    test("should return 404 when the target wallet does not exist", async () => {
+      (mockPrisma.wallet.findUnique as jest.Mock)
+        .mockResolvedValueOnce({ id: "wallet-req" })
+        .mockResolvedValueOnce(null);
+      (mockPrisma.member.findFirst as jest.Mock).mockResolvedValueOnce({
+        id: "member-req",
+        roles: [{ role: "admin", active: true }],
+      });
+
+      await expect(
+        memberService.removeMemberRole({
+          requesterWallet: "0x1111111111111111111111111111111111111111",
+          communityId: "community-1",
+          targetWallet: "0x2222222222222222222222222222222222222222",
+          role: "member",
+        }),
+      ).rejects.toMatchObject({
+        statusCode: 404,
+        message: "Target wallet not found",
+      });
+    });
+
+    test("should return 404 when the target belongs to another community", async () => {
+      (mockPrisma.wallet.findUnique as jest.Mock)
+        .mockResolvedValueOnce({ id: "wallet-req" })
+        .mockResolvedValueOnce({ id: "wallet-target" });
+      (mockPrisma.member.findFirst as jest.Mock)
+        .mockResolvedValueOnce({
+          id: "member-req",
+          roles: [{ role: "admin", active: true }],
+        })
+        .mockResolvedValueOnce(null);
+
+      await expect(
+        memberService.removeMemberRole({
+          requesterWallet: "0x1111111111111111111111111111111111111111",
+          communityId: "community-1",
+          targetWallet: "0x2222222222222222222222222222222222222222",
+          role: "member",
+        }),
+      ).rejects.toMatchObject({
+        statusCode: 404,
+        message: "Target not a member",
+      });
+      expect(mockPrisma.member.findFirst).toHaveBeenLastCalledWith({
+        where: { walletId: "wallet-target", communityId: "community-1" },
+      });
+      expect(mockPrisma.roleAssignment.updateMany).not.toHaveBeenCalled();
+    });
+
+    test("should keep removal idempotent when the member does not hold the role", async () => {
+      const targetWallet = "0x2222222222222222222222222222222222222222";
+      (mockPrisma.wallet.findUnique as jest.Mock)
+        .mockResolvedValueOnce({ id: "wallet-req" })
+        .mockResolvedValueOnce({ id: "wallet-target" });
+      (mockPrisma.member.findFirst as jest.Mock)
+        .mockResolvedValueOnce({
+          id: "member-req",
+          roles: [{ role: "admin", active: true }],
+        })
+        .mockResolvedValueOnce({ id: "member-target" });
+      (mockPrisma.roleAssignment.updateMany as jest.Mock).mockResolvedValueOnce({
+        count: 0,
+      });
+
+      const result = await memberService.removeMemberRole({
+        requesterWallet: "0x1111111111111111111111111111111111111111",
+        communityId: "community-1",
+        targetWallet,
+        role: "contributor",
+      });
+
+      expect(result).toMatchObject({
+        wallet: targetWallet,
+        role: "contributor",
+        assigned: false,
+        removed: true,
+      });
+      expect(mockPrisma.roleAssignment.updateMany).toHaveBeenCalledWith({
+        where: {
+          memberId: "member-target",
+          role: "contributor",
+          active: true,
+        },
+        data: { active: false },
+      });
     });
   });
 
