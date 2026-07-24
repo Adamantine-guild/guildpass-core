@@ -12,6 +12,11 @@ import {
 } from "./services/moderation/moderationService";
 import { queryAuditEvents } from "./services/auditService";
 import { getPrisma } from "./services/prisma";
+import {
+  getAuditTraceByCorrelationId,
+  getAuditTracesByTxHash,
+  getAuditTracesByWallet,
+} from "./services/auditTraceService";
 import { notFound, validationError, validationErrorWithReason } from "./errors";
 import {
   listDeadLetterEvents,
@@ -23,7 +28,13 @@ import {
   Challenge,
   LinkWalletInput,
   WalletAddress,
+  VALID_ROLES,
+  Role,
 } from "@guildpass/shared-types";
+import {
+  getResourceService,
+  ResourceServiceError,
+} from "./services/resourceService";
 import {
   getCommunityRolesSchema,
   getMembershipsSchema,
@@ -41,6 +52,10 @@ import {
   listDeadLetterEventsSchema,
   retryDeadLetterEventSchema,
   listAuditEventsSchema,
+  createResourceSchema,
+  updateResourceSchema,
+  archiveResourceSchema,
+  listResourcesSchema,
 } from "./schemas";
 import {
   authenticateApiKey,
@@ -408,39 +423,11 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
         targetWallet: wallet as import('@guildpass/shared-types').WalletAddress,
         role: role as import('@guildpass/shared-types').Role,
       });
-      if (!community) {
-        return reply
-          .status(400)
-          .send(
-            validationErrorWithReason(
-              "UNKNOWN_COMMUNITY",
-              "Unknown communityId",
-            ),
-          );
-      }
-
-      const validRoles = ["admin", "member", "contributor"];
-      if (!role || !validRoles.includes(role)) {
-        return reply
-          .status(400)
-          .send(validationErrorWithReason("INVALID_ROLE", "Unrecognized role"));
-      }
-
-      try {
-        const result = await memberService.assignMemberRole({
-          requesterWallet:
-            requesterWallet as import("@guildpass/shared-types").WalletAddress,
-          communityId,
-          targetWallet:
-            wallet as import("@guildpass/shared-types").WalletAddress,
-          role: role as import("@guildpass/shared-types").Role,
-        });
-        return reply.status(200).send(result);
-      } catch (error) {
-        return sendRoleMutationError(reply, error);
-      }
-    },
-  );
+      return reply.status(200).send(result);
+    } catch (error) {
+      return sendRoleMutationError(reply, error);
+    }
+  });
 
   // DELETE /v1/communities/:communityId/members/:wallet/roles/:role — remove an assigned role
   app.delete('/v1/communities/:communityId/members/:wallet/roles/:role', { schema: removeMemberRoleSchema, preHandler: [authenticateApiKey] }, async (request: FastifyRequest, reply: FastifyReply) => {
@@ -467,39 +454,11 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
         targetWallet: wallet as import('@guildpass/shared-types').WalletAddress,
         role: role as import('@guildpass/shared-types').Role,
       });
-      if (!community) {
-        return reply
-          .status(400)
-          .send(
-            validationErrorWithReason(
-              "UNKNOWN_COMMUNITY",
-              "Unknown communityId",
-            ),
-          );
-      }
-
-      const validRoles = ["admin", "member", "contributor"];
-      if (!role || !validRoles.includes(role)) {
-        return reply
-          .status(400)
-          .send(validationErrorWithReason("INVALID_ROLE", "Unrecognized role"));
-      }
-
-      try {
-        const result = await memberService.removeMemberRole({
-          requesterWallet:
-            requesterWallet as import("@guildpass/shared-types").WalletAddress,
-          communityId,
-          targetWallet:
-            wallet as import("@guildpass/shared-types").WalletAddress,
-          role: role as import("@guildpass/shared-types").Role,
-        });
-        return reply.status(200).send(result);
-      } catch (error) {
-        return sendRoleMutationError(reply, error);
-      }
-    },
-  );
+      return reply.status(200).send(result);
+    } catch (error) {
+      return sendRoleMutationError(reply, error);
+    }
+  });
 
   // POST /v1/communities/:communityId/members/:wallet/badges — assign a badge to a member
   app.post(
@@ -781,43 +740,42 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   // GET /v1/communities/:communityId/members — list members for admin
   app.get('/v1/communities/:communityId/members', { schema: listCommunityMembersSchema, preHandler: [authenticateApiKey] }, async (request: FastifyRequest, reply: FastifyReply) => {
     const { communityId } = request.params as { communityId: string };
-    const role = (request.query as { role?: string })?.role;
+    const { role, status, page, limit } = (request.query ?? {}) as {
+      role?: string;
+      status?: string;
+      page?: number;
+      limit?: number;
+    };
     // Ensure caller is an authenticated community admin by reusing mutation auth check.
     const requesterWallet = getRequesterWallet(request);
     try {
-      // Reuse a minimal auth check by verifying requester has admin role in the community.
-      // We do this by calling listMembersForAdmin only after requester is validated.
-      const requesterMembers = await memberService.listMembersForAdmin(
-        communityId,
-        role as Role | undefined,
-      );
-      // listMembersForAdmin is not requester-scoped; enforce admin authorization in a lightweight way:
-      // If requester is missing from admin-filtered listing, deny.
+      const result = await memberService.listMembersForAdmin(communityId, {
+        role: role as import('@guildpass/shared-types').Role | undefined,
+        status,
+        page,
+        limit,
+      });
+
+      // listMembersForAdmin is not requester-scoped; enforce admin authorization in a
+      // lightweight way: if the caller requested the admin-only view, the requester must
+      // appear in the admin-filtered listing.
       if (role === 'admin') {
-        // If caller requested admin-only view, still require requester to be admin.
-        const isAdmin = requesterMembers.members.some(
+        const isAdmin = result.members.some(
           (m: any) => m.wallet?.toLowerCase?.() === requesterWallet.toLowerCase(),
         );
         if (!isAdmin) {
           return reply.status(403).send({ error: "Forbidden" });
         }
-
-        const result = await memberService.listMembersForAdmin(communityId, {
-          role,
-          status,
-          page: page ? parseInt(page, 10) : undefined,
-          limit: limit ? parseInt(limit, 10) : undefined,
-        });
-
-        return reply.status(200).send(result);
-      } catch (error) {
-        if (error instanceof MemberServiceError) {
-          return reply.status(error.statusCode).send({ error: error.message });
-        }
-        return reply.status(500).send({ error: "Internal server error" });
       }
-    },
-  );
+
+      return reply.status(200).send(result);
+    } catch (error) {
+      if (error instanceof MemberServiceError) {
+        return reply.status(error.statusCode).send({ error: error.message });
+      }
+      return reply.status(500).send({ error: "Internal server error" });
+    }
+  });
 
   async function requireCommunityAdmin(
     communityId: string,
@@ -975,6 +933,16 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
           page: page ? Number(page) : undefined,
           limit: limit ? Number(limit) : undefined,
         });
+
+        return result;
+      } catch (error) {
+        if (error instanceof MemberServiceError) {
+          return reply.status(error.statusCode).send({ error: error.message });
+        }
+        return reply.status(500).send({ error: "Internal server error" });
+      }
+    },
+  );
 
   // --- Resource Routes ---
 

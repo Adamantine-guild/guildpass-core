@@ -148,6 +148,11 @@ const ConfigSchema = z.object({
     .optional()
     .transform((v) => v !== 'false' && v !== '0')
     .default('true'),
+  // Proxy trust for client-IP derivation. Disabled by default: honouring
+  // X-Forwarded-For unconditionally lets any caller mint a fresh rate-limit
+  // bucket per request. Accepts 'true'/'false', a hop count, or a
+  // comma-separated list of trusted proxy IPs/CIDRs.
+  trustProxy: z.string().optional().default('false'),
 
   apiKey: z
     .string()
@@ -184,6 +189,7 @@ function validateConfig(): Config {
     accessCheckRateLimitWalletMax: process.env.ACCESS_CHECK_RATE_LIMIT_WALLET_MAX,
     accessCheckRateLimitWindowMs: process.env.ACCESS_CHECK_RATE_LIMIT_WINDOW_MS,
     accessCheckRateLimitFailOpen: process.env.ACCESS_CHECK_RATE_LIMIT_FAIL_OPEN,
+    trustProxy: process.env.TRUST_PROXY,
     redisUrl: process.env.REDIS_URL,
     apiKey: process.env.API_KEY || "test-api-key",
   };
