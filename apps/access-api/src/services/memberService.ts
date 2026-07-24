@@ -536,6 +536,9 @@ export function getMemberService(prismaClient: PrismaClient) {
       },
     });
 
+    const earliestMember = members.reduce((earliest: any, m: any) => (!earliest || m.createdAt < earliest.createdAt ? m : earliest), members[0]);
+    const memberSince = earliestMember?.createdAt ? earliestMember.createdAt.toISOString() : null;
+
     // If there are any overrides, they take precedence (policy engine handles this)
     if (overrides.length > 0) {
       // Find the most permissive or first applicable override (policy engine uses first one)
@@ -545,6 +548,7 @@ export function getMemberService(prismaClient: PrismaClient) {
         wallet: primaryWallet,
         communityId,
         resource,
+        memberSince,
         overrides: overrides.map((override: AccessOverride) => ({
           id: override.id,
           wallet: override.wallet,
@@ -583,6 +587,7 @@ export function getMemberService(prismaClient: PrismaClient) {
       wallet: primaryWallet,
       communityId,
       resource,
+      memberSince,
       overrides: [],
     };
 
@@ -1357,7 +1362,56 @@ export function getMemberService(prismaClient: PrismaClient) {
           label: b.label,
           issuedAt: b.issuedAt.toISOString(),
         })),
-      };
+    async upsertAccessPolicy(
+      communityId: string,
+      resource: string,
+      ruleType: string,
+      params?: Record<string, unknown> | null,
+    ) {
+      const existingPolicy = await prismaClient.accessPolicy.findUnique({
+        where: {
+          communityId_resource: {
+            communityId,
+            resource,
+          },
+        },
+      });
+
+      let policy;
+      if (existingPolicy) {
+        policy = await prismaClient.accessPolicy.update({
+          where: { id: existingPolicy.id },
+          data: {
+            ruleType,
+            params: params ? (params as any) : undefined,
+          },
+        });
+      } else {
+        policy = await prismaClient.accessPolicy.create({
+          data: {
+            communityId,
+            resource,
+            ruleType,
+            params: params ? (params as any) : undefined,
+          },
+        });
+      }
+
+      await bumpPolicyVersion(communityId);
+
+      await logOutboxEventTx(prismaClient, {
+        eventType: "POLICY_UPDATED",
+        entityId: policy.id,
+        entityType: "AccessPolicy",
+        communityId,
+        payload: {
+          communityId,
+          resource,
+          ruleType,
+        },
+      });
+
+      return policy;
     },
 
     bumpMembershipVersion,
@@ -1375,3 +1429,4 @@ export const bumpRoleVersion = memberService.bumpRoleVersion;
 export const bumpPolicyVersion = memberService.bumpPolicyVersion;
 export const bumpResourceVersion = memberService.bumpResourceVersion;
 export const bumpOverrideVersion = memberService.bumpOverrideVersion;
+export const upsertAccessPolicy = memberService.upsertAccessPolicy;

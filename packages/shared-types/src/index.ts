@@ -92,12 +92,115 @@ export type PolicyRuleType =
 
 export type AccessPolicyParams = Record<string, unknown> | null;
 
+// --- Composable Rule Grammar & Evaluation Trace Types ---
+
+export type RuleASTVersion = "1.0" | "1";
+
+export interface BasePredicateNode {
+  version?: RuleASTVersion;
+}
+
+export interface HasRolePredicate extends BasePredicateNode {
+  type: "HAS_ROLE";
+  role: Role | string;
+}
+
+export interface HasAnyRolePredicate extends BasePredicateNode {
+  type: "HAS_ANY_ROLE";
+  roles: (Role | string)[];
+}
+
+export interface HasMinRolesPredicate extends BasePredicateNode {
+  type: "HAS_MIN_ROLES";
+  roles: (Role | string)[];
+  minCount: number;
+}
+
+export interface ActiveMembershipPredicate extends BasePredicateNode {
+  type: "ACTIVE_MEMBERSHIP";
+}
+
+export interface MembershipDurationPredicate extends BasePredicateNode {
+  type: "MEMBERSHIP_DURATION";
+  minDays?: number;
+  minHours?: number;
+  minSeconds?: number;
+}
+
+export interface HasOverridePredicate extends BasePredicateNode {
+  type: "HAS_OVERRIDE";
+  effect?: "ALLOW" | "DENY";
+}
+
+export interface TimeWindowPredicate extends BasePredicateNode {
+  type: "TIME_WINDOW";
+  startTime?: string;
+  endTime?: string;
+  daysOfWeek?: number[];
+  timezone?: string;
+}
+
+export interface AlwaysAllowPredicate extends BasePredicateNode {
+  type: "ALWAYS_ALLOW";
+}
+
+export interface AlwaysDenyPredicate extends BasePredicateNode {
+  type: "ALWAYS_DENY";
+}
+
+export type PrimitivePredicate =
+  | HasRolePredicate
+  | HasAnyRolePredicate
+  | HasMinRolesPredicate
+  | ActiveMembershipPredicate
+  | MembershipDurationPredicate
+  | HasOverridePredicate
+  | TimeWindowPredicate
+  | AlwaysAllowPredicate
+  | AlwaysDenyPredicate;
+
+export interface AndCombinatorNode extends BasePredicateNode {
+  type: "AND";
+  rules: RuleExprNode[];
+}
+
+export interface OrCombinatorNode extends BasePredicateNode {
+  type: "OR";
+  rules: RuleExprNode[];
+}
+
+export interface NotCombinatorNode extends BasePredicateNode {
+  type: "NOT";
+  rule: RuleExprNode;
+}
+
+export type CombinatorNode = AndCombinatorNode | OrCombinatorNode | NotCombinatorNode;
+
+export type RuleExprNode = PrimitivePredicate | CombinatorNode;
+
+export interface RuleTree {
+  version: RuleASTVersion;
+  root: RuleExprNode;
+  name?: string;
+  description?: string;
+}
+
+export interface DecisionTraceNode {
+  type: string;
+  passed: boolean;
+  explanation: string;
+  code?: string;
+  children?: DecisionTraceNode[];
+  metadata?: Record<string, unknown>;
+}
+
 export interface AccessDecision {
   allowed: boolean;
   code: "ALLOW" | "DENY";
   reasons: DecisionReason[];
   effectiveRoles?: Role[];
   membershipState?: MembershipState;
+  trace?: DecisionTraceNode;
 }
 
 export interface ResourceRef {
@@ -242,6 +345,7 @@ export interface RoleContext {
   communityId?: string;
   resource?: string;
   overrides?: AccessOverride[];
+  memberSince?: string | Date | null;
 }
 
 export interface PolicyEngine {
