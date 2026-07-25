@@ -72,8 +72,8 @@ describe('Global Rate Limiting against buildApp()', () => {
     expect(blocked.statusCode).toBe(429);
     expect(blocked.headers['retry-after']).toBeDefined();
     const body = JSON.parse(blocked.payload);
-    expect(body.error).toBe('Too Many Requests');
-    expect(body.message).toMatch(/Rate limit exceeded/);
+    expect(body.error.code).toBe('RATE_LIMITED');
+    expect(body.error.message).toMatch(/Rate limit exceeded/);
   });
 
   it('enforces stricter limit (1) on expensive endpoint', async () => {
