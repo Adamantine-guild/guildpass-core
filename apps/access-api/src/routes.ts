@@ -60,6 +60,10 @@ import {
   retryDeadLetterEventSchema,
   listAuditEventsSchema,
   updateCustomPolicySchema,
+  createResourceSchema,
+  updateResourceSchema,
+  archiveResourceSchema,
+  listResourcesSchema,
 } from "./schemas";
 import {
   authenticateApiKey,
@@ -71,6 +75,7 @@ import {
   createIdempotencyOnSend,
 } from "./lib/idempotency";
 import crypto from "crypto";
+import { config } from "./config";
 
 function getRequesterWallet(request: FastifyRequest): string {
   if ((request as any).authenticatedWallet) {
@@ -768,7 +773,19 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   );
 
   // GET /v1/communities/:communityId/members — list members for admin
-  app.get('/v1/communities/:communityId/members', { schema: listCommunityMembersSchema, preHandler: [authenticateApiKey] }, async (request: FastifyRequest, reply: FastifyReply) => {
+  app.get(
+    '/v1/communities/:communityId/members',
+    {
+      schema: listCommunityMembersSchema,
+      preHandler: [authenticateApiKey],
+      config: {
+        rateLimit: {
+          max: config.rateLimitExpensiveMax,
+          timeWindow: config.rateLimitWindowMs,
+        },
+      },
+    },
+    async (request: FastifyRequest, reply: FastifyReply) => {
     const { communityId } = request.params as { communityId: string };
     const { role, status, page, limit } = (request.query ?? {}) as {
       role?: string;

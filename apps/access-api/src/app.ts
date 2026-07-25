@@ -8,6 +8,7 @@ import Fastify, { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
 import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
 import rateLimit from '@fastify/rate-limit';
+import { createClient } from 'redis';
 
 import { buildPinoHttp } from './observability/logger';
 import { registry, metrics } from './observability/metrics';
@@ -145,11 +146,25 @@ export async function buildApp(): Promise<FastifyInstance> {
 
   await app.register(swaggerUi, { routePrefix: '/docs' });
 
+  let redisClient: any;
+  if (config.rateLimitEnabled && config.redisUrl) {
+    redisClient = createClient({ url: config.redisUrl });
+    redisClient.on('error', (err: any) => {
+      app.log.error({ err }, 'Redis connection error in global rateLimit');
+    });
+    await redisClient.connect();
+    app.addHook('onClose', async () => {
+      await redisClient.disconnect();
+    });
+  }
+
   if (config.rateLimitEnabled) {
     await app.register(rateLimit, {
       global: true,
       max: config.rateLimitDefaultMax,
       timeWindow: config.rateLimitWindowMs,
+      redis: redisClient,
+      skipOnError: true,
       // Prefer the caller's API key so that integrators sharing an egress IP
       // (cloud providers, NAT'd Discord bots) get independent budgets. Falls
       // back to request.ip, which Fastify derives under the trustProxy policy
@@ -231,6 +246,9 @@ export async function buildApp(): Promise<FastifyInstance> {
     } else if (statusCode === 409) {
       code = 'CONFLICT';
       message = error.message || 'Resource conflict';
+    } else if (statusCode === 429) {
+      code = error.error || 'Too Many Requests';
+      message = error.message || 'Rate limit exceeded';
     }
 
     const response = createApiError({
