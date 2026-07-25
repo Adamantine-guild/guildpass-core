@@ -101,11 +101,6 @@ export class IndexerWorker {
     const { metrics } = require('../observability/metrics');
     metrics.indexerLag.set({ chain_id: String(this.chainId) }, lag);
 
-    // If we are already beyond safe block, wait.
-    if (currentBlock > safeBlockNumber) {
-      return;
-    }
-
     // Reorg Detection
     if (checkpoint) {
       const lastProcessedBlockInfo = await this.provider.getBlock(lastBlockNum);
@@ -116,6 +111,11 @@ export class IndexerWorker {
         await this.handleReorg(lastBlockNum);
         return;
       }
+    }
+
+    // If we are already beyond safe block, wait.
+    if (currentBlock > safeBlockNumber) {
+      return;
     }
 
     const toBlock = Math.min(currentBlock + this.batchSize - 1, safeBlockNumber);
