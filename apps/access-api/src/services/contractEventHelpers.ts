@@ -36,6 +36,8 @@ import type {
   DecodedOwnershipTransferredEvent,
 } from '@guildpass/contracts';
 
+import { invalidateMembershipsCache } from './memberService';
+
 /**
  * Validates that required fields exist in an event
  */
@@ -589,6 +591,37 @@ export async function applyContractEvent(
       });
     }
   });
+
+  // Invalidate the cached membership read for the affected wallet so a repeat
+  // read never serves stale data. Every membership event carries a tokenId;
+  // resolve the wallet + community from the committed token and clear the entry.
+  // Best-effort: a cache failure must never fail on-chain event processing —
+  // the short TTL is the backstop.
+  if (event.tokenId !== undefined) {
+    try {
+      const affected = await prisma.membershipToken.findUnique({
+        where: {
+          chainId_contractAddress_tokenId: {
+            chainId,
+            contractAddress,
+            tokenId: event.tokenId,
+          },
+        },
+        include: { member: { include: { wallet: true } } },
+      });
+      if (affected?.member?.wallet) {
+        await invalidateMembershipsCache(
+          affected.member.communityId,
+          affected.member.wallet.address,
+        );
+      }
+    } catch (err) {
+      console.warn(
+        `Membership cache invalidation failed for tokenId ${event.tokenId}:`,
+        err,
+      );
+    }
+  }
 }
 
 

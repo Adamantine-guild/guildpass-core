@@ -102,6 +102,13 @@ export function accessDecisionCacheKey({
   ].join("|");
 }
 
+function membershipsCacheKey(communityId: string, wallet: string) {
+  return `memberships:${communityId}:${normaliseWallet(wallet)}`;
+}
+const MEMBERSHIP_CACHE_TTL_SECONDS = Number(
+  process.env.MEMBERSHIP_CACHE_TTL_SECONDS ?? 30,
+);
+
 function membershipVersionKey(communityId: string) {
   return `accessDecisionVersion:membership|c:${communityId}`;
 }
@@ -201,11 +208,34 @@ function applyGovernanceDecision(
   };
 }
 
-export function getMemberService(prismaClient: PrismaClient) {
-  const cacheService: CacheService = createDefaultCacheService(
-    config.accessDecisionCacheEnabled,
-    config.redisUrl,
-  );
+// Shared cache instance so the read path (getMembershipsByWallet) and the
+// out-of-band invalidation path (invalidateMembershipsCache, called from the
+// on-chain event pipeline) hit the same store. Tests inject their own via the
+// getMemberService override.
+const membershipCacheService: CacheService = createDefaultCacheService(
+  config.accessDecisionCacheEnabled,
+  config.redisUrl,
+);
+
+/**
+ * Clears the cached membership read for a wallet in a community. Called from
+ * the membership mutation pipeline (contract events / reconciliation) so a
+ * repeat read never serves stale data after a change. Keyed off the normalised
+ * (lowercased) wallet, so checksummed and lowercase callers resolve to the
+ * same single entry.
+ */
+export async function invalidateMembershipsCache(
+  communityId: string,
+  wallet: string,
+): Promise<void> {
+  await membershipCacheService.del(membershipsCacheKey(communityId, wallet));
+}
+
+export function getMemberService(
+  prismaClient: PrismaClient,
+  cacheOverride?: CacheService,
+) {
+  const cacheService: CacheService = cacheOverride ?? membershipCacheService;
   const identityService = getIdentityService(prismaClient);
 
   const versionTtlSeconds = config.accessDecisionCacheVersionTtlSeconds;
@@ -772,6 +802,16 @@ export function getMemberService(prismaClient: PrismaClient) {
 
   return {
     async getMembershipsByWallet(wallet: string, communityId?: string) {
+      const cacheKey = communityId
+        ? membershipsCacheKey(communityId, wallet)
+        : null;
+      if (cacheKey) {
+        const cached = await cacheService.getJSON<{
+          wallet: string;
+          communities: unknown[];
+        }>(cacheKey);
+        if (cached) return cached.value;
+      }
       const w = await prismaClient.wallet.findUnique({
         where: { address: normaliseWallet(wallet) },
       });
@@ -801,7 +841,18 @@ export function getMemberService(prismaClient: PrismaClient) {
           expiresAt: expiresAtVal?.toISOString() ?? null,
         };
       });
-      return { wallet: normaliseWallet(wallet), communities };
+      const result = { wallet: normaliseWallet(wallet), communities };
+      if (cacheKey) {
+        await cacheService.setJSON(
+          cacheKey,
+          result,
+          MEMBERSHIP_CACHE_TTL_SECONDS,
+        );
+      }
+      return result;
+    },
+    async invalidateMembershipCache(communityId: string, wallet: string) {
+      await cacheService.del(membershipsCacheKey(communityId, wallet));
     },
     async getProfileByWallet(wallet: string, communityId?: string) {
       const normalised = normaliseWallet(wallet);
