@@ -17,7 +17,7 @@ import {
   getAuditTracesByTxHash,
   getAuditTracesByWallet,
 } from "./services/auditTraceService";
-import { notFound, validationError, validationErrorWithReason } from "./errors";
+import { notFound, validationError, validationErrorWithReason, internalError, forbidden, conflict, unauthorized, createApiError } from "./errors";
 import {
   listDeadLetterEvents,
   retryDeadLetterEvent,
@@ -111,9 +111,15 @@ function sendRoleMutationError(reply: FastifyReply, error: any) {
     });
   }
   if (error instanceof MemberServiceError) {
-    return reply.status(error.statusCode).send({ error: error.message });
+    return reply.status(error.statusCode).send(
+            createApiError({
+              statusCode: error.statusCode,
+              code: error.statusCode === 404 ? 'NOT_FOUND' : error.statusCode === 400 ? 'VALIDATION_ERROR' : error.statusCode === 409 ? 'CONFLICT' : error.statusCode === 403 ? 'FORBIDDEN' : 'INTERNAL_ERROR',
+              message: error.message
+            })
+          );
   }
-  return reply.status(500).send({ error: "Internal server error" });
+  return reply.status(500).send(internalError("Internal server error"));
 }
 
 /**
@@ -170,7 +176,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
         const { parseSiweMessage } = require("./lib/auth/auth");
         parsedMessage = parseSiweMessage(message);
       } catch (err) {
-        return reply.status(400).send({ error: "Invalid SIWE message format" });
+        return reply.status(400).send(validationError("Invalid SIWE message format"));
       }
 
       const storedNonce = await prisma.siweNonce.findUnique({
@@ -178,11 +184,11 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       });
 
       if (!storedNonce) {
-        return reply.status(400).send({ error: "Invalid nonce" });
+        return reply.status(400).send(validationError("Invalid nonce"));
       }
 
       if (new Date(storedNonce.expiresAt) < new Date()) {
-        return reply.status(400).send({ error: "Nonce has expired" });
+        return reply.status(400).send(validationError("Nonce has expired"));
       }
 
       await prisma.siweNonce.delete({ where: { id: storedNonce.id } });
@@ -238,7 +244,13 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
         return reply.send(challenge);
       } catch (error) {
         if (error instanceof IdentityServiceError) {
-          return reply.status(error.statusCode).send({ error: error.message });
+          return reply.status(error.statusCode).send(
+            createApiError({
+              statusCode: error.statusCode,
+              code: error.statusCode === 404 ? 'NOT_FOUND' : error.statusCode === 400 ? 'VALIDATION_ERROR' : error.statusCode === 409 ? 'CONFLICT' : error.statusCode === 403 ? 'FORBIDDEN' : 'INTERNAL_ERROR',
+              message: error.message
+            })
+          );
         }
         throw error;
       }
@@ -262,7 +274,13 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
         return reply.send(linkResult);
       } catch (error) {
         if (error instanceof IdentityServiceError) {
-          return reply.status(error.statusCode).send({ error: error.message });
+          return reply.status(error.statusCode).send(
+            createApiError({
+              statusCode: error.statusCode,
+              code: error.statusCode === 404 ? 'NOT_FOUND' : error.statusCode === 400 ? 'VALIDATION_ERROR' : error.statusCode === 409 ? 'CONFLICT' : error.statusCode === 403 ? 'FORBIDDEN' : 'INTERNAL_ERROR',
+              message: error.message
+            })
+          );
         }
         throw error;
       }
@@ -281,7 +299,13 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
         return reply.send({ primaryWallet, linkedWallets });
       } catch (error) {
         if (error instanceof IdentityServiceError) {
-          return reply.status(error.statusCode).send({ error: error.message });
+          return reply.status(error.statusCode).send(
+            createApiError({
+              statusCode: error.statusCode,
+              code: error.statusCode === 404 ? 'NOT_FOUND' : error.statusCode === 400 ? 'VALIDATION_ERROR' : error.statusCode === 409 ? 'CONFLICT' : error.statusCode === 403 ? 'FORBIDDEN' : 'INTERNAL_ERROR',
+              message: error.message
+            })
+          );
         }
         throw error;
       }
@@ -313,7 +337,13 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
         return reply.send(result);
       } catch (error) {
         if (error instanceof ModerationError) {
-          return reply.status(error.statusCode).send({ error: error.message });
+          return reply.status(error.statusCode).send(
+            createApiError({
+              statusCode: error.statusCode,
+              code: error.statusCode === 404 ? 'NOT_FOUND' : error.statusCode === 400 ? 'VALIDATION_ERROR' : error.statusCode === 409 ? 'CONFLICT' : error.statusCode === 403 ? 'FORBIDDEN' : 'INTERNAL_ERROR',
+              message: error.message
+            })
+          );
         }
         throw error;
       }
@@ -331,7 +361,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
         adminComment?: string;
       };
       if (!status) {
-        return reply.status(400).send({ error: "Missing status" });
+        return reply.status(400).send(validationError("Missing status"));
       }
       try {
         const result = await moderationService.transitionAppeal(
@@ -342,7 +372,13 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
         return reply.send(result);
       } catch (error) {
         if (error instanceof ModerationError) {
-          return reply.status(error.statusCode).send({ error: error.message });
+          return reply.status(error.statusCode).send(
+            createApiError({
+              statusCode: error.statusCode,
+              code: error.statusCode === 404 ? 'NOT_FOUND' : error.statusCode === 400 ? 'VALIDATION_ERROR' : error.statusCode === 409 ? 'CONFLICT' : error.statusCode === 403 ? 'FORBIDDEN' : 'INTERNAL_ERROR',
+              message: error.message
+            })
+          );
         }
         throw error;
       }
@@ -698,15 +734,21 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     const requesterWallet = getRequesterWallet(request);
     try {
       if (!(await requireCommunityAdmin(communityId, requesterWallet))) {
-        return reply.status(403).send({ error: 'Forbidden' });
+        return reply.status(403).send(forbidden('Forbidden'));
       }
       const result = await memberService.listAccessOverrides(communityId, requesterWallet);
       return reply.status(200).send(result);
     } catch (error) {
       if (error instanceof MemberServiceError) {
-        return reply.status(error.statusCode).send({ error: error.message });
+        return reply.status(error.statusCode).send(
+            createApiError({
+              statusCode: error.statusCode,
+              code: error.statusCode === 404 ? 'NOT_FOUND' : error.statusCode === 400 ? 'VALIDATION_ERROR' : error.statusCode === 409 ? 'CONFLICT' : error.statusCode === 403 ? 'FORBIDDEN' : 'INTERNAL_ERROR',
+              message: error.message
+            })
+          );
       }
-      return reply.status(500).send({ error: 'Internal server error' });
+      return reply.status(500).send(internalError('Internal server error'));
     }
   });
 
@@ -811,16 +853,22 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
           (m: any) => m.wallet?.toLowerCase?.() === requesterWallet.toLowerCase(),
         );
         if (!isAdmin) {
-          return reply.status(403).send({ error: "Forbidden" });
+          return reply.status(403).send(forbidden("Forbidden"));
         }
       }
 
       return reply.status(200).send(result);
     } catch (error) {
       if (error instanceof MemberServiceError) {
-        return reply.status(error.statusCode).send({ error: error.message });
+        return reply.status(error.statusCode).send(
+            createApiError({
+              statusCode: error.statusCode,
+              code: error.statusCode === 404 ? 'NOT_FOUND' : error.statusCode === 400 ? 'VALIDATION_ERROR' : error.statusCode === 409 ? 'CONFLICT' : error.statusCode === 403 ? 'FORBIDDEN' : 'INTERNAL_ERROR',
+              message: error.message
+            })
+          );
       }
-      return reply.status(500).send({ error: "Internal server error" });
+      return reply.status(500).send(internalError("Internal server error"));
     }
   });
 
@@ -844,7 +892,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       const requesterWallet = getRequesterWallet(request);
       try {
         if (!(await requireCommunityAdmin(communityId, requesterWallet))) {
-          return reply.status(403).send({ error: "Forbidden" });
+          return reply.status(403).send(forbidden("Forbidden"));
         }
         const events = await listDeadLetterEvents(getPrisma(), {
           communityId,
@@ -853,9 +901,15 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
         return { events };
       } catch (error) {
         if (error instanceof MemberServiceError) {
-          return reply.status(error.statusCode).send({ error: error.message });
+          return reply.status(error.statusCode).send(
+            createApiError({
+              statusCode: error.statusCode,
+              code: error.statusCode === 404 ? 'NOT_FOUND' : error.statusCode === 400 ? 'VALIDATION_ERROR' : error.statusCode === 409 ? 'CONFLICT' : error.statusCode === 403 ? 'FORBIDDEN' : 'INTERNAL_ERROR',
+              message: error.message
+            })
+          );
         }
-        return reply.status(500).send({ error: "Internal server error" });
+        return reply.status(500).send(internalError("Internal server error"));
       }
     },
   );
@@ -873,7 +927,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       const requesterWallet = getRequesterWallet(request);
       try {
         if (!(await requireCommunityAdmin(communityId, requesterWallet))) {
-          return reply.status(403).send({ error: "Forbidden" });
+          return reply.status(403).send(forbidden("Forbidden"));
         }
         const result = await retryDeadLetterEvent(getPrisma(), id);
         return reply.status(200).send(result);
@@ -882,12 +936,18 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
           return reply.status(404).send(notFound(error.message));
         }
         if (error instanceof DeadLetterAlreadyResolvedError) {
-          return reply.status(409).send({ error: error.message });
+          return reply.status(409).send(conflict(error.message));
         }
         if (error instanceof MemberServiceError) {
-          return reply.status(error.statusCode).send({ error: error.message });
+          return reply.status(error.statusCode).send(
+            createApiError({
+              statusCode: error.statusCode,
+              code: error.statusCode === 404 ? 'NOT_FOUND' : error.statusCode === 400 ? 'VALIDATION_ERROR' : error.statusCode === 409 ? 'CONFLICT' : error.statusCode === 403 ? 'FORBIDDEN' : 'INTERNAL_ERROR',
+              message: error.message
+            })
+          );
         }
-        return reply.status(500).send({ error: "Internal server error" });
+        return reply.status(500).send(internalError("Internal server error"));
       }
     },
   );
@@ -908,7 +968,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       const wallet = wildcard.substring(7);
       const { communityId } = request.query as { communityId?: string };
       if (!communityId) {
-        return reply.status(400).send({ error: 'communityId query parameter is required' });
+        return reply.status(400).send(validationError('communityId query parameter is required'));
       }
       const result = await getAuditTracesByWallet(wallet, communityId, 50, prisma);
       return {
@@ -922,7 +982,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     const correlationId = wildcard;
     const result = await getAuditTraceByCorrelationId(correlationId, prisma);
     if (!result) {
-      return reply.status(404).send({ error: 'Audit trace not found' });
+      return reply.status(404).send(notFound('Audit trace not found'));
     }
     return result;
   });
@@ -946,7 +1006,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       const requesterWallet = getRequesterWallet(request);
       try {
         if (!(await requireCommunityAdmin(communityId, requesterWallet))) {
-          return reply.status(403).send({ error: "Forbidden" });
+          return reply.status(403).send(forbidden("Forbidden"));
         }
 
         let parsedFrom: Date | undefined = undefined;
@@ -984,9 +1044,15 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
         return result;
       } catch (error) {
         if (error instanceof MemberServiceError) {
-          return reply.status(error.statusCode).send({ error: error.message });
+          return reply.status(error.statusCode).send(
+            createApiError({
+              statusCode: error.statusCode,
+              code: error.statusCode === 404 ? 'NOT_FOUND' : error.statusCode === 400 ? 'VALIDATION_ERROR' : error.statusCode === 409 ? 'CONFLICT' : error.statusCode === 403 ? 'FORBIDDEN' : 'INTERNAL_ERROR',
+              message: error.message
+            })
+          );
         }
-        return reply.status(500).send({ error: "Internal server error" });
+        return reply.status(500).send(internalError("Internal server error"));
       }
     },
   );
@@ -1008,9 +1074,15 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       return reply.status(200).send(result);
     } catch (error) {
       if (error instanceof ResourceServiceError) {
-        return reply.status(error.statusCode).send({ error: error.message });
+        return reply.status(error.statusCode).send(
+            createApiError({
+              statusCode: error.statusCode,
+              code: error.statusCode === 404 ? 'NOT_FOUND' : error.statusCode === 400 ? 'VALIDATION_ERROR' : error.statusCode === 409 ? 'CONFLICT' : error.statusCode === 403 ? 'FORBIDDEN' : 'INTERNAL_ERROR',
+              message: error.message
+            })
+          );
       }
-      return reply.status(500).send({ error: 'Internal server error' });
+      return reply.status(500).send(internalError('Internal server error'));
     }
   });
 
@@ -1029,9 +1101,15 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       return reply.status(200).send(result);
     } catch (error) {
       if (error instanceof ResourceServiceError) {
-        return reply.status(error.statusCode).send({ error: error.message });
+        return reply.status(error.statusCode).send(
+            createApiError({
+              statusCode: error.statusCode,
+              code: error.statusCode === 404 ? 'NOT_FOUND' : error.statusCode === 400 ? 'VALIDATION_ERROR' : error.statusCode === 409 ? 'CONFLICT' : error.statusCode === 403 ? 'FORBIDDEN' : 'INTERNAL_ERROR',
+              message: error.message
+            })
+          );
       }
-      return reply.status(500).send({ error: 'Internal server error' });
+      return reply.status(500).send(internalError('Internal server error'));
     }
   });
 
@@ -1047,9 +1125,15 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       return reply.status(200).send(result);
     } catch (error) {
       if (error instanceof ResourceServiceError) {
-        return reply.status(error.statusCode).send({ error: error.message });
+        return reply.status(error.statusCode).send(
+            createApiError({
+              statusCode: error.statusCode,
+              code: error.statusCode === 404 ? 'NOT_FOUND' : error.statusCode === 400 ? 'VALIDATION_ERROR' : error.statusCode === 409 ? 'CONFLICT' : error.statusCode === 403 ? 'FORBIDDEN' : 'INTERNAL_ERROR',
+              message: error.message
+            })
+          );
       }
-      return reply.status(500).send({ error: 'Internal server error' });
+      return reply.status(500).send(internalError('Internal server error'));
     }
   });
 
@@ -1061,9 +1145,15 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       return reply.status(200).send(result);
     } catch (error) {
       if (error instanceof ResourceServiceError) {
-        return reply.status(error.statusCode).send({ error: error.message });
+        return reply.status(error.statusCode).send(
+            createApiError({
+              statusCode: error.statusCode,
+              code: error.statusCode === 404 ? 'NOT_FOUND' : error.statusCode === 400 ? 'VALIDATION_ERROR' : error.statusCode === 409 ? 'CONFLICT' : error.statusCode === 403 ? 'FORBIDDEN' : 'INTERNAL_ERROR',
+              message: error.message
+            })
+          );
       }
-      return reply.status(500).send({ error: 'Internal server error' });
+      return reply.status(500).send(internalError('Internal server error'));
     }
   });
 
@@ -1088,7 +1178,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       });
       return reply.status(201).send(result);
     } catch (error) {
-      return reply.status(400).send({ error: error instanceof Error ? error.message : 'Invalid rule set' });
+      return reply.status(400).send(validationError(error instanceof Error ? error.message : 'Invalid rule set'));
     }
   });
 
@@ -1135,7 +1225,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
         );
         return reply.status(200).send({ success: true, policy });
       } catch (error) {
-        return reply.status(500).send({ error: error instanceof Error ? error.message : 'Failed to update policy' });
+        return reply.status(500).send(internalError(error instanceof Error ? error.message : 'Failed to update policy'));
       }
     }
   );

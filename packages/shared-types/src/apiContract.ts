@@ -13,10 +13,10 @@ export const API_CONTRACT = {
     },
     errorResponse: {
       404: {
-        error: "NOT_FOUND",
-        code: "NOT_FOUND",
-        message: "Wallet not found",
-        statusCode: 404,
+        error: {
+          code: "NOT_FOUND",
+          message: "Wallet not found",
+        },
       },
     },
   },
@@ -34,17 +34,17 @@ export const API_CONTRACT = {
     },
     errorResponse: {
       400: {
-        error: "VALIDATION_ERROR",
-        code: "VALIDATION_ERROR",
-        message: "Validation failed",
-        statusCode: 400,
-        details: "wallet query parameter is required",
+        error: {
+          code: "VALIDATION_ERROR",
+          message: "Validation failed",
+          details: "wallet query parameter is required",
+        },
       },
       404: {
-        error: "NOT_FOUND",
-        code: "NOT_FOUND",
-        message: "Member not found",
-        statusCode: 404,
+        error: {
+          code: "NOT_FOUND",
+          message: "Member not found",
+        },
       },
     },
   },
@@ -65,11 +65,11 @@ export const API_CONTRACT = {
     },
     errorResponse: {
       400: {
-        error: "VALIDATION_ERROR",
-        code: "VALIDATION_ERROR",
-        message: "Validation failed",
-        statusCode: 400,
-        details: "Missing required fields: wallet",
+        error: {
+          code: "VALIDATION_ERROR",
+          message: "Validation failed",
+          details: "Missing required fields: wallet",
+        },
       },
     },
   },
@@ -106,10 +106,10 @@ export const API_CONTRACT = {
     },
     errorResponse: {
       404: {
-        error: "NOT_FOUND",
-        code: "NOT_FOUND",
-        message: "Community not found",
-        statusCode: 404,
+        error: {
+          code: "NOT_FOUND",
+          message: "Community not found",
+        },
       },
     },
   },
@@ -169,12 +169,29 @@ export const API_CONTRACT = {
       ],
     },
     errorResponse: {
-      404: { error: 'NOT_FOUND', code: 'NOT_FOUND', message: 'Community not found', statusCode: 404 },
+      404: {
+        error: {
+          code: 'NOT_FOUND',
+          message: 'Community not found',
+        }
+      },
     },
   },
 } as const;
 
 export type ApiContract = typeof API_CONTRACT;
+
+export type ApiErrorCode =
+  | 'VALIDATION_ERROR'
+  | 'UNAUTHORIZED'
+  | 'FORBIDDEN'
+  | 'NOT_FOUND'
+  | 'CONFLICT'
+  | 'EXPIRED'
+  | 'RATE_LIMITED'
+  | 'INTERNAL_ERROR'
+  | 'SERVICE_UNAVAILABLE'
+  | string; // Keep string for any dynamic errors but provide autocomplete for standard ones
 
 /**
  * Standardised error envelope returned by every access-api endpoint.
@@ -183,14 +200,12 @@ export type ApiContract = typeof API_CONTRACT;
  * API consumers: check `error`/`code` for machine-readable error classification.
  */
 export interface ApiErrorResponse {
-  /** Machine-readable error identifier (e.g. `NOT_FOUND`, `VALIDATION_ERROR`). */
-  error: string;
-  /** HTTP status phrase (e.g. `NOT_FOUND`). Mirrors `error` for backward compatibility. */
-  code: string;
-  /** Human-readable description suitable for developer logs or UI hints. */
-  message: string;
-  /** HTTP status code (e.g. 404). */
-  statusCode: number;
-  /** Optional machine- or human-readable detail payload. */
-  details?: string | Record<string, unknown>;
+  error: {
+    /** Machine-readable error identifier (e.g. `NOT_FOUND`, `VALIDATION_ERROR`). */
+    code: ApiErrorCode;
+    /** Human-readable description suitable for developer logs or UI hints. */
+    message: string;
+    /** Optional machine- or human-readable detail payload. */
+    details?: string | Record<string, unknown>;
+  };
 }

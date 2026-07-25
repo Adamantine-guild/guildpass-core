@@ -118,15 +118,17 @@ function extractCurrentContract(): ContractSnapshot {
     },
     ErrorResponse: {
       type: 'object',
-      required: ['error', 'code', 'message', 'statusCode'],
+      required: ['error'],
       properties: {
-        error: { type: 'string' },
-        code: { type: 'string' },
-        message: { type: 'string' },
-        statusCode: { type: 'integer' },
-        details: {
-          oneOf: [{ type: 'string' }, { type: 'object' }],
-        },
+        error: {
+          type: 'object',
+          required: ['code', 'message'],
+          properties: {
+            code: { type: 'string' },
+            message: { type: 'string' },
+            details: {}
+          }
+        }
       },
     },
     ForbiddenResponse: {
@@ -238,7 +240,7 @@ describe('API Contract Compatibility', () => {
       const summary = result.breaking
         .map((b) => `  - [${b.type}] ${b.path}: ${b.detail}`)
         .join('\n');
-      fail(
+      throw new Error(
         `Breaking API contract changes detected without a version bump:\n${summary}\n\n` +
           'To fix: either revert the change, or bump the version and create a new snapshot.\n' +
           'See docs/API_VERSIONING.md for the stability policy.',

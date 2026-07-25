@@ -20,18 +20,77 @@
     },
     "/health/live": {
       "get": {
+        "summary": "Liveness probe",
+        "tags": [
+          "Health"
+        ],
         "responses": {
           "200": {
-            "description": "Default Response"
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string"
+                    },
+                    "version": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
     },
     "/health/ready": {
       "get": {
+        "summary": "Readiness probe",
+        "tags": [
+          "Health"
+        ],
         "responses": {
           "200": {
-            "description": "Default Response"
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string"
+                    },
+                    "db": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string"
+                    },
+                    "db": {
+                      "type": "string"
+                    },
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -2317,6 +2376,44 @@
           },
           {
             "schema": {
+              "type": "string",
+              "enum": [
+                "invited",
+                "active",
+                "expired",
+                "suspended"
+              ]
+            },
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "description": "Filter members by membership status"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            },
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "description": "Page number for pagination"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "description": "Number of members per page (max 100)"
+          },
+          {
+            "schema": {
               "type": "string"
             },
             "in": "path",
@@ -2334,9 +2431,14 @@
                   "description": "Paginated member list",
                   "type": "object",
                   "required": [
-                    "members"
+                    "communityId",
+                    "members",
+                    "pagination"
                   ],
                   "properties": {
+                    "communityId": {
+                      "type": "string"
+                    },
                     "members": {
                       "type": "array",
                       "items": {
@@ -2371,6 +2473,29 @@
                               ]
                             }
                           }
+                        }
+                      }
+                    },
+                    "pagination": {
+                      "type": "object",
+                      "required": [
+                        "page",
+                        "limit",
+                        "total",
+                        "totalPages"
+                      ],
+                      "properties": {
+                        "page": {
+                          "type": "integer"
+                        },
+                        "limit": {
+                          "type": "integer"
+                        },
+                        "total": {
+                          "type": "integer"
+                        },
+                        "totalPages": {
+                          "type": "integer"
                         }
                       }
                     }
@@ -3060,6 +3185,1286 @@
                   "properties": {
                     "error": {
                       "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/communities/{communityId}/resources": {
+      "post": {
+        "summary": "Create a new resource in a community",
+        "tags": [
+          "Resources"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "resourceId",
+                  "name"
+                ],
+                "properties": {
+                  "resourceId": {
+                    "type": "string",
+                    "description": "Resource identifier"
+                  },
+                  "name": {
+                    "type": "string",
+                    "description": "Human-readable name"
+                  },
+                  "metadata": {
+                    "type": "object",
+                    "additionalProperties": true,
+                    "nullable": true
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "communityId",
+            "required": true,
+            "description": "Community identifier"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resource created or restored",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Resource created or restored",
+                  "type": "object",
+                  "required": [
+                    "communityId",
+                    "resourceId",
+                    "name",
+                    "archived",
+                    "created"
+                  ],
+                  "properties": {
+                    "communityId": {
+                      "type": "string"
+                    },
+                    "resourceId": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "metadata": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "nullable": true
+                    },
+                    "archived": {
+                      "type": "boolean"
+                    },
+                    "created": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Validation error",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Unauthorized",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — requester does not have permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Forbidden — requester does not have permission",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "List resources for a community",
+        "tags": [
+          "Resources"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "communityId",
+            "required": true,
+            "description": "Community identifier"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of resources",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "List of resources",
+                  "type": "object",
+                  "required": [
+                    "communityId",
+                    "resources"
+                  ],
+                  "properties": {
+                    "communityId": {
+                      "type": "string"
+                    },
+                    "resources": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "resourceId",
+                          "name",
+                          "metadata",
+                          "archived"
+                        ],
+                        "properties": {
+                          "resourceId": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "metadata": {
+                            "type": "object",
+                            "additionalProperties": true,
+                            "nullable": true
+                          },
+                          "archived": {
+                            "type": "boolean"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Validation error",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Unauthorized",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Forbidden",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/communities/{communityId}/resources/{resourceId}": {
+      "patch": {
+        "summary": "Update an existing resource",
+        "tags": [
+          "Resources"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "description": "New human-readable name"
+                  },
+                  "metadata": {
+                    "type": "object",
+                    "additionalProperties": true,
+                    "nullable": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "communityId",
+            "required": true,
+            "description": "Community identifier"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "resourceId",
+            "required": true,
+            "description": "Resource identifier"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resource updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Resource updated",
+                  "type": "object",
+                  "required": [
+                    "communityId",
+                    "resourceId",
+                    "name",
+                    "archived"
+                  ],
+                  "properties": {
+                    "communityId": {
+                      "type": "string"
+                    },
+                    "resourceId": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "metadata": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "nullable": true
+                    },
+                    "archived": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Validation error",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Unauthorized",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Forbidden",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Resource not found",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Archive a resource",
+        "tags": [
+          "Resources"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "communityId",
+            "required": true,
+            "description": "Community identifier"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "resourceId",
+            "required": true,
+            "description": "Resource identifier"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resource archived",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Resource archived",
+                  "type": "object",
+                  "required": [
+                    "communityId",
+                    "resourceId",
+                    "archived"
+                  ],
+                  "properties": {
+                    "communityId": {
+                      "type": "string"
+                    },
+                    "resourceId": {
+                      "type": "string"
+                    },
+                    "archived": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Validation error",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Unauthorized",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Forbidden",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Resource not found",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/communities/{communityId}/constitutional-rulesets": {
+      "post": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "communityId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "communityId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/v1/communities/{communityId}/constitutional-rulesets/active": {
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "communityId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/v1/communities/{communityId}/resources/{resource}/policy": {
+      "put": {
+        "summary": "Create or update a custom rule tree policy for a resource in a community",
+        "tags": [
+          "Policies",
+          "Governance"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "ruleTree"
+                ],
+                "properties": {
+                  "ruleTree": {
+                    "type": "object",
+                    "description": "Versioned, serializable rule tree AST",
+                    "additionalProperties": true
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "communityId",
+            "required": true,
+            "description": "Community ID"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "resource",
+            "required": true,
+            "description": "Resource identifier"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Custom rule tree policy successfully saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Custom rule tree policy successfully saved",
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "policy"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "policy": {
+                      "type": "object",
+                      "required": [
+                        "id",
+                        "communityId",
+                        "resource",
+                        "ruleType"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "communityId": {
+                          "type": "string"
+                        },
+                        "resource": {
+                          "type": "string"
+                        },
+                        "ruleType": {
+                          "type": "string"
+                        },
+                        "params": {
+                          "type": "object",
+                          "additionalProperties": true,
+                          "nullable": true
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed or oversized rule tree validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Malformed or oversized rule tree validation error",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Unauthorized",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Forbidden",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Internal server error",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
                     }
                   }
                 }
