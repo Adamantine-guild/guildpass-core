@@ -25,7 +25,7 @@ function createMockPrisma(overrides: Record<string, any> = {}) {
     contributionScore: {
       upsert: jest.fn().mockResolvedValue({}),
       findUnique: jest.fn().mockResolvedValue(
-        overrides.score ?? {
+        overrides.score !== undefined ? overrides.score : {
           totalScore: 22,
           breakdown: { tenure: 10, badge_count: 12 },
         },

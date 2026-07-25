@@ -81,8 +81,8 @@ describe('POST /v1/access/check Rate Limiting', () => {
     expect(lastResponse.headers['retry-after']).toBeDefined();
     
     const body = JSON.parse(lastResponse.payload);
-    expect(body.error).toBe('Too Many Requests');
-    expect(body.message).toMatch(/Rate limit exceeded\. Retry after \d+ seconds\./);
+    expect(body.error.code).toBe('RATE_LIMITED');
+    expect(body.error.message).toMatch(/Rate limit exceeded\. Retry after \d+ seconds\./);
   });
 
   it('enforces Wallet-based rate limiting (max 3)', async () => {

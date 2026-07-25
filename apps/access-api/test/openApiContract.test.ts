@@ -227,10 +227,17 @@ const fixtures = {
     membershipState: 'active',
   },
   communityMembers200: {
+    communityId: COMMUNITY,
     members: [
       { wallet: '0x1111111111111111111111111111111111111111', displayName: 'Alice', state: 'active', roles: ['admin'] },
       { wallet: '0x2222222222222222222222222222222222222222', displayName: 'Bob', state: 'active', roles: ['member'] },
     ],
+    pagination: {
+      page: 1,
+      limit: 20,
+      total: 2,
+      totalPages: 1,
+    }
   },
   deadLetterEvents200: {
     events: [

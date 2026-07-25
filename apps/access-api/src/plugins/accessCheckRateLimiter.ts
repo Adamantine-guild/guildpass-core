@@ -3,6 +3,7 @@ import { FastifyPluginAsync, FastifyRequest, FastifyReply } from 'fastify';
 import { RateLimiterRedis, RateLimiterMemory, RateLimiterRes } from 'rate-limiter-flexible';
 import { createClient } from 'redis';
 import { config } from '../config';
+import { rateLimited, serviceUnavailable } from '../errors';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -92,10 +93,10 @@ export const accessCheckRateLimiter: FastifyPluginAsync = async (app) => {
         reply.header('retry-after', retryAfter);
         reply.header('x-ratelimit-reset', retryAfter);
         
-        return reply.status(429).send({
-          error: 'Too Many Requests',
-          message: `Rate limit exceeded. Retry after ${retryAfter} seconds.`
-        });
+        return reply.status(429).send(rateLimited(
+          `Rate limit exceeded. Retry after ${retryAfter} seconds.`,
+          { retryAfter }
+        ));
       }
 
       // Otherwise it's a Redis connection error or similar
@@ -107,7 +108,7 @@ export const accessCheckRateLimiter: FastifyPluginAsync = async (app) => {
         app.log.warn('Access check rate limiter failed open');
         return;
       } else {
-        return reply.status(503).send({ error: 'Service Unavailable', message: 'Rate limiter unavailable' });
+        return reply.status(503).send(serviceUnavailable('Rate limiter unavailable'));
       }
     }
   };

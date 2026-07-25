@@ -600,9 +600,9 @@ export async function applyContractEvent(
   // Invalidate the cached membership read for the affected wallet so a repeat
   // read never serves stale data. Every membership event carries a tokenId;
   // resolve the wallet + community from the committed token and clear the entry.
-  // Best-effort: a cache failure must never fail on-chain event processing —
+  // best-effort: a cache failure must never fail on-chain event processing —
   // the short TTL is the backstop.
-  if (event.tokenId !== undefined) {
+  if ('tokenId' in event && event.tokenId !== undefined) {
     try {
       const affected = await prisma.membershipToken.findUnique({
         where: {
