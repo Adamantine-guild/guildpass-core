@@ -417,7 +417,7 @@ describe('Membership Integration: Contract Events → API Access', () => {
         include: { activeToken: true },
       });
       // The active token is 102 and active
-      expect(membership?.activeTokenId).toBe(102);
+      expect(membership?.activeToken?.tokenId).toBe(102);
       expect(membership?.activeToken?.state).toBe('active');
 
       // Verify overall access decision via service / API is ALLOW
@@ -504,7 +504,7 @@ describe('Membership Integration: Contract Events → API Access', () => {
         where: { member: { wallet: { address: wallet } } },
         include: { activeToken: true },
       });
-      expect(membership?.activeTokenId).toBe(102);
+      expect(membership?.activeToken?.tokenId).toBe(102);
       expect(membership?.activeToken?.state).toBe('active');
 
       // Verify overall access decision via service / API is ALLOW
@@ -752,6 +752,99 @@ describe('Membership Integration: Contract Events → API Access', () => {
       });
 
       expect(response.statusCode).toBe(404);
+    });
+
+    test('GET /v1/communities/:communityId/members/:wallet edge cases: unknown wallet returns 404 with reason', async () => {
+      const response = await app.inject({
+        method: 'GET',
+        url: `/v1/communities/community-dev/members/0x9999999999999999999999999999999999999999`,
+      });
+
+      expect(response.statusCode).toBe(404);
+      const body = JSON.parse(response.body);
+      expect(body.error).toBe('NOT_FOUND');
+      expect(body.code).toBe('NOT_FOUND');
+      expect(body.message).toBe('Member not found');
+    });
+
+    test('GET /v1/communities/:communityId/members/:wallet edge cases: mixed-case wallet address resolves canonically', async () => {
+      const event = testFixtures.activeMembership.event;
+      await applyContractEvent(prisma, event);
+
+      // Convert canonical lowercase to mixed-case
+      const mixedCaseWallet = event.to.replace(/[a-f]/g, (c) => c.toUpperCase());
+
+      const response = await app.inject({
+        method: 'GET',
+        url: `/v1/communities/${event.communityId}/members/${mixedCaseWallet}`,
+      });
+
+      expect(response.statusCode).toBe(200);
+      const result = JSON.parse(response.body);
+      expect(result.wallet).toBe(event.to.toLowerCase());
+      expect(result.communityId).toBe(event.communityId);
+      expect(result.membership.state).toBe('active');
+    });
+
+    test('GET /v1/communities/:communityId/members/:wallet edge cases: multi-community scoping prevents cross-community leakage', async () => {
+      // Seed wallet/membership in community-dev
+      const eventA = testFixtures.activeMembership.event; // communityId is 'community-dev', wallet is eventA.to
+      await applyContractEvent(prisma, eventA);
+
+      // Seed a different community with the same wallet
+      const otherCommunityId = 'community-prod';
+      const eventB = {
+        ...eventA,
+        tokenId: 999,
+        communityId: otherCommunityId,
+      };
+      await applyContractEvent(prisma, eventB);
+
+      // 1. Query for community-dev
+      const responseA = await app.inject({
+        method: 'GET',
+        url: `/v1/communities/${eventA.communityId}/members/${eventA.to}`,
+      });
+      expect(responseA.statusCode).toBe(200);
+      const resultA = JSON.parse(responseA.body);
+      expect(resultA.communityId).toBe(eventA.communityId);
+
+      // 2. Query for community-prod
+      const responseB = await app.inject({
+        method: 'GET',
+        url: `/v1/communities/${otherCommunityId}/members/${eventA.to}`,
+      });
+      expect(responseB.statusCode).toBe(200);
+      const resultB = JSON.parse(responseB.body);
+      expect(resultB.communityId).toBe(otherCommunityId);
+
+      // 3. Query for a third community where this member doesn't exist
+      const responseC = await app.inject({
+        method: 'GET',
+        url: `/v1/communities/community-unknown/members/${eventA.to}`,
+      });
+      expect(responseC.statusCode).toBe(404);
+
+      // 4. Query memberships scoped endpoint for community-dev
+      const membershipsA = await app.inject({
+        method: 'GET',
+        url: `/v1/communities/${eventA.communityId}/memberships/${eventA.to}`,
+      });
+      expect(membershipsA.statusCode).toBe(200);
+      const mResultA = JSON.parse(membershipsA.body);
+      // It should only have 1 community in the list
+      expect(mResultA.communities.length).toBe(1);
+      expect(mResultA.communities[0].communityId).toBe(eventA.communityId);
+
+      // 5. Query memberships scoped endpoint for community-prod
+      const membershipsB = await app.inject({
+        method: 'GET',
+        url: `/v1/communities/${otherCommunityId}/memberships/${eventA.to}`,
+      });
+      expect(membershipsB.statusCode).toBe(200);
+      const mResultB = JSON.parse(membershipsB.body);
+      expect(mResultB.communities.length).toBe(1);
+      expect(mResultB.communities[0].communityId).toBe(otherCommunityId);
     });
   });
 
@@ -1115,9 +1208,19 @@ describe('Membership Integration: Contract Events → API Access', () => {
       await prisma.blockHeader.deleteMany({});
       await prisma.indexerCheckpoint.deleteMany({});
       await prisma.auditEvent.deleteMany({});
+      await prisma.deadLetterEvent.deleteMany({});
       await prisma.outboxEvent.deleteMany({});
+      await prisma.roleAssignment.deleteMany({});
+      await prisma.badge.deleteMany({});
+      await prisma.accessPolicy.deleteMany({});
+      await prisma.governanceRule.deleteMany({});
+      await prisma.approval.deleteMany({});
+      await prisma.approvalRequest.deleteMany({});
+      await prisma.webhookSubscription.deleteMany({});
+      await prisma.appeal.deleteMany({});
       await prisma.membershipToken.deleteMany({});
       await prisma.membership.deleteMany({});
+      await prisma.profile.deleteMany({});
       await prisma.member.deleteMany({});
       await prisma.community.deleteMany({});
       await prisma.wallet.deleteMany({});
@@ -1178,6 +1281,7 @@ describe('Membership Integration: Contract Events → API Access', () => {
           communityId: 'reorg-community',
           expiresAt: Math.floor(Date.now() / 1000) + 86400,
           chainId,
+          contractAddress,
           transactionHash: '0xtx10',
           blockHash: '0xhash10',
           logIndex: 0,
@@ -1191,6 +1295,7 @@ describe('Membership Integration: Contract Events → API Access', () => {
           tokenId: 99,
           isSuspended: true,
           chainId,
+          contractAddress,
           transactionHash: '0xtx11-orphaned',
           blockHash: '0xhash11-orphaned',
           logIndex: 0,
@@ -1221,12 +1326,22 @@ describe('Membership Integration: Contract Events → API Access', () => {
 
       const worker = createIndexerWorker(provider, 5000, 0, prisma, chainId, 10, contractAddress);
 
+      // Seed initial checkpoint at block 9 so the indexer scans from block 10
+      await prisma.indexerCheckpoint.create({
+        data: {
+          chainId,
+          contractAddress,
+          lastProcessedBlockNumber: 9,
+          lastProcessedBlock: 9,
+          lastProcessedBlockHash: '0xhash9',
+        },
+      });
+
       // Initial pass: processes 10 & 11
       await worker.runPass();
 
       // Verify token 99 is suspended
       let token = await prisma.membershipToken.findFirst({ where: { tokenId: 99 } });
-      let token = await prisma.membershipToken.findUnique({ where: { tokenId: 99 } });
       expect(token?.state).toBe('suspended');
 
       // NOW REORG OCCURS: block 11 has hash '0xhash11-canonical' and no suspend event!
@@ -1238,8 +1353,10 @@ describe('Membership Integration: Contract Events → API Access', () => {
 
       // The indexer rewinds to LCA (block 10), rolls back token 99 state to active, and updates checkpoint
       token = await prisma.membershipToken.findFirst({ where: { tokenId: 99 } });
-      token = await prisma.membershipToken.findUnique({ where: { tokenId: 99 } });
       expect(token?.state).toBe('active');
+
+      // Third pass re-processes the rewound block range (block 11) using the canonical chain
+      await worker.runPass();
 
       const updatedCheckpoint = await prisma.indexerCheckpoint.findUnique({
         where: { chainId_contractAddress: { chainId, contractAddress } },
