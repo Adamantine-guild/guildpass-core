@@ -1,4 +1,5 @@
 import { PrismaClient, Prisma } from "@prisma/client";
+import { normalizeWalletAddress as normaliseWallet } from "../lib/wallet";
 import {
   AccessCheckInput,
   AccessDecision,
@@ -53,9 +54,7 @@ export class MemberServiceError extends Error {
   }
 }
 
-function normaliseWallet(wallet: string): string {
-  return wallet.toLowerCase();
-}
+// normaliseWallet is imported from ../lib/wallet — single shared source (#173).
 
 function getNormalizedMembershipState(
   state: string,
@@ -150,7 +149,7 @@ async function loadContributionScore(
   communityId: string,
 ): Promise<ContributionScore | undefined> {
   const score = await prismaClient.contributionScore.findUnique({
-    where: { walletId_communityId: { walletId: wallet, communityId } },
+    where: { walletId_communityId: { walletId: normaliseWallet(wallet), communityId } },
   });
   if (!score) return undefined;
   return {

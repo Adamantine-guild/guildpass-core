@@ -1,4 +1,5 @@
 import { PrismaClient, Wallet, Challenge as PrismaChallenge, LinkedWallet as PrismaLinkedWallet } from "@prisma/client";
+import { normalizeWalletAddress as normaliseWallet } from "../lib/wallet";
 import { Challenge, LinkWalletInput, LinkedWallet, WalletAddress } from "@guildpass/shared-types";
 import crypto from "crypto";
 import { ethers } from "ethers";
@@ -13,9 +14,7 @@ export class IdentityServiceError extends Error {
   }
 }
 
-function normaliseWallet(wallet: string): string {
-  return wallet.toLowerCase();
-}
+// normaliseWallet is imported from ../lib/wallet — single shared source (#173).
 
 export function getIdentityService(prisma: PrismaClient) {
   /**
