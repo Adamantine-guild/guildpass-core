@@ -1362,6 +1362,8 @@ export function getMemberService(prismaClient: PrismaClient) {
           label: b.label,
           issuedAt: b.issuedAt.toISOString(),
         })),
+      };
+    },
     async upsertAccessPolicy(
       communityId: string,
       resource: string,
