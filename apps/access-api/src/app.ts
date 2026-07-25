@@ -14,6 +14,7 @@ import { registry, metrics } from './observability/metrics';
 import { registerRoutes } from './routes';
 import { getPrisma } from './services/prisma';
 import { createApiError, unauthorized } from './errors';
+import { isValidWalletAddress } from './lib/wallet';
 import { config } from './config';
 import accessCheckRateLimiter from './plugins/accessCheckRateLimiter';
 
@@ -51,6 +52,28 @@ function normaliseRoute(url: string): string {
 // --------------------------------------------------------------------------
 // Application factory
 // --------------------------------------------------------------------------
+
+/**
+ * preHandler that rejects a malformed EVM address in any `:wallet` path param
+ * with a clear 400 before it reaches the database layer, where a mixed-case or
+ * invalid value would otherwise silently miss an existing record (#173).
+ * Exported so it can be exercised in isolation.
+ */
+export async function walletParamGuard(
+  req: FastifyRequest,
+  reply: FastifyReply,
+) {
+  const wallet = (req.params as { wallet?: string } | undefined)?.wallet;
+  if (wallet !== undefined && !isValidWalletAddress(wallet)) {
+    return reply.code(400).send(
+      createApiError({
+        statusCode: 400,
+        code: 'INVALID_WALLET',
+        message: `Invalid wallet address: '${wallet}'`,
+      }),
+    );
+  }
+}
 
 export async function buildApp(): Promise<FastifyInstance> {
   const app = Fastify({
@@ -104,6 +127,10 @@ export async function buildApp(): Promise<FastifyInstance> {
       metrics.httpRequestsTotal.inc(labels);
     },
   );
+
+  // Reject malformed EVM addresses in any :wallet path param with a clear 400
+  // before they reach the database layer (see walletParamGuard, #173).
+  app.addHook('preHandler', walletParamGuard);
 
   await app.register(swagger, {
     openapi: {

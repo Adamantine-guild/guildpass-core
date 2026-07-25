@@ -11,6 +11,7 @@
  */
 
 import type { PrismaClient } from '@prisma/client';
+import { normalizeWalletAddress as normaliseWallet } from '../lib/wallet';
 import {
   createDefaultEngine,
   type SignalContext,
@@ -19,9 +20,7 @@ import {
 
 const engine = createDefaultEngine();
 
-function normaliseWallet(wallet: string): string {
-  return wallet.toLowerCase();
-}
+// normaliseWallet is imported from ../lib/wallet — single shared source (#173).
 
 export interface RecomputeResult {
   wallet: string;
