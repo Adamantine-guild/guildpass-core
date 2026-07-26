@@ -100,7 +100,7 @@ export async function applyContractEvent(
     ? client.$transaction.bind(client)
     : async (cb: (tx: any) => Promise<any>) => cb(client);
 
-  await transaction(async (tx) => {
+  await transaction(async (tx: any) => {
     // Idempotency check: If transactionHash and logIndex are provided, check if already processed.
     if (txHash && event.logIndex !== undefined) {
       const alreadyProcessed = await tx.processedEvent.findUnique({

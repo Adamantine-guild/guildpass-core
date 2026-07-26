@@ -38,3 +38,17 @@ Retention guidance:
 - Consider adding DB partitioning by createdAt or communityId for high-volume deployments.
 - Ensure proper access controls on archived audit data and set up secure, immutable storage where necessary.
 
+## Observability
+
+The `access-api` exposes a Prometheus metrics endpoint to monitor application health and usage.
+
+- **Endpoint:** `GET /metrics`
+- **Authentication:** Excluded from versioned auth. If `METRICS_TOKEN` is set in the environment, it requires a `Bearer <token>` header. Otherwise, it is unauthenticated.
+- **Rate Limiting:** Excluded from global rate limiting.
+
+### Available Metrics
+- `outbox_events_created_total` — Total number of outbox events created.
+- `outbox_events_delivered_total` — Total number of outbox events successfully delivered by the worker.
+- `outbox_events_failed_total` — Total number of outbox events that permanently failed (exhausted retries).
+- `access_decisions_total{decision="allowed"|"denied"}` — Total access policy decisions broken down by the final allowed or denied outcome.
+

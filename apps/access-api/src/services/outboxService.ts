@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import type { PrismaClient } from "@prisma/client";
 import type { OutboxEventType, OutboxDispatchResult } from "@guildpass/shared-types";
+import { metrics } from "../observability/metrics";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -88,6 +89,8 @@ export async function logOutboxEventTx(
       nextRetryAt: new Date(), // eligible immediately
     },
   });
+
+  metrics.outboxEventsCreatedTotal.inc({ event_type: event.eventType });
 
   return { eventId: created.id, status: "pending" };
 }
