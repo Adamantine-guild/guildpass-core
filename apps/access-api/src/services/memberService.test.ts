@@ -1,6 +1,6 @@
 import type { MembershipState } from '@guildpass/shared-types';
 import { PrismaClient } from '@prisma/client';
-import { getMemberService } from './memberService';
+import { getMemberService, MemberServiceError } from './memberService';
 
 // Mock Prisma client
 const mockPrisma = {
@@ -43,6 +43,7 @@ describe('getMemberService - Membership State Normalization', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    (mockPrisma.community.findUnique as jest.Mock).mockResolvedValue({ id: 'community-1' });
     (mockPrisma.accessOverride.findMany as jest.Mock).mockResolvedValue([]);
     (mockPrisma.accessOverride.findFirst as jest.Mock).mockResolvedValue(null);
     (mockPrisma.outboxEvent.create as jest.Mock).mockResolvedValue({ id: 'outbox-event-id' });
@@ -645,6 +646,87 @@ describe('getMemberService - Membership State Normalization', () => {
         }),
       ).rejects.toMatchObject({ statusCode: 400 });
     });
+
+    test('should reject unauthenticated assign role requests with a typed 403 error', async () => {
+      (mockPrisma.wallet.findUnique as jest.Mock).mockResolvedValueOnce(null);
+
+      await expect(
+        memberService.assignMemberRole({
+          requesterWallet: '',
+          communityId: 'community-1',
+          targetWallet: '0x2222222222222222222222222222222222222222',
+          role: 'admin',
+        }),
+      ).rejects.toBeInstanceOf(MemberServiceError);
+      await expect(
+        memberService.assignMemberRole({
+          requesterWallet: '',
+          communityId: 'community-1',
+          targetWallet: '0x2222222222222222222222222222222222222222',
+          role: 'admin',
+        }),
+      ).rejects.toMatchObject({ statusCode: 403, message: 'Requester not found' });
+      expect(mockPrisma.roleAssignment.create).not.toHaveBeenCalled();
+    });
+
+    test('should reject assign role requests for missing communities', async () => {
+      (mockPrisma.community.findUnique as jest.Mock).mockResolvedValueOnce(null);
+
+      await expect(
+        memberService.assignMemberRole({
+          requesterWallet: '0x1111111111111111111111111111111111111111',
+          communityId: 'missing-community',
+          targetWallet: '0x2222222222222222222222222222222222222222',
+          role: 'admin',
+        }),
+      ).rejects.toMatchObject({ statusCode: 404, message: 'Community not found' });
+      expect(mockPrisma.wallet.findUnique).not.toHaveBeenCalled();
+    });
+
+    test('should reject assign role requests when the target wallet does not exist', async () => {
+      const requesterWallet = '0x1111111111111111111111111111111111111111';
+      const targetWallet = '0x2222222222222222222222222222222222222222';
+
+      (mockPrisma.wallet.findUnique as jest.Mock)
+        .mockResolvedValueOnce({ id: 'wallet-req', address: requesterWallet.toLowerCase() })
+        .mockResolvedValueOnce(null);
+      (mockPrisma.member.findFirst as jest.Mock).mockResolvedValueOnce({
+        id: 'member-req',
+        roles: [{ role: 'admin', active: true }],
+      });
+
+      await expect(
+        memberService.assignMemberRole({
+          requesterWallet,
+          communityId: 'community-1',
+          targetWallet,
+          role: 'admin',
+        }),
+      ).rejects.toMatchObject({ statusCode: 404, message: 'Target wallet not found' });
+      expect(mockPrisma.roleAssignment.create).not.toHaveBeenCalled();
+    });
+
+    test('should reject assign role requests when the target wallet is not a member', async () => {
+      const requesterWallet = '0x1111111111111111111111111111111111111111';
+      const targetWallet = '0x2222222222222222222222222222222222222222';
+
+      (mockPrisma.wallet.findUnique as jest.Mock)
+        .mockResolvedValueOnce({ id: 'wallet-req', address: requesterWallet.toLowerCase() })
+        .mockResolvedValueOnce({ id: 'wallet-target', address: targetWallet.toLowerCase() });
+      (mockPrisma.member.findFirst as jest.Mock)
+        .mockResolvedValueOnce({ id: 'member-req', roles: [{ role: 'admin', active: true }] })
+        .mockResolvedValueOnce(null);
+
+      await expect(
+        memberService.assignMemberRole({
+          requesterWallet,
+          communityId: 'community-1',
+          targetWallet,
+          role: 'admin',
+        }),
+      ).rejects.toMatchObject({ statusCode: 404, message: 'Target not a member' });
+      expect(mockPrisma.roleAssignment.create).not.toHaveBeenCalled();
+    });
   });
 
   describe('removeMemberRole', () => {
@@ -671,6 +753,69 @@ describe('getMemberService - Membership State Normalization', () => {
 
       expect(result.removed).toBe(true);
       expect(mockPrisma.roleAssignment.updateMany).toHaveBeenCalled();
+    });
+
+    test('should reject unauthenticated remove role requests with a typed 403 error', async () => {
+      (mockPrisma.wallet.findUnique as jest.Mock).mockResolvedValueOnce(null);
+
+      await expect(
+        memberService.removeMemberRole({
+          requesterWallet: '',
+          communityId: 'community-1',
+          targetWallet: '0x2222222222222222222222222222222222222222',
+          role: 'admin',
+        }),
+      ).rejects.toMatchObject({ statusCode: 403, message: 'Requester not found' });
+      expect(mockPrisma.roleAssignment.updateMany).not.toHaveBeenCalled();
+    });
+
+    test('should reject non-admin remove role requesters with 403', async () => {
+      const requesterWallet = '0x1111111111111111111111111111111111111111';
+
+      (mockPrisma.wallet.findUnique as jest.Mock).mockResolvedValueOnce({
+        id: 'wallet-req',
+        address: requesterWallet.toLowerCase(),
+      });
+      (mockPrisma.member.findFirst as jest.Mock).mockResolvedValueOnce({
+        id: 'member-req',
+        roles: [{ role: 'member', active: true }],
+      });
+
+      await expect(
+        memberService.removeMemberRole({
+          requesterWallet,
+          communityId: 'community-1',
+          targetWallet: '0x2222222222222222222222222222222222222222',
+          role: 'admin',
+        }),
+      ).rejects.toMatchObject({ statusCode: 403, message: 'Not authorized' });
+      expect(mockPrisma.roleAssignment.updateMany).not.toHaveBeenCalled();
+    });
+
+    test('should reject invalid remove role values before persistence lookups', async () => {
+      await expect(
+        memberService.removeMemberRole({
+          requesterWallet: '0x1111111111111111111111111111111111111111',
+          communityId: 'community-1',
+          targetWallet: '0x2222222222222222222222222222222222222222',
+          role: 'owner' as any,
+        }),
+      ).rejects.toMatchObject({ statusCode: 400, message: 'Invalid role' });
+      expect(mockPrisma.community.findUnique).not.toHaveBeenCalled();
+    });
+
+    test('should reject remove role requests for missing communities', async () => {
+      (mockPrisma.community.findUnique as jest.Mock).mockResolvedValueOnce(null);
+
+      await expect(
+        memberService.removeMemberRole({
+          requesterWallet: '0x1111111111111111111111111111111111111111',
+          communityId: 'missing-community',
+          targetWallet: '0x2222222222222222222222222222222222222222',
+          role: 'admin',
+        }),
+      ).rejects.toMatchObject({ statusCode: 404, message: 'Community not found' });
+      expect(mockPrisma.roleAssignment.updateMany).not.toHaveBeenCalled();
     });
   });
 
