@@ -11,8 +11,18 @@
  * for the MembershipNFT contract ABI and typed event definitions.
  */
 
-import type { PrismaClient } from '@prisma/client';
+import type { PrismaClient, Prisma } from '@prisma/client';
 import { writeChainedAuditEvent } from './auditChainHasher';
+
+import type {
+  DecodedContractEvent,
+  DecodedMembershipMintedEvent,
+  DecodedMembershipRenewedEvent,
+  DecodedMembershipSuspendedEvent,
+  DecodedAdminUpdatedEvent,
+  DecodedOwnershipTransferProposedEvent,
+  DecodedOwnershipTransferredEvent,
+} from '@guildpass/contracts';
 
 // Re-export event types from the shared contracts package so that existing
 // consumers of this module continue to work without import changes.
@@ -24,17 +34,7 @@ export type {
   DecodedAdminUpdatedEvent,
   DecodedOwnershipTransferProposedEvent,
   DecodedOwnershipTransferredEvent,
-} from '@guildpass/contracts';
-
-import type {
-  DecodedContractEvent,
-  DecodedMembershipMintedEvent,
-  DecodedMembershipRenewedEvent,
-  DecodedMembershipSuspendedEvent,
-  DecodedAdminUpdatedEvent,
-  DecodedOwnershipTransferProposedEvent,
-  DecodedOwnershipTransferredEvent,
-} from '@guildpass/contracts';
+};
 
 import { invalidateMembershipsCache } from './memberService';
 
@@ -100,7 +100,7 @@ export async function applyContractEvent(
     ? client.$transaction.bind(client)
     : async (cb: (tx: any) => Promise<any>) => cb(client);
 
-  await transaction(async (tx) => {
+  await transaction(async (tx: Prisma.TransactionClient) => {
     // Idempotency check: If transactionHash and logIndex are provided, check if already processed.
     if (txHash && event.logIndex !== undefined) {
       const alreadyProcessed = await tx.processedEvent.findUnique({
