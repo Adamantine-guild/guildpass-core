@@ -1,3 +1,6 @@
+-- Required for uuid_generate_v4() below.
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
 -- Create OutboxEvent table for durable integration events
 CREATE TABLE "OutboxEvent" (
     "id" UUID NOT NULL DEFAULT uuid_generate_v4(),

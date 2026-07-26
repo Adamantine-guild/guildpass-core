@@ -4,6 +4,26 @@ import { NoopCacheService } from './cacheService';
 // Optional dependency: only used when redisUrl is configured.
 // We keep it in a separate file to avoid loading redis libraries when disabled.
 
+/**
+ * Lua script that atomically increments a key and sets its TTL in one
+ * round-trip.  Because Redis executes Lua scripts atomically, a crash or
+ * connection drop between the INCR and the EXPIRE can no longer leave the
+ * key without a TTL (fixes issue #126).
+ *
+ * KEYS[1]  – the counter key
+ * ARGV[1]  – TTL in seconds (integer); pass "0" to skip setting a TTL
+ *
+ * Returns the new integer value of the counter.
+ */
+const INCR_WITH_TTL_SCRIPT = `
+local val = redis.call('INCR', KEYS[1])
+local ttl = tonumber(ARGV[1])
+if ttl and ttl > 0 then
+  redis.call('EXPIRE', KEYS[1], ttl)
+end
+return val
+`;
+
 export function createRedisCacheService(redisUrl: string): CacheService {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   // @ts-ignore - optional dependency, loaded only when redisUrl is present
@@ -15,6 +35,14 @@ export function createRedisCacheService(redisUrl: string): CacheService {
       del: (key: string) => Promise<number>;
       incr: (key: string) => Promise<number>;
       expire: (key: string, seconds: number) => Promise<number>;
+      /**
+       * Executes a Lua script on the Redis server.
+       * Signature matches the node-redis v4 `eval` command.
+       */
+      eval: (
+        script: string,
+        opts: { keys: string[]; arguments: string[] },
+      ) => Promise<unknown>;
     };
   };
 
@@ -47,13 +75,20 @@ export function createRedisCacheService(redisUrl: string): CacheService {
       await this.client.del(key);
     }
 
+    /**
+     * Atomically increments the version counter at `key` and, when
+     * `ttlSeconds` is provided, sets its expiry — all in a single Lua script
+     * executed via EVAL so there is no window where the key can exist without
+     * a TTL (fixes issue #126).
+     */
     async incr(key: string, ttlSeconds?: number): Promise<number> {
       await this.ensureConnected();
-      const next = await this.client.incr(key);
-      if (ttlSeconds && ttlSeconds > 0) {
-        await this.client.expire(key, ttlSeconds);
-      }
-      return next;
+      const ttlArg = ttlSeconds && ttlSeconds > 0 ? String(ttlSeconds) : '0';
+      const result = await this.client.eval(INCR_WITH_TTL_SCRIPT, {
+        keys: [key],
+        arguments: [ttlArg],
+      });
+      return Number(result);
     }
 
     async getIncr(key: string): Promise<number | null> {

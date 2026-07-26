@@ -126,6 +126,7 @@ describe('GuildPassClient', () => {
       });
 
       const result = await client.getMemberships(
+        'community-1',
         API_CONTRACT.membershipsByWallet.successResponse.wallet,
       );
 
@@ -151,6 +152,7 @@ describe('GuildPassClient', () => {
       });
 
       const result = await client.getMemberProfile(
+        'community-1',
         '0x1234567890abcdef1234567890abcdef12345678',
       );
 
@@ -278,6 +280,29 @@ describe('GuildPassClient', () => {
       expect(calledInit.method).toBe(API_CONTRACT.removeMemberRole.method);
       const headers = (calledInit.headers ?? {}) as Record<string, string>;
       expect(headers['x-wallet']).toBe('0x1111111111111111111111111111111111111111');
+    });
+
+    it('matches the community roles lookup contract', async () => {
+      const fetchSpy = makeFetchStub((_url, _init) =>
+        new StubResponse({
+          status: API_CONTRACT.communityRoles.successStatus,
+          body: JSON.stringify(API_CONTRACT.communityRoles.successResponse),
+        }),
+      );
+      const client = new GuildPassClient({
+        baseUrl: 'https://api.example.com',
+        token: 't',
+        fetchImpl: fetchSpy as unknown as typeof fetch,
+      });
+
+      const result = await client.getCommunityRoles('community-1');
+
+      expect(result).toEqual(API_CONTRACT.communityRoles.successResponse);
+      const [calledUrl, calledInit] = fetchSpy.mock.calls[0]!;
+      expect(calledUrl).toBe(
+        `https://api.example.com${API_CONTRACT.communityRoles.samplePath}`,
+      );
+      expect(calledInit.method).toBe(API_CONTRACT.communityRoles.method);
     });
   });
 

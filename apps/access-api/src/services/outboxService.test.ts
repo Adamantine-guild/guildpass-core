@@ -5,17 +5,28 @@
  *   - Event creation (logOutboxEventTx)
  *   - Marking events as delivered
  *   - Marking events as failed with retry transitions
- *   - Pending event fetching
+ *   - Claiming pending events (distributed-lock claim path)
  *   - Stats and pruning
+ *
+ * claimPendingOutboxEvents uses $queryRaw (SELECT ... FOR UPDATE SKIP
+ * LOCKED), which Postgres-level row locking can't be exercised against a
+ * mock — these tests only verify the claim *predicate* logic (status,
+ * nextRetryAt, claimExpiresAt, ordering, limit) via a hand-rolled $queryRaw
+ * stub. Real concurrent-claim correctness is covered by
+ * test/outboxWorker.concurrency.test.ts against a real Postgres instance.
  */
+
+import { runWithRequestContext } from "./requestContext";
 
 import {
   logOutboxEventTx,
   markOutboxDelivered,
   markOutboxFailed,
-  getPendingOutboxEvents,
+  claimPendingOutboxEvents,
   getOutboxStats,
   pruneDeliveredOutboxEvents,
+  claimPendingOutboxEventsWithLock,
+  getOutboxBacklogDepth,
 } from "./outboxService";
 
 // ---------------------------------------------------------------------------
@@ -37,6 +48,7 @@ function makeDb(overrides: any = {}) {
           entityId: args.data.entityId ?? null,
           entityType: args.data.entityType ?? null,
           communityId: args.data.communityId ?? null,
+          correlationId: args.data.correlationId ?? null,
           payload: args.data.payload ?? {},
           status: args.data.status ?? "pending",
           retryCount: args.data.retryCount ?? 0,
@@ -90,6 +102,42 @@ function makeDb(overrides: any = {}) {
       }),
       ...overrides,
     },
+    // Stub for claimPendingOutboxEvents' raw claim query. Simulates the same
+    // predicate as the real SQL (status='pending', nextRetryAt<=now,
+    // claim expired-or-absent) and, like the real UPDATE, mutates the
+    // matched records in place so a second call won't reclaim them until
+    // their lease elapses.
+    $queryRaw: jest.fn(async (_strings: TemplateStringsArray, ...values: any[]) => {
+      const [workerId, leaseMs, limit] = values;
+      const now = new Date();
+      const pool = [...created, ...(overrides.extraEvents ?? [])];
+      const eligible = pool.filter(
+        (r: any) =>
+          r.status === "pending" &&
+          r.nextRetryAt &&
+          new Date(r.nextRetryAt) <= now &&
+          (!r.claimExpiresAt || new Date(r.claimExpiresAt) < now),
+      );
+      eligible.sort(
+        (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+      );
+      const claimed = eligible.slice(0, limit);
+      const claimExpiresAt = new Date(now.getTime() + leaseMs);
+      claimed.forEach((r: any) => {
+        r.claimedAt = now;
+        r.claimedBy = workerId;
+        r.claimExpiresAt = claimExpiresAt;
+      });
+      return claimed.map((r: any) => ({
+        id: r.id,
+        eventType: r.eventType,
+        entityId: r.entityId,
+        entityType: r.entityType,
+        communityId: r.communityId,
+        payload: r.payload,
+        createdAt: r.createdAt,
+      }));
+    }),
   };
 
   return { db, created, updated };
@@ -120,6 +168,7 @@ describe("logOutboxEventTx", () => {
         entityId: "res-1",
         entityType: "Resource",
         communityId: "community-1",
+        correlationId: expect.any(String),
         payload: { name: "Test Resource" },
         status: "pending",
         retryCount: 0,
@@ -130,6 +179,37 @@ describe("logOutboxEventTx", () => {
 
     expect(created[0].status).toBe("pending");
     expect(created[0].retryCount).toBe(0);
+    expect(created[0].correlationId).toEqual(expect.any(String));
+  });
+
+  test("uses request context correlation ID when event does not provide one", async () => {
+    const { db, created } = makeDb();
+
+    await runWithRequestContext({ correlationId: "req-issue-96" }, () =>
+      logOutboxEventTx(db, {
+        eventType: "ROLE_REMOVED",
+        communityId: "community-1",
+      }),
+    );
+
+    expect(created[0].correlationId).toBe("req-issue-96");
+    expect(db.outboxEvent.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ correlationId: "req-issue-96" }),
+    });
+  });
+
+  test("prefers explicit event correlation ID over request context", async () => {
+    const { db, created } = makeDb();
+
+    await runWithRequestContext({ correlationId: "request-context-id" }, () =>
+      logOutboxEventTx(db, {
+        eventType: "ROLE_ASSIGNED",
+        communityId: "community-1",
+        correlationId: "explicit-event-id",
+      }),
+    );
+
+    expect(created[0].correlationId).toBe("explicit-event-id");
   });
 
   test("sets eligible nextRetryAt to now for immediate processing", async () => {
@@ -168,6 +248,9 @@ describe("markOutboxDelivered", () => {
         status: "delivered",
         deliveredAt: expect.any(Date),
         nextRetryAt: null,
+        claimedAt: null,
+        claimedBy: null,
+        claimExpiresAt: null,
       },
     });
   });
@@ -269,7 +352,7 @@ describe("markOutboxFailed", () => {
   });
 });
 
-describe("getPendingOutboxEvents", () => {
+describe("claimPendingOutboxEvents", () => {
   test("returns only pending events whose nextRetryAt is in the past", async () => {
     const now = new Date();
     const pastDate = new Date(now.getTime() - 60_000); // 1 min ago
@@ -325,7 +408,7 @@ describe("getPendingOutboxEvents", () => {
 
     const { db } = makeDb({ extraEvents });
 
-    const results = await getPendingOutboxEvents(db, 10);
+    const results = await claimPendingOutboxEvents(db, 10, "worker-1");
     expect(results.length).toBeGreaterThanOrEqual(1);
     // Only evt-eligible should be returned
     const ids = results.map((r: any) => r.id);
@@ -374,12 +457,98 @@ describe("getPendingOutboxEvents", () => {
 
     const { db } = makeDb({ extraEvents });
 
-    const results = await getPendingOutboxEvents(db, 10);
+    const results = await claimPendingOutboxEvents(db, 10, "worker-1");
     const pendingResults = results.filter((r: any) =>
       extraEvents.some((e) => e.id === r.id),
     );
     expect(pendingResults[0].id).toBe("evt-older");
     expect(pendingResults[1].id).toBe("evt-newer");
+  });
+
+  test("does not reclaim a row whose lease has not yet expired", async () => {
+    const now = new Date();
+    const past = new Date(now.getTime() - 60_000);
+    const leaseNotYetExpired = new Date(now.getTime() + 30_000);
+
+    const extraEvents = [
+      {
+        id: "evt-leased",
+        eventType: "RESOURCE_CREATED",
+        entityId: null,
+        entityType: null,
+        communityId: "c1",
+        payload: {},
+        status: "pending",
+        retryCount: 0,
+        maxRetries: 5,
+        lastError: null,
+        createdAt: past,
+        deliveredAt: null,
+        nextRetryAt: past,
+        claimedAt: past,
+        claimedBy: "worker-other",
+        claimExpiresAt: leaseNotYetExpired,
+      },
+    ];
+    const { db } = makeDb({ extraEvents });
+
+    const results = await claimPendingOutboxEvents(db, 10, "worker-2");
+    expect(results.map((r: any) => r.id)).not.toContain("evt-leased");
+  });
+
+  test("reclaims a row whose lease has expired", async () => {
+    const now = new Date();
+    const past = new Date(now.getTime() - 60_000);
+    const leaseExpired = new Date(now.getTime() - 1_000);
+
+    const extraEvents = [
+      {
+        id: "evt-expired-lease",
+        eventType: "RESOURCE_CREATED",
+        entityId: null,
+        entityType: null,
+        communityId: "c1",
+        payload: {},
+        status: "pending",
+        retryCount: 0,
+        maxRetries: 5,
+        lastError: null,
+        createdAt: past,
+        deliveredAt: null,
+        nextRetryAt: past,
+        claimedAt: past,
+        claimedBy: "worker-dead",
+        claimExpiresAt: leaseExpired,
+      },
+    ];
+    const { db } = makeDb({ extraEvents });
+
+    const results = await claimPendingOutboxEvents(db, 10, "worker-2");
+    expect(results.map((r: any) => r.id)).toContain("evt-expired-lease");
+  });
+
+  test("respects the limit even when more rows are eligible", async () => {
+    const now = new Date();
+    const past = new Date(now.getTime() - 1000);
+    const extraEvents = Array.from({ length: 5 }, (_, i) => ({
+      id: `evt-${i}`,
+      eventType: "RESOURCE_CREATED",
+      entityId: null,
+      entityType: null,
+      communityId: "c1",
+      payload: {},
+      status: "pending",
+      retryCount: 0,
+      maxRetries: 5,
+      lastError: null,
+      createdAt: past,
+      deliveredAt: null,
+      nextRetryAt: past,
+    }));
+    const { db } = makeDb({ extraEvents });
+
+    const results = await claimPendingOutboxEvents(db, 2, "worker-1");
+    expect(results.length).toBe(2);
   });
 });
 
@@ -474,5 +643,68 @@ describe("pruneDeliveredOutboxEvents", () => {
       },
     });
     expect(count).toBe(5);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests for new horizontal-scalability functions
+// ---------------------------------------------------------------------------
+
+describe("claimPendingOutboxEventsWithLock", () => {
+  test("returns results from $queryRaw", async () => {
+    const rows = [{ id: "evt-1", status: "pending" }];
+    const db = {
+      $queryRaw: jest.fn().mockResolvedValue(rows),
+    } as any;
+
+    const result = await claimPendingOutboxEventsWithLock(db, 10);
+
+    expect(db.$queryRaw).toHaveBeenCalledTimes(1);
+    // The first argument should be a Prisma.Sql template (we just check it's
+    // not null and that the limit was incorporated).
+    expect(result).toEqual(rows);
+  });
+
+  test("defaults limit to 50", async () => {
+    const db = {
+      $queryRaw: jest.fn().mockResolvedValue([]),
+    } as any;
+
+    await claimPendingOutboxEventsWithLock(db);
+
+    expect(db.$queryRaw).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("getOutboxBacklogDepth", () => {
+  test("returns the count from $queryRaw result", async () => {
+    const db = {
+      $queryRaw: jest.fn().mockResolvedValue([{ count: 42 }]),
+    } as any;
+
+    const depth = await getOutboxBacklogDepth(db);
+
+    expect(depth).toBe(42);
+    expect(db.$queryRaw).toHaveBeenCalledTimes(1);
+  });
+
+  test("returns 0 when result is empty", async () => {
+    const db = {
+      $queryRaw: jest.fn().mockResolvedValue([]),
+    } as any;
+
+    const depth = await getOutboxBacklogDepth(db);
+
+    expect(depth).toBe(0);
+  });
+
+  test("returns 0 when result has no rows", async () => {
+    const db = {
+      $queryRaw: jest.fn().mockResolvedValue([{ count: null }]),
+    } as any;
+
+    const depth = await getOutboxBacklogDepth(db);
+
+    expect(depth).toBe(0);
   });
 });

@@ -50,6 +50,14 @@ export interface CommunityMembersResult {
   }>;
 }
 
+export interface CommunityRolesResult {
+  roles: Array<{
+    name: string;
+    description: string;
+    implies: string[];
+  }>;
+}
+
 export type CommunityRole = 'admin' | 'member' | 'contributor';
 
 export interface RoleMutationInput {
@@ -86,11 +94,11 @@ const MAX_RESPONSE_BODY_CHARS = 500;
 
 /** Shape of the standardised API error envelope. */
 interface ApiErrorEnvelope {
-  error: string;
-  code: string;
-  message: string;
-  statusCode: number;
-  details?: string | Record<string, unknown>;
+  error: {
+    code: string;
+    message: string;
+    details?: string | Record<string, unknown>;
+  };
 }
 
 export class GuildPassClient {
@@ -120,9 +128,9 @@ export class GuildPassClient {
    * @throws {GuildPassApiError} when the request fails, the response is not
    *   JSON, or a successful response carries an unexpected shape.
    */
-  async getMemberships(wallet: string): Promise<MembershipSummary> {
+  async getMemberships(communityId: string, wallet: string): Promise<MembershipSummary> {
     return this._request<MembershipSummary>(
-      `/v1/memberships/${encodePathSegment(wallet)}`,
+      `/v1/communities/${encodePathSegment(communityId)}/memberships/${encodePathSegment(wallet)}`,
       { method: 'GET' },
     );
   }
@@ -133,9 +141,9 @@ export class GuildPassClient {
    * @throws {GuildPassApiError} when the request fails, the response is not
    *   JSON, or a successful response carries an unexpected shape.
    */
-  async getMemberProfile(wallet: string): Promise<MemberProfileResult> {
+  async getMemberProfile(communityId: string, wallet: string): Promise<MemberProfileResult> {
     return this._request<MemberProfileResult>(
-      `/v1/members/${encodePathSegment(wallet)}`,
+      `/v1/communities/${encodePathSegment(communityId)}/members/${encodePathSegment(wallet)}`,
       { method: 'GET' },
     );
   }
@@ -168,6 +176,19 @@ export class GuildPassClient {
       : '';
     return this._request<CommunityMembersResult>(
       `/v1/communities/${encodePathSegment(communityId)}/members${query}`,
+      { method: 'GET' },
+    );
+  }
+
+  /**
+   * Fetch roles and hierarchy metadata for a community.
+   *
+   * @throws {GuildPassApiError} when the request fails, the response is not
+   *   JSON, or a successful response carries an unexpected shape.
+   */
+  async getCommunityRoles(communityId: string): Promise<CommunityRolesResult> {
+    return this._request<CommunityRolesResult>(
+      `/v1/communities/${encodePathSegment(communityId)}/roles`,
       { method: 'GET' },
     );
   }
@@ -313,13 +334,27 @@ function parseErrorEnvelope(body: string): {
 } {
   try {
     const parsed = JSON.parse(body) as Partial<ApiErrorEnvelope>;
-    // Only trust the envelope when both `error` and `message` are present
-    // (avoids treating unrelated JSON as an error envelope).
-    if (typeof parsed.error === 'string' && typeof parsed.message === 'string') {
+    
+    // Support the new nested envelope structure
+    if (
+      parsed.error && 
+      typeof parsed.error === 'object' &&
+      typeof parsed.error.code === 'string' &&
+      typeof parsed.error.message === 'string'
+    ) {
       return {
-        message: parsed.message,
-        code: parsed.error,
-        details: parsed.details,
+        message: parsed.error.message,
+        code: parsed.error.code,
+        details: (parsed.error as any).details, // Using any for details property access since we defined ApiErrorEnvelope.error as string in the SDK earlier, wait let's just cast properly
+      };
+    }
+
+    // Fallback for old envelope for safety during transition
+    if (typeof (parsed as any).error === 'string' && typeof (parsed as any).message === 'string') {
+      return {
+        message: (parsed as any).message,
+        code: (parsed as any).error,
+        details: (parsed as any).details,
       };
     }
   } catch {
@@ -360,3 +395,4 @@ function encodePathSegment(value: string): string {
 }
 
 export { GuildPassApiError } from './errors';
+export * from './consumer';

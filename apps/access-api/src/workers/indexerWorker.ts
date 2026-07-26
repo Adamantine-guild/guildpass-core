@@ -32,6 +32,7 @@ export function indexerStateId(config: ChainAdapterConfig): string {
 export class IndexerWorker {
   private timer: NodeJS.Timeout | null = null;
   private isRunning = false;
+  public readonly confirmationDepth: number;
 
   constructor(
     private readonly prisma: PrismaClient = getPrisma(),
@@ -73,6 +74,17 @@ export class IndexerWorker {
     }
   }
 
+  async backfill(fromBlock: number, toBlock: number) {
+    console.info(`Starting indexer backfill on chain ${this.chainId} from block ${fromBlock} to ${toBlock}`);
+    let current = fromBlock;
+    while (current <= toBlock) {
+      const batchEnd = Math.min(current + this.batchSize - 1, toBlock);
+      await this.processBlockRange(current, batchEnd);
+      current = batchEnd + 1;
+    }
+    console.info(`Backfill completed on chain ${this.chainId} up to block ${toBlock}`);
+  }
+
   private async processBlocks() {
     const latestBlockNumber = await this.provider.getLatestBlockNumber();
     const safeBlockNumber = latestBlockNumber - this.finalityWindow;
@@ -82,7 +94,11 @@ export class IndexerWorker {
       where: { id: stateId },
     });
 
-    let currentBlock = state ? state.lastBlockNumber + 1 : safeBlockNumber;
+    const lastBlockNum = checkpoint
+      ? checkpoint.lastProcessedBlockNumber !== undefined && checkpoint.lastProcessedBlockNumber !== 0
+        ? checkpoint.lastProcessedBlockNumber
+        : checkpoint.lastProcessedBlock
+      : safeBlockNumber - 1;
 
     if (currentBlock > safeBlockNumber) {
       return;
@@ -102,7 +118,13 @@ export class IndexerWorker {
     const toBlock = Math.min(currentBlock + 100, safeBlockNumber);
     console.info(`Indexer scanning chain ${this.chainConfig.chainId} blocks ${currentBlock} to ${toBlock}`);
 
-    const logs = await this.provider.getLogs(currentBlock, toBlock);
+    const toBlock = Math.min(currentBlock + this.batchSize - 1, safeBlockNumber);
+    await this.processBlockRange(currentBlock, toBlock);
+  }
+
+  private async processBlockRange(fromBlock: number, toBlock: number) {
+    console.info(`Indexer scanning blocks ${fromBlock} to ${toBlock} on chain ${this.chainId}`);
+    const logs = await this.provider.getLogs(fromBlock, toBlock);
 
     const sortedLogs = [...logs].sort((a, b) => {
       if (a.blockNumber !== b.blockNumber) {
@@ -157,7 +179,6 @@ export class IndexerWorker {
           blockNumber: { gt: rewindTo },
         },
       });
-    });
 
     console.info(`Rewound indexer for chain ${this.chainConfig.chainId} to block ${rewindTo} due to reorg`);
   }
@@ -166,7 +187,7 @@ export class IndexerWorker {
 export function createIndexerWorker(
   provider: ChainProvider,
   intervalMs?: number,
-  finalityWindow?: number,
+  confirmationDepth?: number,
   prisma?: PrismaClient,
   chainConfig?: ChainAdapterConfig,
 ) {

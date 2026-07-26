@@ -1,5 +1,6 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import { API_CONTRACT } from '../../../packages/shared-types/src/apiContract';
+import { resolveRequesterWallet } from '../src/utils/requesterIdentity';
 
 /**
  * Fastify route integration tests using app.inject().
@@ -11,7 +12,7 @@ import { API_CONTRACT } from '../../../packages/shared-types/src/apiContract';
  *   { error, code, message, statusCode, details? }
  */
 
-type MembershipState = 'active' | 'expired' | 'suspended' | 'invited';
+type MembershipState = "active" | "expired" | "suspended" | "invited";
 
 // --- Error envelope helpers (mirrors access-api/src/errors.ts) ---
 interface ErrorPayload {
@@ -31,6 +32,20 @@ function apiError(payload: ErrorPayload) {
   };
 }
 
+function validationErrorWithReason(
+  code: "INVALID_WALLET" | "UNKNOWN_COMMUNITY" | "INVALID_ROLE",
+  message: string,
+) {
+  return {
+    error: code,
+    code: code,
+    message,
+    statusCode: 400,
+    details: code,
+    reasons: [{ code, message }],
+  };
+}
+
 // --- Mock service factory ---
 function createMockMemberService(overrides: Record<string, jest.Mock> = {}) {
   return {
@@ -40,71 +55,97 @@ function createMockMemberService(overrides: Record<string, jest.Mock> = {}) {
     listMembersForAdmin: overrides.listMembersForAdmin ?? jest.fn(),
     assignMemberRole: overrides.assignMemberRole ?? jest.fn(),
     removeMemberRole: overrides.removeMemberRole ?? jest.fn(),
+    assignBadge: overrides.assignBadge ?? jest.fn(),
+    revokeBadge: overrides.revokeBadge ?? jest.fn(),
+    listBadgesForMember: overrides.listBadgesForMember ?? jest.fn(),
     createAccessOverride: overrides.createAccessOverride ?? jest.fn(),
     revokeAccessOverride: overrides.revokeAccessOverride ?? jest.fn(),
   };
 }
 
-
 // --- Build test app with mocked services ---
-async function buildTestApp(mockService: ReturnType<typeof createMockMemberService>): Promise<FastifyInstance> {
+async function buildTestApp(
+  mockService: ReturnType<typeof createMockMemberService>,
+): Promise<FastifyInstance> {
   const app = Fastify();
 
   // expose requester wallet helper only via headers for route tests
   // (these tests use mocked services, so auth is enforced in service/unit tests)
 
-
   // Health route
-  app.get('/health', async () => {
-    return { status: 'ok', timestamp: new Date().toISOString() };
+  app.get("/health", async () => {
+    return { status: "ok", timestamp: new Date().toISOString() };
   });
 
   // Register routes with mocked service
-  app.get('/v1/communities/:communityId/memberships/:wallet', async (request) => {
-    const { wallet } = request.params as { communityId: string; wallet: string };
-    return mockService.getMembershipsByWallet(wallet);
-  });
+  app.get(
+    "/v1/communities/:communityId/memberships/:wallet",
+    async (request) => {
+      const { wallet } = request.params as {
+        communityId: string;
+        wallet: string;
+      };
+      return mockService.getMembershipsByWallet(wallet);
+    },
+  );
 
-  app.get('/v1/communities/:communityId/members/:wallet', async (request, reply) => {
-    const { wallet } = request.params as { communityId: string; wallet: string };
-    const result = await mockService.getProfileByWallet(wallet);
-    if (!result) {
-      return reply.status(404).send(apiError({ statusCode: 404, code: 'NOT_FOUND', message: 'Member not found' }));
-    }
-    return result;
-  });
+  app.get(
+    "/v1/communities/:communityId/members/:wallet",
+    async (request, reply) => {
+      const { wallet } = request.params as {
+        communityId: string;
+        wallet: string;
+      };
+      const result = await mockService.getProfileByWallet(wallet);
+      if (!result) {
+        return reply
+          .status(404)
+          .send(
+            apiError({
+              statusCode: 404,
+              code: "NOT_FOUND",
+              message: "Member not found",
+            }),
+          );
+      }
+      return result;
+    },
+  );
 
-  app.post('/v1/access/check', async (request, reply) => {
+  app.post("/v1/access/check", async (request, reply) => {
     const body = request.body as {
       wallet: string;
       communityId: string;
       resource: string;
     };
     if (!body?.wallet || !body?.communityId || !body?.resource) {
-      return reply.status(400).send(
-        apiError({ statusCode: 400, code: 'VALIDATION_ERROR', message: 'Missing required fields: wallet, communityId, resource' }),
-      );
+      return reply
+        .status(400)
+        .send(
+          apiError({
+            statusCode: 400,
+            code: "VALIDATION_ERROR",
+            message: "Missing required fields: wallet, communityId, resource",
+          }),
+        );
     }
     return mockService.checkAccess(body);
   });
 
-  app.get('/v1/communities/:communityId/members', async (request, reply) => {
+  app.get("/v1/communities/:communityId/members", async (request, reply) => {
     const { communityId } = request.params as { communityId: string };
-    const requesterWallet = request.headers['x-wallet'] ?? request.headers['x-user-wallet'] ?? request.headers['x-requester-wallet'];
     // The integration test app doesn't enforce auth; service unit tests do.
     // This just ensures request parsing is stable.
-    const role = (request.query as { role?: string })?.role;
-    return mockService.listMembersForAdmin(communityId, role);
+    const query = request.query as { role?: string; limit?: string; cursor?: string };
+    const limit = query.limit ? Number(query.limit) : 50;
+    return mockService.listMembersForAdmin(communityId, query.role, { limit, cursor: query.cursor });
   });
 
   // POST /v1/communities/:communityId/members/:wallet/roles — assign a role to a member
   app.post('/v1/communities/:communityId/members/:wallet/roles', async (request, reply) => {
     const { communityId, wallet } = request.params as { communityId: string; wallet: string };
     const body = request.body as { role?: string };
-    const requesterWalletHeader = request.headers['x-wallet'] ?? request.headers['x-user-wallet'] ?? request.headers['x-requester-wallet'];
-    const requesterWallet = Array.isArray(requesterWalletHeader)
-      ? requesterWalletHeader[0] ?? ''
-      : (requesterWalletHeader as string | undefined) ?? '';
+    const requesterWallet = resolveRequesterWallet(request);
 
     try {
       return mockService.assignMemberRole({
@@ -121,10 +162,7 @@ async function buildTestApp(mockService: ReturnType<typeof createMockMemberServi
   // DELETE /v1/communities/:communityId/members/:wallet/roles/:role — remove an assigned role
   app.delete('/v1/communities/:communityId/members/:wallet/roles/:role', async (request, reply) => {
     const { communityId, wallet, role } = request.params as { communityId: string; wallet: string; role: string };
-    const requesterWalletHeader = request.headers['x-wallet'] ?? request.headers['x-user-wallet'] ?? request.headers['x-requester-wallet'];
-    const requesterWallet = Array.isArray(requesterWalletHeader)
-      ? requesterWalletHeader[0] ?? ''
-      : (requesterWalletHeader as string | undefined) ?? '';
+    const requesterWallet = resolveRequesterWallet(request);
 
     try {
       return mockService.removeMemberRole({
@@ -139,7 +177,7 @@ async function buildTestApp(mockService: ReturnType<typeof createMockMemberServi
   });
 
   // POST /v1/communities/:communityId/overrides — create or update an access override for a wallet/resource
-  app.post('/v1/communities/:communityId/overrides', async (request, reply) => {
+  app.post("/v1/communities/:communityId/overrides", async (request, reply) => {
     const { communityId } = request.params as { communityId: string };
     const body = request.body as {
       wallet?: string;
@@ -150,14 +188,11 @@ async function buildTestApp(mockService: ReturnType<typeof createMockMemberServi
     };
     if (!body?.wallet || !body?.resource || !body?.effect) {
       return reply.status(400).send({
-        error: 'VALIDATION_ERROR',
-        message: 'Missing required fields: wallet, resource, effect',
+        error: "VALIDATION_ERROR",
+        message: "Missing required fields: wallet, resource, effect",
       });
     }
-    const requesterWalletHeader = request.headers['x-wallet'] ?? request.headers['x-user-wallet'] ?? request.headers['x-requester-wallet'];
-    const requesterWallet = Array.isArray(requesterWalletHeader)
-      ? requesterWalletHeader[0] ?? ''
-      : (requesterWalletHeader as string | undefined) ?? '';
+    const requesterWallet = resolveRequesterWallet(request);
 
     try {
       return await mockService.createAccessOverride({
@@ -170,17 +205,16 @@ async function buildTestApp(mockService: ReturnType<typeof createMockMemberServi
         expiresAt: body.expiresAt ?? null,
       });
     } catch (err: any) {
-      return reply.status(err?.statusCode ?? 500).send({ error: err?.message ?? 'Internal server error' });
+      return reply
+        .status(err?.statusCode ?? 500)
+        .send({ error: err?.message ?? "Internal server error" });
     }
   });
 
   // DELETE /v1/communities/:communityId/overrides/:wallet/:resource — revoke an access override
   app.delete('/v1/communities/:communityId/overrides/:wallet/:resource', async (request, reply) => {
     const { communityId, wallet, resource } = request.params as { communityId: string; wallet: string; resource: string };
-    const requesterWalletHeader = request.headers['x-wallet'] ?? request.headers['x-user-wallet'] ?? request.headers['x-requester-wallet'];
-    const requesterWallet = Array.isArray(requesterWalletHeader)
-      ? requesterWalletHeader[0] ?? ''
-      : (requesterWalletHeader as string | undefined) ?? '';
+    const requesterWallet = resolveRequesterWallet(request);
 
     try {
       return await mockService.revokeAccessOverride({
@@ -201,24 +235,24 @@ async function buildTestApp(mockService: ReturnType<typeof createMockMemberServi
 }
 
 // --- Tests ---
-describe('GET /health', () => {
-  test('returns 200 with status ok', async () => {
+describe("GET /health", () => {
+  test("returns 200 with status ok", async () => {
     const mock = createMockMemberService();
     const app = await buildTestApp(mock);
 
-    const response = await app.inject({ method: 'GET', url: '/health' });
+    const response = await app.inject({ method: "GET", url: "/health" });
 
     expect(response.statusCode).toBe(200);
     const body = response.json();
-    expect(body.status).toBe('ok');
+    expect(body.status).toBe("ok");
     expect(body.timestamp).toBeDefined();
 
     await app.close();
   });
 });
 
-describe('GET /v1/memberships/:wallet', () => {
-  test('returns memberships for a known wallet', async () => {
+describe("GET /v1/memberships/:wallet", () => {
+  test("returns memberships for a known wallet", async () => {
     const mockData = API_CONTRACT.membershipsByWallet.successResponse;
     const mock = createMockMemberService({
       getMembershipsByWallet: jest.fn().mockResolvedValue(mockData),
@@ -230,21 +264,23 @@ describe('GET /v1/memberships/:wallet', () => {
       url: API_CONTRACT.membershipsByWallet.samplePath,
     });
 
-    expect(response.statusCode).toBe(API_CONTRACT.membershipsByWallet.successStatus);
+    expect(response.statusCode).toBe(
+      API_CONTRACT.membershipsByWallet.successStatus,
+    );
     const body = response.json();
     expect(body.wallet).toBe(mockData.wallet);
     expect(body.communities).toHaveLength(1);
-    expect(body.communities[0].state).toBe('active');
+    expect(body.communities[0].state).toBe("active");
     expect(mock.getMembershipsByWallet).toHaveBeenCalledWith(
-      '0x1234567890abcdef1234567890abcdef12345678',
+      "0x1234567890abcdef1234567890abcdef12345678",
     );
 
     await app.close();
   });
 
-  test('returns empty communities for unknown wallet', async () => {
+  test("returns empty communities for unknown wallet", async () => {
     const mockData = {
-      wallet: '0x0000000000000000000000000000000000000000',
+      wallet: "0x0000000000000000000000000000000000000000",
       communities: [],
     };
     const mock = createMockMemberService({
@@ -253,8 +289,8 @@ describe('GET /v1/memberships/:wallet', () => {
     const app = await buildTestApp(mock);
 
     const response = await app.inject({
-      method: 'GET',
-      url: '/v1/communities/community-1/memberships/0x0000000000000000000000000000000000000000',
+      method: "GET",
+      url: "/v1/communities/community-1/memberships/0x0000000000000000000000000000000000000000",
     });
 
     expect(response.statusCode).toBe(200);
@@ -264,8 +300,8 @@ describe('GET /v1/memberships/:wallet', () => {
   });
 });
 
-describe('GET /v1/members/:wallet', () => {
-  test('returns 200 with profile for found member', async () => {
+describe("GET /v1/members/:wallet", () => {
+  test("returns 200 with profile for found member", async () => {
     const mockData = API_CONTRACT.memberProfileByWallet.successResponse;
     const mock = createMockMemberService({
       getProfileByWallet: jest.fn().mockResolvedValue(mockData),
@@ -277,38 +313,40 @@ describe('GET /v1/members/:wallet', () => {
       url: API_CONTRACT.memberProfileByWallet.samplePath,
     });
 
-    expect(response.statusCode).toBe(API_CONTRACT.memberProfileByWallet.successStatus);
+    expect(response.statusCode).toBe(
+      API_CONTRACT.memberProfileByWallet.successStatus,
+    );
     const body = response.json();
-    expect(body.profile.displayName).toBe('Alice');
-    expect(body.roles).toEqual(['admin']);
+    expect(body.profile.displayName).toBe("Alice");
+    expect(body.roles).toEqual(["admin"]);
 
     await app.close();
   });
 
-  test('returns 404 with standardised error envelope when member not found', async () => {
+  test("returns 404 with standardised error envelope when member not found", async () => {
     const mock = createMockMemberService({
       getProfileByWallet: jest.fn().mockResolvedValue(null),
     });
     const app = await buildTestApp(mock);
 
     const response = await app.inject({
-      method: 'GET',
-      url: '/v1/communities/community-1/members/0x0000000000000000000000000000000000000000',
+      method: "GET",
+      url: "/v1/communities/community-1/members/0x0000000000000000000000000000000000000000",
     });
 
     expect(response.statusCode).toBe(404);
     const body = response.json();
-    expect(body.error).toBe('NOT_FOUND');
-    expect(body.code).toBe('NOT_FOUND');
-    expect(body.message).toBe('Member not found');
+    expect(body.error).toBe("NOT_FOUND");
+    expect(body.code).toBe("NOT_FOUND");
+    expect(body.message).toBe("Member not found");
     expect(body.statusCode).toBe(404);
 
     await app.close();
   });
 });
 
-describe('POST /v1/access/check', () => {
-  test('returns allowed=true when access is granted', async () => {
+describe("POST /v1/access/check", () => {
+  test("returns allowed=true when access is granted", async () => {
     const mockResult = API_CONTRACT.accessCheck.successResponse;
     const mock = createMockMemberService({
       checkAccess: jest.fn().mockResolvedValue(mockResult),
@@ -324,16 +362,16 @@ describe('POST /v1/access/check', () => {
     expect(response.statusCode).toBe(API_CONTRACT.accessCheck.successStatus);
     const body = response.json();
     expect(body.allowed).toBe(true);
-    expect(body.code).toBe('ALLOW');
+    expect(body.code).toBe("ALLOW");
 
     await app.close();
   });
 
-  test('returns allowed=false when access is denied', async () => {
+  test("returns allowed=false when access is denied", async () => {
     const mockResult = {
       allowed: false,
-      code: 'DENY',
-      membershipState: 'expired',
+      code: "DENY",
+      membershipState: "expired",
     };
     const mock = createMockMemberService({
       checkAccess: jest.fn().mockResolvedValue(mockResult),
@@ -341,37 +379,37 @@ describe('POST /v1/access/check', () => {
     const app = await buildTestApp(mock);
 
     const response = await app.inject({
-      method: 'POST',
-      url: '/v1/access/check',
+      method: "POST",
+      url: "/v1/access/check",
       payload: {
-        wallet: '0x1234567890abcdef1234567890abcdef12345678',
-        communityId: 'community-1',
-        resource: 'resource-1',
+        wallet: "0x1234567890abcdef1234567890abcdef12345678",
+        communityId: "community-1",
+        resource: "resource-1",
       },
     });
 
     expect(response.statusCode).toBe(200);
     const body = response.json();
     expect(body.allowed).toBe(false);
-    expect(body.code).toBe('DENY');
+    expect(body.code).toBe("DENY");
 
     await app.close();
   });
 
-  test('returns 400 with standardised error envelope when required fields are missing', async () => {
+  test("returns 400 with standardised error envelope when required fields are missing", async () => {
     const mock = createMockMemberService();
     const app = await buildTestApp(mock);
 
     const response = await app.inject({
-      method: 'POST',
-      url: '/v1/access/check',
-      payload: { wallet: '0x1234' },
+      method: "POST",
+      url: "/v1/access/check",
+      payload: { wallet: "0x1234" },
     });
 
     expect(response.statusCode).toBe(400);
     const body = response.json();
-    expect(body.error).toBe('VALIDATION_ERROR');
-    expect(body.code).toBe('VALIDATION_ERROR');
+    expect(body.error).toBe("VALIDATION_ERROR");
+    expect(body.code).toBe("VALIDATION_ERROR");
     expect(body.message).toMatch(/Missing required fields/);
     expect(body.statusCode).toBe(400);
 
@@ -379,9 +417,12 @@ describe('POST /v1/access/check', () => {
   });
 });
 
-describe('GET /v1/communities/:communityId/members', () => {
-  test('returns member list for a community', async () => {
-    const mockData = API_CONTRACT.communityMembers.successResponse;
+describe("GET /v1/communities/:communityId/members", () => {
+  test("returns member list with pagination for a community", async () => {
+    const mockData = {
+      ...API_CONTRACT.communityMembers.successResponse,
+      pagination: { page: 1, limit: 20, total: 2, totalPages: 1 },
+    };
     const mock = createMockMemberService({
       listMembersForAdmin: jest.fn().mockResolvedValue(mockData),
     });
@@ -392,35 +433,61 @@ describe('GET /v1/communities/:communityId/members', () => {
       url: API_CONTRACT.communityMembers.samplePath,
     });
 
-    expect(response.statusCode).toBe(API_CONTRACT.communityMembers.successStatus);
+    expect(response.statusCode).toBe(
+      API_CONTRACT.communityMembers.successStatus,
+    );
     const body = response.json();
     expect(body.members).toHaveLength(2);
-    expect(mock.listMembersForAdmin).toHaveBeenCalledWith('community-1', undefined);
+    expect(mock.listMembersForAdmin).toHaveBeenCalledWith('community-1', undefined, { limit: 50, cursor: undefined });
 
     await app.close();
   });
 
-  test('passes role filter query param', async () => {
+  test("passes role, status, page, limit query params", async () => {
     const mock = createMockMemberService({
-      listMembersForAdmin: jest.fn().mockResolvedValue({ members: [] }),
+      listMembersForAdmin: jest.fn().mockResolvedValue({
+        members: [],
+        pagination: { page: 2, limit: 10, total: 0, totalPages: 0 },
+      }),
     });
     const app = await buildTestApp(mock);
 
     const response = await app.inject({
       method: API_CONTRACT.communityMembers.method,
-      url: API_CONTRACT.communityMembers.samplePathWithRole,
+      url: "/v1/communities/community-1/members?role=admin&status=active&page=2&limit=10",
     });
 
     expect(response.statusCode).toBe(200);
-    expect(mock.listMembersForAdmin).toHaveBeenCalledWith('community-1', 'admin');
+    expect(mock.listMembersForAdmin).toHaveBeenCalledWith('community-1', 'admin', { limit: 50, cursor: undefined });
 
     await app.close();
   });
+
+  test('passes pagination query params', async () => {
+    const mock = createMockMemberService({
+      listMembersForAdmin: jest.fn().mockResolvedValue({
+        members: [],
+        pagination: { limit: 2, hasMore: true, nextCursor: 'member-2' },
+      }),
+    });
+    const app = await buildTestApp(mock);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/v1/communities/community-1/members?limit=2&cursor=member-1',
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().pagination).toEqual({ limit: 2, hasMore: true, nextCursor: 'member-2' });
+    expect(mock.listMembersForAdmin).toHaveBeenCalledWith('community-1', undefined, { limit: 2, cursor: 'member-1' });
+
+    await app.close();
+  });
+
 });
 
-describe('POST /v1/communities/:communityId/members/:wallet/roles', () => {
-  test('assigns a role to a member', async () => {
-
+describe("POST /v1/communities/:communityId/members/:wallet/roles", () => {
+  test("assigns a role to a member", async () => {
     const mockResponse = API_CONTRACT.assignMemberRole.successResponse;
     const mock = createMockMemberService({
       assignMemberRole: jest.fn().mockResolvedValue(mockResponse),
@@ -431,21 +498,172 @@ describe('POST /v1/communities/:communityId/members/:wallet/roles', () => {
       method: API_CONTRACT.assignMemberRole.method,
       url: API_CONTRACT.assignMemberRole.samplePath,
       headers: {
-        'x-wallet': '0xrequester0000000000000000000000000000000000',
+        "x-wallet": "0xrequester0000000000000000000000000000000000",
       },
       payload: API_CONTRACT.assignMemberRole.requestBody,
     });
 
     expect(response.statusCode).toBe(200);
-    expect(response.json().role).toBe('admin');
+    expect(response.json().role).toBe("admin");
     expect(mock.assignMemberRole).toHaveBeenCalled();
+
+    await app.close();
+  });
+
+  test("returns 400 with INVALID_WALLET when target wallet format is invalid", async () => {
+    const mock = createMockMemberService();
+    const app = await buildTestApp(mock);
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/communities/community-1/members/0xinvalidwallet/roles",
+      payload: { role: "admin" },
+    });
+
+    expect(response.statusCode).toBe(400);
+    const body = response.json();
+    expect(body.error).toBe("INVALID_WALLET");
+    expect(body.code).toBe("INVALID_WALLET");
+    expect(body.reasons[0].code).toBe("INVALID_WALLET");
+
+    await app.close();
+  });
+
+  test("returns 400 with UNKNOWN_COMMUNITY when communityId is unknown", async () => {
+    const mock = createMockMemberService();
+    const app = await buildTestApp(mock);
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/communities/unknown-community/members/0x1234567890abcdef1234567890abcdef12345678/roles",
+      payload: { role: "admin" },
+    });
+
+    expect(response.statusCode).toBe(400);
+    const body = response.json();
+    expect(body.error).toBe("UNKNOWN_COMMUNITY");
+    expect(body.code).toBe("UNKNOWN_COMMUNITY");
+    expect(body.reasons[0].code).toBe("UNKNOWN_COMMUNITY");
+
+    await app.close();
+  });
+
+  test("returns 400 with INVALID_ROLE when role is unrecognized", async () => {
+    const mock = createMockMemberService();
+    const app = await buildTestApp(mock);
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/communities/community-1/members/0x1234567890abcdef1234567890abcdef12345678/roles",
+      payload: { role: "super-admin" },
+    });
+
+    expect(response.statusCode).toBe(400);
+    const body = response.json();
+    expect(body.error).toBe("INVALID_ROLE");
+    expect(body.code).toBe("INVALID_ROLE");
+    expect(body.reasons[0].code).toBe("INVALID_ROLE");
+
+    await app.close();
+  });
+
+  test("returns 200 without assigning a duplicate role", async () => {
+    const mock = createMockMemberService({
+      assignMemberRole: jest.fn().mockResolvedValue({
+        communityId: "community-1",
+        wallet: "0x1234567890abcdef1234567890abcdef12345678",
+        role: "admin",
+        assigned: false,
+        removed: false,
+        message: "Role already assigned",
+      }),
+    });
+    const app = await buildTestApp(mock);
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/communities/community-1/members/0x1234567890abcdef1234567890abcdef12345678/roles",
+      headers: { "x-wallet": "0x1111111111111111111111111111111111111111" },
+      payload: { role: "admin" },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      assigned: false,
+      removed: false,
+      message: "Role already assigned",
+    });
+
+    await app.close();
+  });
+
+  test("returns 404 when the target wallet does not exist", async () => {
+    const mock = createMockMemberService({
+      assignMemberRole: jest
+        .fn()
+        .mockRejectedValue({ statusCode: 404, message: "Target wallet not found" }),
+    });
+    const app = await buildTestApp(mock);
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/communities/community-1/members/0x1234567890abcdef1234567890abcdef12345678/roles",
+      headers: { "x-wallet": "0x1111111111111111111111111111111111111111" },
+      payload: { role: "member" },
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json().error).toBe("Target wallet not found");
+
+    await app.close();
+  });
+
+  test("returns 403 when the requester is not a community admin", async () => {
+    const mock = createMockMemberService({
+      assignMemberRole: jest
+        .fn()
+        .mockRejectedValue({ statusCode: 403, message: "Not authorized" }),
+    });
+    const app = await buildTestApp(mock);
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/communities/community-1/members/0x1234567890abcdef1234567890abcdef12345678/roles",
+      headers: { "x-wallet": "0x1111111111111111111111111111111111111111" },
+      payload: { role: "member" },
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json().error).toBe("Not authorized");
+
+    await app.close();
+  });
+
+  test("does not assign a role to a wallet outside the scoped community", async () => {
+    const assignMemberRole = jest
+      .fn()
+      .mockRejectedValue({ statusCode: 404, message: "Target not a member" });
+    const mock = createMockMemberService({ assignMemberRole });
+    const app = await buildTestApp(mock);
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/communities/community-1/members/0x1234567890abcdef1234567890abcdef12345678/roles",
+      headers: { "x-wallet": "0x1111111111111111111111111111111111111111" },
+      payload: { role: "contributor" },
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(assignMemberRole).toHaveBeenCalledWith(
+      expect.objectContaining({ communityId: "community-1" }),
+    );
 
     await app.close();
   });
 });
 
-describe('DELETE /v1/communities/:communityId/members/:wallet/roles/:role', () => {
-  test('removes a role from a member', async () => {
+describe("DELETE /v1/communities/:communityId/members/:wallet/roles/:role", () => {
+  test("removes a role from a member", async () => {
     const mockResponse = API_CONTRACT.removeMemberRole.successResponse;
     const mock = createMockMemberService({
       removeMemberRole: jest.fn().mockResolvedValue(mockResponse),
@@ -456,7 +674,7 @@ describe('DELETE /v1/communities/:communityId/members/:wallet/roles/:role', () =
       method: API_CONTRACT.removeMemberRole.method,
       url: API_CONTRACT.removeMemberRole.samplePath,
       headers: {
-        'x-wallet': '0xrequester0000000000000000000000000000000000',
+        "x-wallet": "0xrequester0000000000000000000000000000000000",
       },
     });
 
@@ -466,15 +684,210 @@ describe('DELETE /v1/communities/:communityId/members/:wallet/roles/:role', () =
 
     await app.close();
   });
+
 });
 
-describe('POST /v1/communities/:communityId/overrides', () => {
-  test('creates or updates a manual access override', async () => {
+describe("POST /v1/communities/:communityId/members/:wallet/badges", () => {
+  test("assigns a badge to a member", async () => {
     const mockResponse = {
-      communityId: 'community-1',
-      wallet: '0xwallet1234567890abcdef1234567890abcdef12',
-      resource: 'dashboard',
-      effect: 'ALLOW',
+      communityId: "community-1",
+      wallet: "0x1234567890abcdef1234567890abcdef12345678",
+      badge: {
+        id: "badge-1",
+        memberId: "member-1",
+        label: "Top Contributor",
+        issuedAt: "2026-01-01T00:00:00.000Z",
+      },
+      assigned: true,
+      removed: false,
+    };
+    const mock = createMockMemberService({
+      assignBadge: jest.fn().mockResolvedValue(mockResponse),
+    });
+    const app = await buildTestApp(mock);
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/communities/community-1/members/0x1234567890abcdef1234567890abcdef12345678/badges",
+      headers: {
+        "x-wallet": "0xrequester0000000000000000000000000000000000",
+      },
+      payload: { label: "Top Contributor" },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.assigned).toBe(true);
+    expect(body.badge.label).toBe("Top Contributor");
+    expect(mock.assignBadge).toHaveBeenCalledWith({
+      requesterWallet: "0xrequester0000000000000000000000000000000000",
+      communityId: "community-1",
+      targetWallet: "0x1234567890abcdef1234567890abcdef12345678",
+      label: "Top Contributor",
+    });
+
+    await app.close();
+  });
+
+  test("returns 400 with INVALID_WALLET when target wallet format is invalid", async () => {
+    const mock = createMockMemberService();
+    const app = await buildTestApp(mock);
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/communities/community-1/members/0xinvalidwallet/badges",
+      payload: { label: "Top Contributor" },
+    });
+
+    expect(response.statusCode).toBe(400);
+    const body = response.json();
+    expect(body.error).toBe("INVALID_WALLET");
+
+    await app.close();
+  });
+
+  test("returns 400 with UNKNOWN_COMMUNITY when communityId is unknown", async () => {
+    const mock = createMockMemberService();
+    const app = await buildTestApp(mock);
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/communities/unknown-community/members/0x1234567890abcdef1234567890abcdef12345678/badges",
+      payload: { label: "Top Contributor" },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error).toBe("UNKNOWN_COMMUNITY");
+
+    await app.close();
+  });
+
+  test("returns 400 when label is missing", async () => {
+    const mock = createMockMemberService();
+    const app = await buildTestApp(mock);
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/communities/community-1/members/0x1234567890abcdef1234567890abcdef12345678/badges",
+      payload: {},
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error).toBe("VALIDATION_ERROR");
+
+    await app.close();
+  });
+});
+
+describe("GET /v1/communities/:communityId/members/:wallet/badges", () => {
+  test("returns badges for a member", async () => {
+    const mockResponse = {
+      communityId: "community-1",
+      wallet: "0x1234567890abcdef1234567890abcdef12345678",
+      badges: [
+        {
+          id: "badge-1",
+          memberId: "member-1",
+          label: "Top Contributor",
+          issuedAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+    };
+    const mock = createMockMemberService({
+      listBadgesForMember: jest.fn().mockResolvedValue(mockResponse),
+    });
+    const app = await buildTestApp(mock);
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/v1/communities/community-1/members/0x1234567890abcdef1234567890abcdef12345678/badges",
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.badges).toHaveLength(1);
+    expect(mock.listBadgesForMember).toHaveBeenCalledWith(
+      "community-1",
+      "0x1234567890abcdef1234567890abcdef12345678",
+    );
+
+    await app.close();
+  });
+
+  test("returns 404 when the wallet is not a member", async () => {
+    const mock = createMockMemberService({
+      listBadgesForMember: jest.fn().mockResolvedValue(null),
+    });
+    const app = await buildTestApp(mock);
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/v1/communities/community-1/members/0x1234567890abcdef1234567890abcdef12345678/badges",
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json().error).toBe("NOT_FOUND");
+
+    await app.close();
+  });
+});
+
+describe("DELETE /v1/communities/:communityId/members/:wallet/badges/:badgeId", () => {
+  test("revokes a badge from a member", async () => {
+    const mockResponse = {
+      communityId: "community-1",
+      wallet: "0x1234567890abcdef1234567890abcdef12345678",
+      assigned: false,
+      removed: true,
+    };
+    const mock = createMockMemberService({
+      revokeBadge: jest.fn().mockResolvedValue(mockResponse),
+    });
+    const app = await buildTestApp(mock);
+
+    const response = await app.inject({
+      method: "DELETE",
+      url: "/v1/communities/community-1/members/0x1234567890abcdef1234567890abcdef12345678/badges/badge-1",
+      headers: {
+        "x-wallet": "0xrequester0000000000000000000000000000000000",
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().removed).toBe(true);
+    expect(mock.revokeBadge).toHaveBeenCalledWith({
+      requesterWallet: "0xrequester0000000000000000000000000000000000",
+      communityId: "community-1",
+      targetWallet: "0x1234567890abcdef1234567890abcdef12345678",
+      badgeId: "badge-1",
+    });
+
+    await app.close();
+  });
+
+  test("returns 400 with INVALID_WALLET when target wallet format is invalid", async () => {
+    const mock = createMockMemberService();
+    const app = await buildTestApp(mock);
+
+    const response = await app.inject({
+      method: "DELETE",
+      url: "/v1/communities/community-1/members/0xinvalidwallet/badges/badge-1",
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error).toBe("INVALID_WALLET");
+
+    await app.close();
+  });
+});
+
+describe("POST /v1/communities/:communityId/overrides", () => {
+  test("creates or updates a manual access override", async () => {
+    const mockResponse = {
+      communityId: "community-1",
+      wallet: "0xwallet1234567890abcdef1234567890abcdef12",
+      resource: "dashboard",
+      effect: "ALLOW",
       created: true,
       removed: false,
     };
@@ -484,62 +897,62 @@ describe('POST /v1/communities/:communityId/overrides', () => {
     const app = await buildTestApp(mock);
 
     const response = await app.inject({
-      method: 'POST',
-      url: '/v1/communities/community-1/overrides',
+      method: "POST",
+      url: "/v1/communities/community-1/overrides",
       headers: {
-        'x-wallet': '0xrequester0000000000000000000000000000000000',
+        "x-wallet": "0xrequester0000000000000000000000000000000000",
       },
       payload: {
-        wallet: '0xwallet1234567890abcdef1234567890abcdef12',
-        resource: 'dashboard',
-        effect: 'ALLOW',
-        reason: 'VIP Client',
+        wallet: "0xwallet1234567890abcdef1234567890abcdef12",
+        resource: "dashboard",
+        effect: "ALLOW",
+        reason: "VIP Client",
       },
     });
 
     expect(response.statusCode).toBe(200);
     const body = response.json();
     expect(body.created).toBe(true);
-    expect(body.effect).toBe('ALLOW');
+    expect(body.effect).toBe("ALLOW");
     expect(mock.createAccessOverride).toHaveBeenCalledWith({
-      requesterWallet: '0xrequester0000000000000000000000000000000000',
-      communityId: 'community-1',
-      wallet: '0xwallet1234567890abcdef1234567890abcdef12',
-      resource: 'dashboard',
-      effect: 'ALLOW',
-      reason: 'VIP Client',
+      requesterWallet: "0xrequester0000000000000000000000000000000000",
+      communityId: "community-1",
+      wallet: "0xwallet1234567890abcdef1234567890abcdef12",
+      resource: "dashboard",
+      effect: "ALLOW",
+      reason: "VIP Client",
       expiresAt: null,
     });
 
     await app.close();
   });
 
-  test('returns 400 when missing required fields', async () => {
+  test("returns 400 when missing required fields", async () => {
     const mock = createMockMemberService();
     const app = await buildTestApp(mock);
 
     const response = await app.inject({
-      method: 'POST',
-      url: '/v1/communities/community-1/overrides',
+      method: "POST",
+      url: "/v1/communities/community-1/overrides",
       payload: {
-        wallet: '0xwallet1234567890abcdef1234567890abcdef12',
+        wallet: "0xwallet1234567890abcdef1234567890abcdef12",
       },
     });
 
     expect(response.statusCode).toBe(400);
-    expect(response.json().error).toBe('VALIDATION_ERROR');
+    expect(response.json().error).toBe("VALIDATION_ERROR");
 
     await app.close();
   });
 });
 
-describe('DELETE /v1/communities/:communityId/overrides/:wallet/:resource', () => {
-  test('revokes a manual access override', async () => {
+describe("DELETE /v1/communities/:communityId/overrides/:wallet/:resource", () => {
+  test("revokes a manual access override", async () => {
     const mockResponse = {
-      communityId: 'community-1',
-      wallet: '0xwallet1234567890abcdef1234567890abcdef12',
-      resource: 'dashboard',
-      effect: 'DENY',
+      communityId: "community-1",
+      wallet: "0xwallet1234567890abcdef1234567890abcdef12",
+      resource: "dashboard",
+      effect: "DENY",
       created: false,
       removed: true,
     };
@@ -549,10 +962,10 @@ describe('DELETE /v1/communities/:communityId/overrides/:wallet/:resource', () =
     const app = await buildTestApp(mock);
 
     const response = await app.inject({
-      method: 'DELETE',
-      url: '/v1/communities/community-1/overrides/0xwallet1234567890abcdef1234567890abcdef12/dashboard',
+      method: "DELETE",
+      url: "/v1/communities/community-1/overrides/0xwallet1234567890abcdef1234567890abcdef12/dashboard",
       headers: {
-        'x-wallet': '0xrequester0000000000000000000000000000000000',
+        "x-wallet": "0xrequester0000000000000000000000000000000000",
       },
     });
 
@@ -560,14 +973,13 @@ describe('DELETE /v1/communities/:communityId/overrides/:wallet/:resource', () =
     const body = response.json();
     expect(body.removed).toBe(true);
     expect(mock.revokeAccessOverride).toHaveBeenCalledWith({
-      requesterWallet: '0xrequester0000000000000000000000000000000000',
-      communityId: 'community-1',
-      wallet: '0xwallet1234567890abcdef1234567890abcdef12',
-      resource: 'dashboard',
-      effect: 'DENY',
+      requesterWallet: "0xrequester0000000000000000000000000000000000",
+      communityId: "community-1",
+      wallet: "0xwallet1234567890abcdef1234567890abcdef12",
+      resource: "dashboard",
+      effect: "DENY",
     });
 
     await app.close();
   });
 });
-

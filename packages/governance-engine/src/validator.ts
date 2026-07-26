@@ -101,7 +101,7 @@ export function validateRuleAST(node: unknown, depth: number = 0): ValidationRes
       return validateNOfMNode(ruleNode as any, depth);
     
     default:
-      errors.push(`Unknown rule type: ${ruleNode.type}`);
+      errors.push(`Unknown rule type: ${(ruleNode as any).type}`);
       return { valid: false, errors };
   }
 }
@@ -371,6 +371,15 @@ export function parseAndValidateRuleJSON(json: string): {
   validation: ValidationResult;
 } {
   try {
+    if (json.includes('"__proto__"') || json.includes('"prototype"') || json.includes('"constructor"')) {
+      return {
+        ast: null,
+        validation: {
+          valid: false,
+          errors: ['Prototype injection attempt detected'],
+        },
+      };
+    }
     const parsed = JSON.parse(json);
     const validation = validateRuleAST(parsed);
     

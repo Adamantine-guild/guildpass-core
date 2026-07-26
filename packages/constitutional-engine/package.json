@@ -1,0 +1,23 @@
+{
+  "name": "@guildpass/constitutional-engine",
+  "version": "0.1.0",
+  "private": false,
+  "type": "commonjs",
+  "main": "dist/src/index.js",
+  "types": "dist/src/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "jest --passWithNoTests",
+    "lint": "eslint 'src/**/*.ts'"
+  },
+  "dependencies": {
+    "@guildpass/shared-types": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.0",
+    "@types/jest": "^29.5.12"
+  }
+}

@@ -5,15 +5,26 @@ jest.mock('../services/auditService', () => ({ logEvent: jest.fn() }));
 jest.mock('../services/outboxService', () => ({
   logOutboxEventTx: jest.fn().mockResolvedValue({ eventId: "evt-1", status: "pending" }),
 }));
-jest.mock('../services/prisma', () => ({ getPrisma: jest.fn(() => ({ membership: { findMany: jest.fn().mockResolvedValue([]), update: jest.fn() } })) }));
+jest.mock('../services/prisma', () => ({ getPrisma: jest.fn(() => ({ membershipToken: { findMany: jest.fn().mockResolvedValue([]), update: jest.fn() } })) }));
 
 const past = new Date(Date.now() - 86_400_000);   // 1 day ago
 const future = new Date(Date.now() + 86_400_000); // 1 day from now
 
 function makePrisma(memberships: any[]) {
+  const staleTokens = memberships.map((m, idx) => ({
+    tokenId: m.tokenId ?? (m.id === "m1" ? 101 : m.id === "m2" ? 102 : 103),
+    memberId: m.memberId ?? m.id,
+    state: m.state,
+    expiresAt: m.expiresAt,
+    member: m.member ?? {
+      communityId: 'c1',
+      walletId: 'w1',
+    },
+  }));
+
   const prisma: any = {
-    membership: {
-      findMany: jest.fn().mockResolvedValue(memberships),
+    membershipToken: {
+      findMany: jest.fn().mockResolvedValue(staleTokens),
       update: jest.fn().mockResolvedValue({}),
     },
   };
@@ -31,7 +42,7 @@ describe('reconcileMemberships', () => {
 
     const result = await reconcileMemberships(db);
 
-    expect(db.membership.findMany).toHaveBeenCalledWith(
+    expect(db.membershipToken.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
           state: { in: ['active', 'suspended'] },
@@ -101,7 +112,7 @@ describe('reconcileMemberships', () => {
     expect(r1.updatedCount).toBe(1);
 
     // Second pass: DB now returns nothing (already expired)
-    (db.membership.findMany as jest.Mock).mockResolvedValue([]);
+    (db.membershipToken.findMany as jest.Mock).mockResolvedValue([]);
 
     const r2 = await reconcileMemberships(db);
     expect(r2).toEqual({ updatedCount: 0, errors: 0 });

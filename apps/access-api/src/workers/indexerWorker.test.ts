@@ -5,24 +5,41 @@ describe('IndexerWorker', () => {
   let prisma: any;
   let provider: jest.Mocked<ChainProvider>;
   let worker: IndexerWorker;
+  const chainId = 31337;
+  const contractAddress = '0x0000000000000000000000000000000000000000';
 
   beforeEach(() => {
     prisma = {
-      indexerState: {
+      indexerCheckpoint: {
         findUnique: jest.fn(),
         upsert: jest.fn(),
         update: jest.fn(),
+      },
+      blockHeader: {
+        findUnique: jest.fn(),
+        upsert: jest.fn(),
+        deleteMany: jest.fn(),
       },
       processedEvent: {
         findUnique: jest.fn(),
         create: jest.fn(),
         deleteMany: jest.fn(),
       },
+      auditEvent: {
+        findMany: jest.fn().mockResolvedValue([]),
+        deleteMany: jest.fn(),
+      },
+      outboxEvent: {
+        deleteMany: jest.fn(),
+      },
       $transaction: jest.fn((cb) => cb(prisma)),
       wallet: { upsert: jest.fn() },
       community: { upsert: jest.fn() },
       member: { upsert: jest.fn() },
-      membership: { upsert: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
+      membership: { upsert: jest.fn(), findFirst: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
+      membershipToken: { upsert: jest.fn(), findUnique: jest.fn(), update: jest.fn(), deleteMany: jest.fn() },
+      contractAdmin: { findUnique: jest.fn(), upsert: jest.fn(), update: jest.fn(), deleteMany: jest.fn() },
+      contractOwnership: { findUnique: jest.fn(), upsert: jest.fn(), update: jest.fn(), deleteMany: jest.fn() },
     };
 
     provider = {
@@ -37,7 +54,7 @@ describe('IndexerWorker', () => {
     });
   });
 
-  test('should process blocks and update checkpoint', async () => {
+  test('should process blocks and update indexerCheckpoint per chain & contract', async () => {
     provider.getLatestBlockNumber.mockResolvedValue(100);
     prisma.indexerState.findUnique.mockResolvedValue({
       lastBlockNumber: 80,
@@ -62,9 +79,10 @@ describe('IndexerWorker', () => {
     expect(prisma.indexerState.upsert).toHaveBeenCalledWith(expect.objectContaining({
       create: expect.objectContaining({ chainId: 1, lastBlockNumber: 88 }),
     }));
+    expect(metrics.indexerLag.set).toHaveBeenCalledWith({ chain_id: String(chainId) }, 20); // 100 - 80 = 20
   });
 
-  test('should detect reorg and rewind', async () => {
+  test('should detect reorg, trigger reconciliation duration metric, and rewind to LCA', async () => {
     provider.getLatestBlockNumber.mockResolvedValue(100);
     prisma.indexerState.findUnique.mockResolvedValue({
       lastBlockNumber: 80,
@@ -73,13 +91,17 @@ describe('IndexerWorker', () => {
       contractAddress: '0x0000000000000000000000000000000000000001',
       lastBlockHash: 'hash80-old',
     });
+  });
+
+  test('should support backfill mode to process historical block range', async () => {
+    provider.getLogs.mockResolvedValue([]);
     provider.getBlock.mockImplementation(async (n) => ({
       number: n,
-      hash: `hash${n}`, // Will return hash80 for block 80, which differs from hash80-old
+      hash: `hash${n}`,
       parentHash: `hash${n - 1}`,
     }));
 
-    await worker.runPass();
+    await worker.backfill(50, 250);
 
     expect(prisma.indexerState.update).toHaveBeenCalled();
     // Rewind 80 - 12*2 = 56
@@ -88,34 +110,251 @@ describe('IndexerWorker', () => {
     });
   });
 
-  test('should handle duplicate logs idempotently via applyContractEvent', async () => {
-    provider.getLatestBlockNumber.mockResolvedValue(100);
-    prisma.indexerState.findUnique.mockResolvedValue({
-      lastBlockNumber: 80,
-      lastBlockHash: 'hash80',
+  describe('applyContractEvent - Admin & Ownership Events', () => {
+    const transactionHash = '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef';
+    const blockHash = '0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890';
+    const logIndex = 1;
+    const blockNumber = 100;
+
+    beforeEach(() => {
+      jest.clearAllMocks();
     });
-    provider.getBlock.mockResolvedValue({ number: 80, hash: 'hash80', parentHash: 'hash79' });
 
-    const mockLog: DecodedContractEvent = {
-      type: 'MembershipMinted',
-      to: '0x123',
-      tokenId: 1,
-      communityId: 'c1',
-      expiresAt: 1000,
-      transactionHash: 'tx1',
-      logIndex: 0,
-      blockNumber: 81,
-      blockHash: 'hash81',
-    };
-    provider.getLogs.mockResolvedValue([mockLog]);
+    test('should handle AdminUpdated event (grant admin)', async () => {
+      const event: DecodedContractEvent = {
+        type: 'AdminUpdated',
+        admin: '0xAdminAddress12345678901234567890123456',
+        enabled: true,
+        chainId,
+        transactionHash,
+        blockHash,
+        logIndex,
+        blockNumber,
+      };
 
-    // Simulate already processed
-    prisma.processedEvent.findUnique.mockResolvedValue({ id: 'existing' });
+      prisma.processedEvent.findUnique.mockResolvedValue(null);
+      prisma.contractAdmin.findUnique.mockResolvedValue(null);
+      prisma.contractAdmin.upsert.mockResolvedValue({
+        chainId,
+        address: event.admin.toLowerCase(),
+        enabled: true,
+      });
 
-    await worker.runPass();
+      const { writeChainedAuditEvent } = require('../services/auditChainHasher');
 
-    // Should NOT call wallet upsert because it's already processed
-    expect(prisma.wallet.upsert).not.toHaveBeenCalled();
+      await applyContractEvent(prisma as any, event);
+
+      expect(prisma.contractAdmin.upsert).toHaveBeenCalledWith({
+        where: {
+          chainId_address: {
+            chainId,
+            address: event.admin.toLowerCase(),
+          },
+        },
+        update: { enabled: true },
+        create: {
+          chainId,
+          address: event.admin.toLowerCase(),
+          enabled: true,
+        },
+      });
+
+      expect(writeChainedAuditEvent).toHaveBeenCalledWith(prisma, expect.objectContaining({
+        eventType: 'CONTRACT_ADMIN_UPDATED',
+        walletId: event.admin.toLowerCase(),
+        chainId,
+        txHash: transactionHash,
+        blockNumber,
+        logIndex,
+        afterState: { enabled: true },
+      }));
+
+      expect(prisma.processedEvent.create).toHaveBeenCalledWith({
+        data: {
+          transactionHash,
+          logIndex,
+          blockHash,
+          blockNumber,
+          eventType: 'AdminUpdated',
+        },
+      });
+    });
+
+    test('should handle AdminUpdated event (revoke admin)', async () => {
+      const event: DecodedContractEvent = {
+        type: 'AdminUpdated',
+        admin: '0xAdminAddress12345678901234567890123456',
+        enabled: false,
+        chainId,
+        transactionHash,
+        blockHash,
+        logIndex,
+        blockNumber,
+      };
+
+      prisma.processedEvent.findUnique.mockResolvedValue(null);
+      prisma.contractAdmin.findUnique.mockResolvedValue({
+        chainId,
+        address: event.admin.toLowerCase(),
+        enabled: true,
+      });
+      prisma.contractAdmin.upsert.mockResolvedValue({
+        chainId,
+        address: event.admin.toLowerCase(),
+        enabled: false,
+      });
+
+      const { writeChainedAuditEvent } = require('../services/auditChainHasher');
+
+      await applyContractEvent(prisma as any, event);
+
+      expect(prisma.contractAdmin.upsert).toHaveBeenCalledWith({
+        where: {
+          chainId_address: {
+            chainId,
+            address: event.admin.toLowerCase(),
+          },
+        },
+        update: { enabled: false },
+        create: {
+          chainId,
+          address: event.admin.toLowerCase(),
+          enabled: false,
+        },
+      });
+
+      expect(writeChainedAuditEvent).toHaveBeenCalledWith(prisma, expect.objectContaining({
+        eventType: 'CONTRACT_ADMIN_UPDATED',
+        walletId: event.admin.toLowerCase(),
+        beforeState: { enabled: true },
+        afterState: { enabled: false },
+      }));
+    });
+
+    test('should handle OwnershipTransferProposed event', async () => {
+      const event: DecodedContractEvent = {
+        type: 'OwnershipTransferProposed',
+        currentOwner: '0xCurrentOwnerAddress1234567890123456',
+        proposedOwner: '0xProposedOwnerAddress1234567890123456',
+        chainId,
+        transactionHash,
+        blockHash,
+        logIndex,
+        blockNumber,
+      };
+
+      prisma.processedEvent.findUnique.mockResolvedValue(null);
+      prisma.contractOwnership.findUnique.mockResolvedValue(null);
+      prisma.contractOwnership.upsert.mockResolvedValue({
+        chainId,
+        owner: event.currentOwner.toLowerCase(),
+        proposedOwner: event.proposedOwner.toLowerCase(),
+      });
+
+      const { writeChainedAuditEvent } = require('../services/auditChainHasher');
+
+      await applyContractEvent(prisma as any, event);
+
+      expect(prisma.contractOwnership.upsert).toHaveBeenCalledWith({
+        where: { chainId },
+        update: { proposedOwner: event.proposedOwner.toLowerCase() },
+        create: {
+          chainId,
+          owner: event.currentOwner.toLowerCase(),
+          proposedOwner: event.proposedOwner.toLowerCase(),
+        },
+      });
+
+      expect(writeChainedAuditEvent).toHaveBeenCalledWith(prisma, expect.objectContaining({
+        eventType: 'CONTRACT_OWNERSHIP_TRANSFERRED',
+        walletId: event.proposedOwner.toLowerCase(),
+        afterState: {
+          owner: event.currentOwner.toLowerCase(),
+          proposedOwner: event.proposedOwner.toLowerCase(),
+        },
+      }));
+    });
+
+    test('should handle OwnershipTransferred event', async () => {
+      const event: DecodedContractEvent = {
+        type: 'OwnershipTransferred',
+        previousOwner: '0xPreviousOwnerAddress1234567890123456',
+        newOwner: '0xNewOwnerAddress1234567890123456',
+        chainId,
+        transactionHash,
+        blockHash,
+        logIndex,
+        blockNumber,
+      };
+
+      prisma.processedEvent.findUnique.mockResolvedValue(null);
+      prisma.contractOwnership.findUnique.mockResolvedValue({
+        chainId,
+        owner: event.previousOwner.toLowerCase(),
+        proposedOwner: event.newOwner.toLowerCase(),
+      });
+      prisma.contractOwnership.upsert.mockResolvedValue({
+        chainId,
+        owner: event.newOwner.toLowerCase(),
+        proposedOwner: null,
+      });
+
+      const { writeChainedAuditEvent } = require('../services/auditChainHasher');
+
+      await applyContractEvent(prisma as any, event);
+
+      expect(prisma.contractOwnership.upsert).toHaveBeenCalledWith({
+        where: { chainId },
+        update: {
+          owner: event.newOwner.toLowerCase(),
+          proposedOwner: null,
+        },
+        create: {
+          chainId,
+          owner: event.newOwner.toLowerCase(),
+          proposedOwner: null,
+        },
+      });
+
+      expect(writeChainedAuditEvent).toHaveBeenCalledWith(prisma, expect.objectContaining({
+        eventType: 'CONTRACT_OWNERSHIP_TRANSFERRED',
+        walletId: event.newOwner.toLowerCase(),
+        beforeState: {
+          owner: event.previousOwner.toLowerCase(),
+          proposedOwner: event.newOwner.toLowerCase(),
+        },
+        afterState: {
+          owner: event.newOwner.toLowerCase(),
+          proposedOwner: null,
+        },
+      }));
+    });
+
+    test('should skip duplicate events (idempotency)', async () => {
+      const event: DecodedContractEvent = {
+        type: 'AdminUpdated',
+        admin: '0xAdminAddress12345678901234567890123456',
+        enabled: true,
+        chainId,
+        transactionHash,
+        blockHash,
+        logIndex,
+        blockNumber,
+      };
+
+      prisma.processedEvent.findUnique.mockResolvedValue({
+        transactionHash,
+        logIndex,
+        blockHash,
+        blockNumber,
+        eventType: 'AdminUpdated',
+      });
+
+      await applyContractEvent(prisma as any, event);
+
+      expect(prisma.contractAdmin.upsert).not.toHaveBeenCalled();
+      expect(prisma.processedEvent.create).not.toHaveBeenCalled();
+    });
   });
 });
 
