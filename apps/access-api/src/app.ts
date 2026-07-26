@@ -141,6 +141,17 @@ export async function buildApp(): Promise<FastifyInstance> {
         version: '0.1.0',
       },
       servers: [{ url: `http://localhost:${process.env.PORT || 3000}` }],
+      components: {
+        securitySchemes: {
+          RequesterWallet: {
+            type: 'apiKey',
+            in: 'header',
+            name: 'x-wallet',
+            description:
+              'Requester identity for admin-only routes. Clients should send x-wallet. For backwards compatibility, the server resolves requester headers in this precedence order: x-wallet, x-user-wallet, then x-requester-wallet.',
+          },
+        },
+      },
     },
   });
 

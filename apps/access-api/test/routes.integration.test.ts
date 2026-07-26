@@ -1,5 +1,6 @@
-import Fastify, { type FastifyInstance } from "fastify";
-import { API_CONTRACT } from "../../../packages/shared-types/src/apiContract";
+import Fastify, { type FastifyInstance } from 'fastify';
+import { API_CONTRACT } from '../../../packages/shared-types/src/apiContract';
+import { resolveRequesterWallet } from '../src/utils/requesterIdentity';
 
 /**
  * Fastify route integration tests using app.inject().
@@ -133,7 +134,6 @@ async function buildTestApp(
 
   app.get("/v1/communities/:communityId/members", async (request, reply) => {
     const { communityId } = request.params as { communityId: string };
-    const requesterWallet = request.headers['x-wallet'] ?? request.headers['x-user-wallet'] ?? request.headers['x-requester-wallet'];
     // The integration test app doesn't enforce auth; service unit tests do.
     // This just ensures request parsing is stable.
     const query = request.query as { role?: string; limit?: string; cursor?: string };
@@ -142,295 +142,39 @@ async function buildTestApp(
   });
 
   // POST /v1/communities/:communityId/members/:wallet/roles — assign a role to a member
-  app.post(
-    "/v1/communities/:communityId/members/:wallet/roles",
-    async (request, reply) => {
-      const { communityId, wallet } = request.params as {
-        communityId: string;
-        wallet: string;
-      };
-      const body = request.body as { role?: string };
-      const role = body?.role ?? "";
-      const requesterWalletHeader =
-        request.headers["x-wallet"] ??
-        request.headers["x-user-wallet"] ??
-        request.headers["x-requester-wallet"];
-      const requesterWallet = Array.isArray(requesterWalletHeader)
-        ? (requesterWalletHeader[0] ?? "")
-        : ((requesterWalletHeader as string | undefined) ?? "");
+  app.post('/v1/communities/:communityId/members/:wallet/roles', async (request, reply) => {
+    const { communityId, wallet } = request.params as { communityId: string; wallet: string };
+    const body = request.body as { role?: string };
+    const requesterWallet = resolveRequesterWallet(request);
 
-      if (!wallet || !/^0x[0-9a-fA-F]{40}$/.test(wallet)) {
-        return reply
-          .status(400)
-          .send(
-            validationErrorWithReason(
-              "INVALID_WALLET",
-              "Invalid wallet format",
-            ),
-          );
-      }
-
-      if (communityId !== "community-1") {
-        return reply
-          .status(400)
-          .send(
-            validationErrorWithReason(
-              "UNKNOWN_COMMUNITY",
-              "Unknown communityId",
-            ),
-          );
-      }
-
-      const validRoles = ["admin", "member", "contributor"];
-      if (!role || !validRoles.includes(role)) {
-        return reply
-          .status(400)
-          .send(validationErrorWithReason("INVALID_ROLE", "Unrecognized role"));
-      }
-
-      try {
-        return await mockService.assignMemberRole({
-          requesterWallet,
-          communityId,
-          targetWallet: wallet,
-          role,
-        });
-      } catch (err: any) {
-        return reply
-          .status(err?.statusCode ?? 500)
-          .send({ error: err?.message ?? "Internal server error" });
-      }
-    },
-  );
+    try {
+      return mockService.assignMemberRole({
+        requesterWallet,
+        communityId,
+        targetWallet: wallet,
+        role: body?.role ?? '',
+      });
+    } catch (err: any) {
+      return reply.status(err?.statusCode ?? 500).send({ error: err?.message ?? 'Internal server error' });
+    }
+  });
 
   // DELETE /v1/communities/:communityId/members/:wallet/roles/:role — remove an assigned role
-  app.delete(
-    "/v1/communities/:communityId/members/:wallet/roles/:role",
-    async (request, reply) => {
-      const { communityId, wallet, role } = request.params as {
-        communityId: string;
-        wallet: string;
-        role: string;
-      };
-      const requesterWalletHeader =
-        request.headers["x-wallet"] ??
-        request.headers["x-user-wallet"] ??
-        request.headers["x-requester-wallet"];
-      const requesterWallet = Array.isArray(requesterWalletHeader)
-        ? (requesterWalletHeader[0] ?? "")
-        : ((requesterWalletHeader as string | undefined) ?? "");
+  app.delete('/v1/communities/:communityId/members/:wallet/roles/:role', async (request, reply) => {
+    const { communityId, wallet, role } = request.params as { communityId: string; wallet: string; role: string };
+    const requesterWallet = resolveRequesterWallet(request);
 
-      if (!wallet || !/^0x[0-9a-fA-F]{40}$/.test(wallet)) {
-        return reply
-          .status(400)
-          .send(
-            validationErrorWithReason(
-              "INVALID_WALLET",
-              "Invalid wallet format",
-            ),
-          );
-      }
-
-      if (communityId !== "community-1") {
-        return reply
-          .status(400)
-          .send(
-            validationErrorWithReason(
-              "UNKNOWN_COMMUNITY",
-              "Unknown communityId",
-            ),
-          );
-      }
-
-      const validRoles = ["admin", "member", "contributor"];
-      if (!role || !validRoles.includes(role)) {
-        return reply
-          .status(400)
-          .send(validationErrorWithReason("INVALID_ROLE", "Unrecognized role"));
-      }
-
-      try {
-        return await mockService.removeMemberRole({
-          requesterWallet,
-          communityId,
-          targetWallet: wallet,
-          role,
-        });
-      } catch (err: any) {
-        return reply
-          .status(err?.statusCode ?? 500)
-          .send({ error: err?.message ?? "Internal server error" });
-      }
-    },
-  );
-
-  // POST /v1/communities/:communityId/members/:wallet/badges — assign a badge to a member
-  app.post(
-    "/v1/communities/:communityId/members/:wallet/badges",
-    async (request, reply) => {
-      const { communityId, wallet } = request.params as {
-        communityId: string;
-        wallet: string;
-      };
-      const body = request.body as { label?: string };
-      const label = body?.label ?? "";
-      const requesterWalletHeader =
-        request.headers["x-wallet"] ??
-        request.headers["x-user-wallet"] ??
-        request.headers["x-requester-wallet"];
-      const requesterWallet = Array.isArray(requesterWalletHeader)
-        ? (requesterWalletHeader[0] ?? "")
-        : ((requesterWalletHeader as string | undefined) ?? "");
-
-      if (!wallet || !/^0x[0-9a-fA-F]{40}$/.test(wallet)) {
-        return reply
-          .status(400)
-          .send(
-            validationErrorWithReason(
-              "INVALID_WALLET",
-              "Invalid wallet format",
-            ),
-          );
-      }
-
-      if (communityId !== "community-1") {
-        return reply
-          .status(400)
-          .send(
-            validationErrorWithReason(
-              "UNKNOWN_COMMUNITY",
-              "Unknown communityId",
-            ),
-          );
-      }
-
-      if (!label.trim()) {
-        return reply
-          .status(400)
-          .send(
-            apiError({
-              statusCode: 400,
-              code: "VALIDATION_ERROR",
-              message: "Missing required field: label",
-            }),
-          );
-      }
-
-      try {
-        return await mockService.assignBadge({
-          requesterWallet,
-          communityId,
-          targetWallet: wallet,
-          label,
-        });
-      } catch (err: any) {
-        return reply
-          .status(err?.statusCode ?? 500)
-          .send({ error: err?.message ?? "Internal server error" });
-      }
-    },
-  );
-
-  // GET /v1/communities/:communityId/members/:wallet/badges — list badges for a member
-  app.get(
-    "/v1/communities/:communityId/members/:wallet/badges",
-    async (request, reply) => {
-      const { communityId, wallet } = request.params as {
-        communityId: string;
-        wallet: string;
-      };
-
-      if (!wallet || !/^0x[0-9a-fA-F]{40}$/.test(wallet)) {
-        return reply
-          .status(400)
-          .send(
-            validationErrorWithReason(
-              "INVALID_WALLET",
-              "Invalid wallet format",
-            ),
-          );
-      }
-
-      if (communityId !== "community-1") {
-        return reply
-          .status(400)
-          .send(
-            validationErrorWithReason(
-              "UNKNOWN_COMMUNITY",
-              "Unknown communityId",
-            ),
-          );
-      }
-
-      const result = await mockService.listBadgesForMember(communityId, wallet);
-      if (!result) {
-        return reply
-          .status(404)
-          .send(
-            apiError({
-              statusCode: 404,
-              code: "NOT_FOUND",
-              message: "Member not found",
-            }),
-          );
-      }
-      return result;
-    },
-  );
-
-  // DELETE /v1/communities/:communityId/members/:wallet/badges/:badgeId — revoke a badge
-  app.delete(
-    "/v1/communities/:communityId/members/:wallet/badges/:badgeId",
-    async (request, reply) => {
-      const { communityId, wallet, badgeId } = request.params as {
-        communityId: string;
-        wallet: string;
-        badgeId: string;
-      };
-      const requesterWalletHeader =
-        request.headers["x-wallet"] ??
-        request.headers["x-user-wallet"] ??
-        request.headers["x-requester-wallet"];
-      const requesterWallet = Array.isArray(requesterWalletHeader)
-        ? (requesterWalletHeader[0] ?? "")
-        : ((requesterWalletHeader as string | undefined) ?? "");
-
-      if (!wallet || !/^0x[0-9a-fA-F]{40}$/.test(wallet)) {
-        return reply
-          .status(400)
-          .send(
-            validationErrorWithReason(
-              "INVALID_WALLET",
-              "Invalid wallet format",
-            ),
-          );
-      }
-
-      if (communityId !== "community-1") {
-        return reply
-          .status(400)
-          .send(
-            validationErrorWithReason(
-              "UNKNOWN_COMMUNITY",
-              "Unknown communityId",
-            ),
-          );
-      }
-
-      try {
-        return await mockService.revokeBadge({
-          requesterWallet,
-          communityId,
-          targetWallet: wallet,
-          badgeId,
-        });
-      } catch (err: any) {
-        return reply
-          .status(err?.statusCode ?? 500)
-          .send({ error: err?.message ?? "Internal server error" });
-      }
-    },
-  );
+    try {
+      return mockService.removeMemberRole({
+        requesterWallet,
+        communityId,
+        targetWallet: wallet,
+        role,
+      });
+    } catch (err: any) {
+      return reply.status(err?.statusCode ?? 500).send({ error: err?.message ?? 'Internal server error' });
+    }
+  });
 
   // POST /v1/communities/:communityId/overrides — create or update an access override for a wallet/resource
   app.post("/v1/communities/:communityId/overrides", async (request, reply) => {
@@ -448,13 +192,7 @@ async function buildTestApp(
         message: "Missing required fields: wallet, resource, effect",
       });
     }
-    const requesterWalletHeader =
-      request.headers["x-wallet"] ??
-      request.headers["x-user-wallet"] ??
-      request.headers["x-requester-wallet"];
-    const requesterWallet = Array.isArray(requesterWalletHeader)
-      ? (requesterWalletHeader[0] ?? "")
-      : ((requesterWalletHeader as string | undefined) ?? "");
+    const requesterWallet = resolveRequesterWallet(request);
 
     try {
       return await mockService.createAccessOverride({
@@ -474,37 +212,22 @@ async function buildTestApp(
   });
 
   // DELETE /v1/communities/:communityId/overrides/:wallet/:resource — revoke an access override
-  app.delete(
-    "/v1/communities/:communityId/overrides/:wallet/:resource",
-    async (request, reply) => {
-      const { communityId, wallet, resource } = request.params as {
-        communityId: string;
-        wallet: string;
-        resource: string;
-      };
-      const requesterWalletHeader =
-        request.headers["x-wallet"] ??
-        request.headers["x-user-wallet"] ??
-        request.headers["x-requester-wallet"];
-      const requesterWallet = Array.isArray(requesterWalletHeader)
-        ? (requesterWalletHeader[0] ?? "")
-        : ((requesterWalletHeader as string | undefined) ?? "");
+  app.delete('/v1/communities/:communityId/overrides/:wallet/:resource', async (request, reply) => {
+    const { communityId, wallet, resource } = request.params as { communityId: string; wallet: string; resource: string };
+    const requesterWallet = resolveRequesterWallet(request);
 
-      try {
-        return await mockService.revokeAccessOverride({
-          requesterWallet,
-          communityId,
-          wallet,
-          resource,
-          effect: "DENY",
-        });
-      } catch (err: any) {
-        return reply
-          .status(err?.statusCode ?? 500)
-          .send({ error: err?.message ?? "Internal server error" });
-      }
-    },
-  );
+    try {
+      return await mockService.revokeAccessOverride({
+        requesterWallet,
+        communityId,
+        wallet,
+        resource,
+        effect: 'DENY',
+      });
+    } catch (err: any) {
+      return reply.status(err?.statusCode ?? 500).send({ error: err?.message ?? 'Internal server error' });
+    }
+  });
 
   await app.ready();
 

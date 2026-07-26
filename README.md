@@ -108,6 +108,17 @@ Responses include `allowed`/`denied` plus human-readable and machine-readable re
 
 ---
 
+
+### Requester Identity Header
+
+Admin-only routes resolve the caller's wallet address through the shared requester identity helper. API clients should send the `x-wallet` header. For backwards compatibility, the server accepts the following requester-wallet headers in this precedence order:
+
+1. `x-wallet` (preferred)
+2. `x-user-wallet`
+3. `x-requester-wallet`
+
+If more than one requester-wallet header is present, the first header in that order wins. Contributors adding routes that need requester identity should use `resolveRequesterWallet(req)` instead of parsing headers in route handlers.
+
 ## OpenAPI Specification
 
 A stable, machine-readable OpenAPI specification is generated for all public API routes to support SDKs and integrations.

@@ -8,91 +8,8 @@ import {
   retryDeadLetterEvent,
   DeadLetterNotFoundError,
   DeadLetterAlreadyResolvedError,
-} from "./services/deadLetterService";
-import {
-  Challenge,
-  LinkWalletInput,
-  WalletAddress,
-  VALID_ROLES,
-  Role,
-} from "@guildpass/shared-types";
-import {
-  getResourceService,
-  ResourceServiceError,
-} from "./services/resourceService";
-import {
-  ConstitutionalViolationError,
-  createConstitutionalRuleSet,
-  getConstitutionalRuleSetVersions,
-  getActiveConstitutionalRuleSet,
-} from "./services/constitutionalService";
-import { validateRuleTree } from "@guildpass/policy-engine";
-import {
-  getCommunityRolesSchema,
-  getMembershipsSchema,
-  getMemberProfileSchema,
-  assignMemberRoleSchema,
-  removeMemberRoleSchema,
-  assignBadgeSchema,
-  listBadgesSchema,
-  revokeBadgeSchema,
-  createAccessOverrideSchema,
-  revokeAccessOverrideSchema,
-  listAccessOverridesSchema,
-  accessCheckSchema,
-  listCommunityMembersSchema,
-  listDeadLetterEventsSchema,
-  retryDeadLetterEventSchema,
-  listAuditEventsSchema,
-  updateCustomPolicySchema,
-  createResourceSchema,
-  updateResourceSchema,
-  archiveResourceSchema,
-  listResourcesSchema,
-} from "./schemas";
-import {
-  authenticateApiKey,
-  authenticateSessionOrApiKey,
-  requireSiweSession,
-  verifySiweSignature,
-} from "./lib/auth/auth";
-import { config } from "./config";
-import {
-  createIdempotencyPreHandler,
-  createIdempotencyOnSend,
-} from "./lib/idempotency";
-import crypto from "crypto";
-
-function getRequesterWallet(request: FastifyRequest): string {
-  if ((request as any).authenticatedWallet) {
-    return (request as any).authenticatedWallet;
-  }
-  // Under SIWE enforcement the requester identity must come from a verified
-  // session (set above by requireSiweSession). Client-supplied identity headers
-  // and a raw Bearer value are never trusted here — returning "" makes any
-  // admin/ownership check fail closed rather than honour a spoofed wallet (#240).
-  if (config.siweEnforced) {
-    return "";
-  }
-  const header =
-    request.headers["x-wallet"] ??
-    request.headers["x-user-wallet"] ??
-    request.headers["x-requester-wallet"];
-  if (Array.isArray(header)) {
-    return header[0] ?? "";
-  }
-  if (header) {
-    return header;
-  }
-  const authorization = request.headers.authorization;
-  if (
-    typeof authorization === "string" &&
-    authorization.startsWith("Bearer ")
-  ) {
-    return authorization.slice(7).trim();
-  }
-  return "";
-}
+} from './services/deadLetterService';
+import { resolveRequesterWallet } from './utils/requesterIdentity';
 
 
 const memberListQuerySchema = z.object({
@@ -447,8 +364,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   app.post('/v1/communities/:communityId/members/:wallet/roles', { schema: assignMemberRoleSchema, preHandler: [authenticateApiKey, requireSiweSession, idempotencyPreHandler], onSend: [idempotencyOnSend] }, async (request: FastifyRequest, reply: FastifyReply) => {
     const { communityId, wallet } = request.params as { communityId: string; wallet: string };
     const body = request.body as { role?: string };
-    const role = body?.role ?? '';
-    const requesterWallet = getRequesterWallet(request);
+    const requesterWallet = resolveRequesterWallet(request);
 
     if (!wallet || !/^0x[0-9a-fA-F]{40}$/.test(wallet)) {
       return reply.status(400).send(validationErrorWithReason('INVALID_WALLET', 'Invalid wallet format'));
@@ -479,7 +395,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   // DELETE /v1/communities/:communityId/members/:wallet/roles/:role — remove an assigned role
   app.delete('/v1/communities/:communityId/members/:wallet/roles/:role', { schema: removeMemberRoleSchema, preHandler: [authenticateApiKey, requireSiweSession, idempotencyPreHandler], onSend: [idempotencyOnSend] }, async (request: FastifyRequest, reply: FastifyReply) => {
     const { communityId, wallet, role } = request.params as { communityId: string; wallet: string; role: string };
-    const requesterWallet = getRequesterWallet(request);
+    const requesterWallet = resolveRequesterWallet(request);
 
     if (!wallet || !/^0x[0-9a-fA-F]{40}$/.test(wallet)) {
       return reply.status(400).send(validationErrorWithReason('INVALID_WALLET', 'Invalid wallet format'));
@@ -723,7 +639,19 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   // GET /v1/communities/:communityId/overrides — list access overrides for a community (admin)
   app.get('/v1/communities/:communityId/overrides', { schema: listAccessOverridesSchema, preHandler: [authenticateApiKey, requireSiweSession] }, async (request: FastifyRequest, reply: FastifyReply) => {
     const { communityId } = request.params as { communityId: string };
-    const requesterWallet = getRequesterWallet(request);
+    const body = request.body as {
+      wallet?: string;
+      resource?: string;
+      effect?: string;
+      reason?: string;
+      expiresAt?: string | null;
+    };
+    if (!body?.wallet || !body?.resource || !body?.effect) {
+      return reply.status(400).send(
+        validationError('Missing required fields: wallet, resource, effect'),
+      );
+    }
+    const requesterWallet = resolveRequesterWallet(request);
     try {
       if (!(await requireCommunityAdmin(communityId, requesterWallet))) {
         return reply.status(403).send(forbidden('Forbidden'));
@@ -745,35 +673,22 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // DELETE /v1/communities/:communityId/overrides/:wallet/:resource — revoke an access override
-  app.delete(
-    "/v1/communities/:communityId/overrides/:wallet/:resource",
-    {
-      schema: revokeAccessOverrideSchema,
-      preHandler: [authenticateApiKey, requireSiweSession, idempotencyPreHandler],
-      onSend: [idempotencyOnSend],
-    },
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      const { communityId, wallet, resource } = request.params as {
-        communityId: string;
-        wallet: string;
-        resource: string;
-      };
-      const requesterWallet = getRequesterWallet(request);
-      try {
-        const result = await memberService.revokeAccessOverride({
-          requesterWallet:
-            requesterWallet as import("@guildpass/shared-types").WalletAddress,
-          communityId,
-          wallet: wallet as import("@guildpass/shared-types").WalletAddress,
-          resource,
-          effect: "DENY",
-        });
-        return reply.status(200).send(result);
-      } catch (error) {
-        return sendRoleMutationError(reply, error);
-      }
-    },
-  );
+  app.delete('/v1/communities/:communityId/overrides/:wallet/:resource', async (request: FastifyRequest, reply: FastifyReply) => {
+    const { communityId, wallet, resource } = request.params as { communityId: string; wallet: string; resource: string };
+    const requesterWallet = resolveRequesterWallet(request);
+    try {
+      const result = await memberService.revokeAccessOverride({
+        requesterWallet: requesterWallet as import('@guildpass/shared-types').WalletAddress,
+        communityId,
+        wallet: wallet as import('@guildpass/shared-types').WalletAddress,
+        resource,
+        effect: 'DENY',
+      });
+      return reply.status(200).send(result);
+    } catch (error) {
+      return sendRoleMutationError(reply, error);
+    }
+  });
 
   // POST /v1/access/check — check access for wallet/resource
   app.post(
@@ -828,7 +743,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     }
     const { role, limit, cursor } = parsedQuery.data;
     // Ensure caller is an authenticated community admin by reusing mutation auth check.
-    const requesterWallet = getRequesterWallet(request);
+    const requesterWallet = resolveRequesterWallet(request);
     try {
       // Reuse a minimal auth check by verifying requester has admin role in the community.
       // We do this by calling listMembersForAdmin only after requester is validated.
@@ -1052,8 +967,8 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/v1/communities/:communityId/resources', { schema: createResourceSchema, preHandler: [authenticateApiKey, requireSiweSession, idempotencyPreHandler], onSend: [idempotencyOnSend] }, async (request: FastifyRequest, reply: FastifyReply) => {
     const { communityId } = request.params as { communityId: string };
-    const body = request.body as { resourceId: string; name: string; metadata?: any };
-    const requesterWallet = getRequesterWallet(request);
+    const { status } = request.query as { status?: 'pending' | 'retried' | 'resolved' };
+    const requesterWallet = resolveRequesterWallet(request);
     try {
       const result = await resourceService.upsertResource({
         requesterWallet,
@@ -1077,10 +992,11 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 
-  app.patch('/v1/communities/:communityId/resources/:resourceId', { schema: updateResourceSchema, preHandler: [authenticateApiKey, requireSiweSession, idempotencyPreHandler], onSend: [idempotencyOnSend] }, async (request: FastifyRequest, reply: FastifyReply) => {
-    const { communityId, resourceId } = request.params as { communityId: string; resourceId: string };
-    const body = request.body as { name?: string; metadata?: any };
-    const requesterWallet = getRequesterWallet(request);
+  // POST /v1/communities/:communityId/dead-letter-events/:id/retry — re-enqueue
+  // a dead-lettered event as a fresh pending OutboxEvent
+  app.post('/v1/communities/:communityId/dead-letter-events/:id/retry', async (request: FastifyRequest, reply: FastifyReply) => {
+    const { communityId, id } = request.params as { communityId: string; id: string };
+    const requesterWallet = resolveRequesterWallet(request);
     try {
       const result = await resourceService.updateResource({
         requesterWallet,
