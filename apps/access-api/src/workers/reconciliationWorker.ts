@@ -16,6 +16,7 @@ import { PrismaClient } from "@prisma/client";
 import { getPrisma } from "../services/prisma";
 import { logEvent } from "../services/auditService";
 import { logOutboxEventTx } from "../services/outboxService";
+import { invalidateMembershipsCache } from "../services/memberService";
 
 export interface ReconciliationResult {
   updatedCount: number;
@@ -32,8 +33,8 @@ export async function reconcileMemberships(
   const prisma = db ?? getPrisma();
   const now = new Date();
 
-  // Fetch all stale memberships in one query, including the member for audit context.
-  const stale = await prisma.membership.findMany({
+  // Fetch all stale membership tokens in one query, including the member for audit context.
+  const stale = await prisma.membershipToken.findMany({
     where: {
       state: { in: ["active", "suspended"] },
       expiresAt: { lt: now },
@@ -44,35 +45,51 @@ export async function reconcileMemberships(
   let updatedCount = 0;
   let errors = 0;
 
-  for (const membership of stale) {
+  for (const token of stale) {
     try {
       // Wrap the mutation, outbox event, and audit event in a transaction
       // so that state change and event are atomically durable.
       await prisma.$transaction(async (tx: any) => {
-        await tx.membership.update({
-          where: { id: membership.id },
+        await tx.membershipToken.update({
+          where: { tokenId: token.tokenId },
           data: { state: "expired" },
         });
 
         await logOutboxEventTx(tx, {
           eventType: "MEMBERSHIP_UPDATED",
-          entityId: membership.memberId,
+          entityId: token.memberId,
           entityType: "Member",
-          communityId: membership.member.communityId,
+          communityId: token.member.communityId,
           payload: {
-            previousState: membership.state,
+            previousState: token.state,
             newState: "expired",
             reasonCode: "EXPIRY_RECONCILIATION",
           },
         });
       });
 
+      // Clear the cached membership read so a repeat lookup reflects the
+      // expiry. Best-effort: never let a cache failure abort reconciliation.
+      try {
+        const w = await prisma.wallet.findUnique({
+          where: { id: token.member.walletId },
+        });
+        if (w) {
+          await invalidateMembershipsCache(token.member.communityId, w.address);
+        }
+      } catch (err) {
+        console.warn(
+          `Membership cache invalidation failed for tokenId ${token.tokenId}:`,
+          err,
+        );
+      }
+
       // Audit log outside the transaction (best-effort, non-blocking)
       await logEvent({
         eventType: "MEMBERSHIP_RECONCILED",
-        walletId: membership.member.walletId,
-        communityId: membership.member.communityId,
-        beforeState: { state: membership.state },
+        walletId: token.member.walletId,
+        communityId: token.member.communityId,
+        beforeState: { state: token.state },
         afterState: { state: "expired" },
         reasonCode: "EXPIRY_RECONCILIATION",
       });
@@ -81,7 +98,7 @@ export async function reconcileMemberships(
     } catch (err) {
       // Log individual failures without aborting the whole pass.
       console.error(
-        `[reconciliationWorker] Failed to reconcile membership ${membership.id}:`,
+        `[reconciliationWorker] Failed to reconcile membership token ${token.tokenId}:`,
         err,
       );
       errors++;

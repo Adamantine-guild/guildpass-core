@@ -1,196 +1,115 @@
-import Fastify, { FastifyInstance } from 'fastify';
-import rateLimit from '@fastify/rate-limit';
+process.env.DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/guildpass";
+process.env.RATE_LIMIT_ENABLED = 'true';
+process.env.RATE_LIMIT_DEFAULT_MAX = '3';
+process.env.RATE_LIMIT_EXPENSIVE_MAX = '1';
+process.env.RATE_LIMIT_WINDOW_MS = '60000';
+process.env.TRUST_PROXY = 'true';
+delete process.env.REDIS_URL;
 
-interface RateLimitOptions {
-  enabled: boolean;
-  max: number;
-  expensiveMax: number;
-  timeWindow: number;
-}
+import { buildApp } from '../src/app';
+import { FastifyInstance } from 'fastify';
 
-async function buildRateLimitedApp(opts: RateLimitOptions): Promise<FastifyInstance> {
-  const app = Fastify();
-
-  if (opts.enabled) {
-    await app.register(rateLimit, {
-      global: true,
-      max: opts.max,
-      timeWindow: opts.timeWindow,
-      errorResponseBuilder: (_req, context) => ({
-        statusCode: 429,
-        error: 'Too Many Requests',
-        message: `Rate limit exceeded. Retry after ${Math.ceil(context.ttl / 1000)} seconds.`,
-        retryAfter: Math.ceil(context.ttl / 1000),
+// Mock dependencies to avoid requiring a running db or external API services
+jest.mock('../src/services/memberService', () => {
+  return {
+    getMemberService: jest.fn().mockReturnValue({
+      getMembershipsByWallet: jest.fn().mockResolvedValue([]),
+      listMembersForAdmin: jest.fn().mockResolvedValue({
+        communityId: 'community-1',
+        members: [],
+        pagination: {
+          page: 1,
+          limit: 20,
+          total: 0,
+          totalPages: 0,
+        },
       }),
-      addHeaders: {
-        'x-ratelimit-limit': true,
-        'x-ratelimit-remaining': true,
-        'x-ratelimit-reset': true,
-        'retry-after': true,
-      },
-    });
-  }
-
-  app.get('/health/live', { config: { rateLimit: false } }, async () => {
-    return { status: 'ok' };
-  });
-
-  app.get('/v1/access/check', async () => {
-    return { allowed: true };
-  });
-
-  app.get('/v1/communities/:communityId/members', {
-    config: {
-      rateLimit: opts.enabled
-        ? { max: opts.expensiveMax, timeWindow: opts.timeWindow }
-        : false,
-    },
-  }, async () => {
-    return { members: [] };
-  });
-
-  await app.ready();
-  return app;
-}
-
-describe('Rate limiting — allowed requests', () => {
-  let app: FastifyInstance;
-
-  beforeEach(async () => {
-    app = await buildRateLimitedApp({
-      enabled: true,
-      max: 5,
-      expensiveMax: 2,
-      timeWindow: 60_000,
-    });
-  });
-
-  afterEach(async () => {
-    await app.close();
-  });
-
-  it('allows requests up to the configured limit', async () => {
-    for (let i = 0; i < 5; i++) {
-      const res = await app.inject({ method: 'GET', url: '/v1/access/check' });
-      expect(res.statusCode).toBe(200);
-    }
-  });
-
-  it('attaches rate limit headers to responses', async () => {
-    const res = await app.inject({ method: 'GET', url: '/v1/access/check' });
-    expect(res.statusCode).toBe(200);
-    expect(res.headers['x-ratelimit-limit']).toBeDefined();
-    expect(res.headers['x-ratelimit-remaining']).toBeDefined();
-    expect(res.headers['x-ratelimit-reset']).toBeDefined();
-  });
+    }),
+  };
 });
+jest.mock('../src/services/prisma', () => ({
+  getPrisma: jest.fn().mockReturnValue({
+    $queryRaw: jest.fn(),
+    community: {
+      findUnique: jest.fn().mockResolvedValue({ id: 'community-1' }),
+    },
+  }),
+}));
 
-describe('Rate limiting — blocked requests', () => {
+describe('Global Rate Limiting against buildApp()', () => {
   let app: FastifyInstance;
 
-  beforeEach(async () => {
-    app = await buildRateLimitedApp({
-      enabled: true,
-      max: 3,
-      expensiveMax: 2,
-      timeWindow: 60_000,
-    });
+  beforeAll(async () => {
+    app = await buildApp();
+    await app.ready();
   });
 
-  afterEach(async () => {
+  afterAll(async () => {
     await app.close();
   });
 
-  it('returns 429 after the limit is exceeded', async () => {
+  it('allows requests up to the default limit (3) on standard route', async () => {
     for (let i = 0; i < 3; i++) {
-      const res = await app.inject({ method: 'GET', url: '/v1/access/check' });
-      expect(res.statusCode).toBe(200);
-    }
-
-    const blocked = await app.inject({ method: 'GET', url: '/v1/access/check' });
-    expect(blocked.statusCode).toBe(429);
-  });
-
-  it('returns a JSON body with error and retryAfter on 429', async () => {
-    for (let i = 0; i < 3; i++) {
-      await app.inject({ method: 'GET', url: '/v1/access/check' });
-    }
-
-    const blocked = await app.inject({ method: 'GET', url: '/v1/access/check' });
-    expect(blocked.statusCode).toBe(429);
-
-    const body = blocked.json();
-    expect(body.error).toBe('Too Many Requests');
-    expect(body.message).toMatch(/Rate limit exceeded/);
-    expect(typeof body.retryAfter).toBe('number');
-  });
-
-  it('returns 429 on expensive endpoint after its stricter limit', async () => {
-    for (let i = 0; i < 2; i++) {
       const res = await app.inject({
         method: 'GET',
-        url: '/v1/communities/community-1/members',
+        url: '/v1/communities/community-1/memberships/0x0000000000000000000000000000000000000000',
+        headers: {
+          'x-forwarded-for': '1.2.3.4'
+        }
       });
       expect(res.statusCode).toBe(200);
+      expect(Number(res.headers['x-ratelimit-limit'])).toBe(3);
+      expect(res.headers['x-ratelimit-remaining']).toBeDefined();
     }
 
     const blocked = await app.inject({
       method: 'GET',
+      url: '/v1/communities/community-1/memberships/0x0000000000000000000000000000000000000000',
+      headers: {
+        'x-forwarded-for': '1.2.3.4'
+      }
+    });
+    expect(blocked.statusCode).toBe(429);
+    expect(blocked.headers['retry-after']).toBeDefined();
+    const body = JSON.parse(blocked.payload);
+    expect(body.error.code).toBe('RATE_LIMITED');
+    expect(body.error.message).toMatch(/Rate limit exceeded/);
+  });
+
+  it('enforces stricter limit (1) on expensive endpoint', async () => {
+    const expensiveIp = '5.6.7.8';
+
+    const res = await app.inject({
+      method: 'GET',
       url: '/v1/communities/community-1/members',
+      headers: {
+        'x-forwarded-for': expensiveIp,
+        'x-api-key': 'test-api-key',
+      }
+    });
+    expect(res.statusCode).toBe(200);
+
+    const blocked = await app.inject({
+      method: 'GET',
+      url: '/v1/communities/community-1/members',
+      headers: {
+        'x-forwarded-for': expensiveIp,
+        'x-api-key': 'test-api-key',
+      }
     });
     expect(blocked.statusCode).toBe(429);
   });
-});
 
-describe('Rate limiting — disabled', () => {
-  let app: FastifyInstance;
-
-  beforeEach(async () => {
-    app = await buildRateLimitedApp({
-      enabled: false,
-      max: 2,
-      expensiveMax: 1,
-      timeWindow: 60_000,
-    });
-  });
-
-  afterEach(async () => {
-    await app.close();
-  });
-
-  it('allows unlimited requests when rate limiting is disabled', async () => {
+  it('exempts health check route from rate limits', async () => {
+    const healthIp = '9.10.11.12';
     for (let i = 0; i < 10; i++) {
-      const res = await app.inject({ method: 'GET', url: '/v1/access/check' });
-      expect(res.statusCode).toBe(200);
-    }
-  });
-
-  it('does not attach x-ratelimit headers when disabled', async () => {
-    const res = await app.inject({ method: 'GET', url: '/v1/access/check' });
-    expect(res.headers['x-ratelimit-limit']).toBeUndefined();
-    expect(res.headers['x-ratelimit-remaining']).toBeUndefined();
-  });
-});
-
-describe('Rate limiting — health check exemption', () => {
-  let app: FastifyInstance;
-
-  beforeEach(async () => {
-    app = await buildRateLimitedApp({
-      enabled: true,
-      max: 2,
-      expensiveMax: 1,
-      timeWindow: 60_000,
-    });
-  });
-
-  afterEach(async () => {
-    await app.close();
-  });
-
-  it('never rate-limits the health/live endpoint', async () => {
-    for (let i = 0; i < 10; i++) {
-      const res = await app.inject({ method: 'GET', url: '/health/live' });
+      const res = await app.inject({
+        method: 'GET',
+        url: '/health/live',
+        headers: {
+          'x-forwarded-for': healthIp
+        }
+      });
       expect(res.statusCode).toBe(200);
     }
   });

@@ -2,7 +2,81 @@ export type WalletAddress = `0x${string}`;
 
 export type MembershipState = "invited" | "active" | "expired" | "suspended";
 
-export type Role = "admin" | "member" | "contributor";
+export const VALID_ROLES = ["admin", "member", "contributor"] as const;
+
+export type Role = (typeof VALID_ROLES)[number];
+
+// --- Role Hierarchy & Delegation Types ---
+export interface RoleDefinition {
+  id: string;
+  name: string;
+  communityId: string;
+  description?: string | null;
+  parentRoleId?: string | null;
+  builtInRole?: Role | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DelegatedGrant {
+  id: string;
+  communityId: string;
+  granterWalletId: string;
+  granteeWalletId: string;
+  roles: string[];
+  scope?: Record<string, any> | null;
+  expiresAt?: string | null;
+  revokedAt?: string | null;
+  revokedBy?: string | null;
+  createdAt: string;
+}
+
+export interface RoleAssignment {
+  role: Role;
+  roleDefinitionId?: string | null;
+  source: "manual" | "auto";
+  active: boolean;
+  expiresAt?: string | Date | null;
+}
+
+// --- Wallet Linking Types ---
+
+export interface Challenge {
+  nonce: string;
+  expiresAt: string; // ISO datetime
+  issuedAt: string; // ISO datetime
+  primaryWallet: WalletAddress;
+  secondaryWallet: WalletAddress;
+  communityId?: string; // Optional, if linking in a specific community context
+}
+
+export interface LinkWalletInput {
+  challenge: Challenge;
+  signature: string;
+}
+
+export interface LinkedWallet {
+  id: string;
+  primaryWalletId: string; // Foreign key to Wallet (the identity's primary)
+  secondaryWalletId: string; // Foreign key to Wallet
+  primaryWalletAddress: WalletAddress;
+  secondaryWalletAddress: WalletAddress;
+  linkedAt: string; // ISO datetime
+}
+
+// Aggregated RoleContext that includes state from all linked wallets
+export interface AggregatedRoleContext {
+  primaryWallet: WalletAddress;
+  linkedWallets: WalletAddress[];
+  // Union of all assignments from primary and linked wallets
+  assignments: RoleAssignment[];
+  // If ANY linked wallet has an active membership in the community, we consider it active
+  membershipState: MembershipState;
+  // All overrides that apply to ANY linked wallet
+  overrides: AccessOverride[];
+  communityId?: string;
+  resource?: string;
+}
 
 export interface DecisionReason {
   code: string;
@@ -18,12 +92,115 @@ export type PolicyRuleType =
 
 export type AccessPolicyParams = Record<string, unknown> | null;
 
+// --- Composable Rule Grammar & Evaluation Trace Types ---
+
+export type RuleASTVersion = "1.0" | "1";
+
+export interface BasePredicateNode {
+  version?: RuleASTVersion;
+}
+
+export interface HasRolePredicate extends BasePredicateNode {
+  type: "HAS_ROLE";
+  role: Role | string;
+}
+
+export interface HasAnyRolePredicate extends BasePredicateNode {
+  type: "HAS_ANY_ROLE";
+  roles: (Role | string)[];
+}
+
+export interface HasMinRolesPredicate extends BasePredicateNode {
+  type: "HAS_MIN_ROLES";
+  roles: (Role | string)[];
+  minCount: number;
+}
+
+export interface ActiveMembershipPredicate extends BasePredicateNode {
+  type: "ACTIVE_MEMBERSHIP";
+}
+
+export interface MembershipDurationPredicate extends BasePredicateNode {
+  type: "MEMBERSHIP_DURATION";
+  minDays?: number;
+  minHours?: number;
+  minSeconds?: number;
+}
+
+export interface HasOverridePredicate extends BasePredicateNode {
+  type: "HAS_OVERRIDE";
+  effect?: "ALLOW" | "DENY";
+}
+
+export interface TimeWindowPredicate extends BasePredicateNode {
+  type: "TIME_WINDOW";
+  startTime?: string;
+  endTime?: string;
+  daysOfWeek?: number[];
+  timezone?: string;
+}
+
+export interface AlwaysAllowPredicate extends BasePredicateNode {
+  type: "ALWAYS_ALLOW";
+}
+
+export interface AlwaysDenyPredicate extends BasePredicateNode {
+  type: "ALWAYS_DENY";
+}
+
+export type PrimitivePredicate =
+  | HasRolePredicate
+  | HasAnyRolePredicate
+  | HasMinRolesPredicate
+  | ActiveMembershipPredicate
+  | MembershipDurationPredicate
+  | HasOverridePredicate
+  | TimeWindowPredicate
+  | AlwaysAllowPredicate
+  | AlwaysDenyPredicate;
+
+export interface AndCombinatorNode extends BasePredicateNode {
+  type: "AND";
+  rules: RuleExprNode[];
+}
+
+export interface OrCombinatorNode extends BasePredicateNode {
+  type: "OR";
+  rules: RuleExprNode[];
+}
+
+export interface NotCombinatorNode extends BasePredicateNode {
+  type: "NOT";
+  rule: RuleExprNode;
+}
+
+export type CombinatorNode = AndCombinatorNode | OrCombinatorNode | NotCombinatorNode;
+
+export type RuleExprNode = PrimitivePredicate | CombinatorNode;
+
+export interface RuleTree {
+  version: RuleASTVersion;
+  root: RuleExprNode;
+  name?: string;
+  description?: string;
+}
+
+export interface DecisionTraceNode {
+  type: string;
+  passed: boolean;
+  explanation: string;
+  code?: string;
+  children?: DecisionTraceNode[];
+  metadata?: Record<string, unknown>;
+}
+
 export interface AccessDecision {
   allowed: boolean;
   code: "ALLOW" | "DENY";
   reasons: DecisionReason[];
   effectiveRoles?: Role[];
   membershipState?: MembershipState;
+  trace?: DecisionTraceNode;
 }
 
 export interface ResourceRef {
@@ -123,6 +300,44 @@ export interface RoleMutationResult {
   message?: string;
 }
 
+// --- Badge Types ---
+
+export interface BadgeDto {
+  id: string;
+  memberId: string;
+  label: string;
+  issuedAt: string; // ISO datetime
+}
+
+export interface AssignBadgeInput {
+  requesterWallet: WalletAddress;
+  communityId: string;
+  targetWallet: WalletAddress;
+  label: string;
+}
+
+export interface RevokeBadgeInput {
+  requesterWallet: WalletAddress;
+  communityId: string;
+  targetWallet: WalletAddress;
+  badgeId: string;
+}
+
+export interface BadgeMutationResult {
+  communityId: string;
+  wallet: WalletAddress;
+  badge?: BadgeDto;
+  assigned: boolean;
+  removed: boolean;
+  message?: string;
+}
+
+export interface ListBadgesResult {
+  communityId: string;
+  wallet: WalletAddress;
+  badges: BadgeDto[];
+}
+
 export interface RoleContext {
   assignments: RoleAssignment[];
   membershipState: MembershipState;
@@ -130,6 +345,7 @@ export interface RoleContext {
   communityId?: string;
   resource?: string;
   overrides?: AccessOverride[];
+  memberSince?: string | Date | null;
 }
 
 export interface PolicyEngine {
@@ -169,6 +385,10 @@ export type EventType =
 export type OutboxEventType =
   | "MEMBERSHIP_CREATED"
   | "MEMBERSHIP_UPDATED"
+  | "MEMBERSHIP_RENEWED"
+  | "MEMBERSHIP_SUSPENDED"
+  | "MEMBERSHIP_UNSUSPENDED"
+  | "MEMBERSHIP_REINSTATED"
   | "MEMBERSHIP_DELETED"
   | "ROLE_ASSIGNED"
   | "ROLE_REMOVED"
@@ -180,7 +400,13 @@ export type OutboxEventType =
   | "POLICY_DELETED"
   | "ACCESS_DECISION"
   | "ACCESS_OVERRIDE_CREATED"
-  | "ACCESS_OVERRIDE_REVOKED";
+  | "ACCESS_OVERRIDE_UPDATED"
+  | "ACCESS_OVERRIDE_REVOKED"
+  | "MEMBER_ATTENDED"
+  | "BADGE_ASSIGNED"
+  | "BADGE_REVOKED"
+  | "CONSTITUTIONAL_RULESET_CREATED"
+  | (string & {});
 
 export type OutboxEventStatus = "pending" | "delivered" | "failed";
 
