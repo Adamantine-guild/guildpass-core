@@ -54,18 +54,10 @@ const httpRequestsTotal = new Counter({
 // Access Policy Decision Metrics
 // --------------------------------------------------------------------------
 
-/**
- * Tracks every allow/deny decision emitted by the policy engine.
- *
- * Labels:
- *   outcome     – "ALLOW" | "DENY"
- *   rule_id     – the policy rule id (e.g. "MEMBERS_ONLY")
- *   reason_code – the first reason code from AccessDecision.reasons
- */
 const accessDecisionsTotal = new Counter({
-  name: 'access_policy_decisions_total',
-  help: 'Total access policy decisions by outcome, rule, and reason',
-  labelNames: ['outcome', 'rule_id', 'reason_code'] as const,
+  name: 'access_decisions_total',
+  help: 'Total access policy decisions',
+  labelNames: ['decision'] as const,
   registers: [registry],
 });
 

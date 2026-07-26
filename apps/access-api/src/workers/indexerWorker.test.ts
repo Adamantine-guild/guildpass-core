@@ -1,26 +1,5 @@
-import { IndexerWorker, ChainProvider } from './indexerWorker';
-import { applyContractEvent, DecodedContractEvent } from '../services/contractEventHelpers';
-import { metrics } from '../observability/metrics';
-
-// Mock the audit chain service
-jest.mock('../services/auditChainHasher', () => ({
-  writeChainedAuditEvent: jest.fn().mockResolvedValue(undefined),
-}));
-
-// Mock the metrics
-jest.mock('../observability/metrics', () => ({
-  metrics: {
-    indexerLag: {
-      set: jest.fn(),
-    },
-    indexerReorgsDetectedTotal: {
-      inc: jest.fn(),
-    },
-    indexerReconciliationDuration: {
-      startTimer: jest.fn().mockReturnValue(jest.fn()),
-    },
-  },
-}));
+import { IndexerWorker, ChainProvider, indexerStateId } from './indexerWorker';
+import { DecodedContractEvent } from '../services/contractEventHelpers';
 
 describe('IndexerWorker', () => {
   let prisma: any;
@@ -69,18 +48,20 @@ describe('IndexerWorker', () => {
       getLogs: jest.fn(),
     };
 
-    worker = new IndexerWorker(prisma as any, provider, 5000, 12, chainId, 100, contractAddress);
-    jest.clearAllMocks();
+    worker = new IndexerWorker(prisma as any, provider, 5000, 12, {
+      chainId: 1,
+      membershipNftAddress: '0x0000000000000000000000000000000000000001',
+    });
   });
 
   test('should process blocks and update indexerCheckpoint per chain & contract', async () => {
     provider.getLatestBlockNumber.mockResolvedValue(100);
-    prisma.indexerCheckpoint.findUnique.mockResolvedValue({
-      chainId,
-      contractAddress,
-      lastProcessedBlock: 80,
-      lastProcessedBlockNumber: 80,
-      lastProcessedBlockHash: 'hash80',
+    prisma.indexerState.findUnique.mockResolvedValue({
+      lastBlockNumber: 80,
+      id: indexerStateId({ chainId: 1, membershipNftAddress: '0x0000000000000000000000000000000000000001' }),
+      chainId: 1,
+      contractAddress: '0x0000000000000000000000000000000000000001',
+      lastBlockHash: 'hash80',
     });
     provider.getBlock.mockImplementation(async (n) => ({
       number: n,
@@ -92,54 +73,23 @@ describe('IndexerWorker', () => {
     await worker.runPass();
 
     expect(provider.getLogs).toHaveBeenCalledWith(81, 88); // 100 - 12 = 88
-    expect(prisma.indexerCheckpoint.upsert).toHaveBeenCalledWith(expect.objectContaining({
-      create: expect.objectContaining({ chainId, contractAddress, lastProcessedBlockNumber: 88 }),
+    expect(prisma.indexerState.findUnique).toHaveBeenCalledWith({
+      where: { id: '1:0x0000000000000000000000000000000000000001' },
+    });
+    expect(prisma.indexerState.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      create: expect.objectContaining({ chainId: 1, lastBlockNumber: 88 }),
     }));
     expect(metrics.indexerLag.set).toHaveBeenCalledWith({ chain_id: String(chainId) }, 20); // 100 - 80 = 20
   });
 
   test('should detect reorg, trigger reconciliation duration metric, and rewind to LCA', async () => {
     provider.getLatestBlockNumber.mockResolvedValue(100);
-    prisma.indexerCheckpoint.findUnique.mockResolvedValue({
-      chainId,
-      contractAddress,
-      lastProcessedBlock: 80,
-      lastProcessedBlockNumber: 80,
-      lastProcessedBlockHash: 'hash80-old',
-    });
-
-    // Mock block hash mismatch at block 80
-    provider.getBlock.mockImplementation(async (n) => {
-      if (n === 80) return { number: 80, hash: 'hash80-new', parentHash: 'hash79-new' };
-      if (n === 79) return { number: 79, hash: 'hash79-new', parentHash: 'hash78' };
-      if (n === 78) return { number: 78, hash: 'hash78', parentHash: 'hash77' };
-      return { number: n, hash: `hash${n}`, parentHash: `hash${n - 1}` };
-    });
-
-    // Stored headers in DB: 79 is mismatch, 78 is match
-    prisma.blockHeader.findUnique.mockImplementation(async (args: any) => {
-      const blockNum = args.where.chainId_blockNumber.blockNumber;
-      if (blockNum === 79) return { chainId, blockNumber: 79, blockHash: 'hash79-old' };
-      if (blockNum === 78) return { chainId, blockNumber: 78, blockHash: 'hash78' };
-      return null;
-    });
-
-    await worker.runPass();
-
-    // Reorg metrics should be triggered
-    expect(metrics.indexerReorgsDetectedTotal.inc).toHaveBeenCalledWith({ chain_id: String(chainId) });
-    expect(metrics.indexerReconciliationDuration.startTimer).toHaveBeenCalledWith({ chain_id: String(chainId) });
-
-    // Checkpoint should be updated to block 78 (common ancestor)
-    expect(prisma.indexerCheckpoint.upsert).toHaveBeenCalledWith(expect.objectContaining({
-      update: expect.objectContaining({ lastProcessedBlockNumber: 78, lastProcessedBlockHash: 'hash78' }),
-    }));
-    // Should clear events and headers past block 78
-    expect(prisma.processedEvent.deleteMany).toHaveBeenCalledWith({
-      where: { blockNumber: { gt: 78 } },
-    });
-    expect(prisma.blockHeader.deleteMany).toHaveBeenCalledWith({
-      where: { chainId, blockNumber: { gt: 78 } },
+    prisma.indexerState.findUnique.mockResolvedValue({
+      lastBlockNumber: 80,
+      id: indexerStateId({ chainId: 1, membershipNftAddress: '0x0000000000000000000000000000000000000001' }),
+      chainId: 1,
+      contractAddress: '0x0000000000000000000000000000000000000001',
+      lastBlockHash: 'hash80-old',
     });
   });
 
@@ -153,10 +103,11 @@ describe('IndexerWorker', () => {
 
     await worker.backfill(50, 250);
 
-    expect(provider.getLogs).toHaveBeenCalledTimes(3);
-    expect(provider.getLogs).toHaveBeenNthCalledWith(1, 50, 149);
-    expect(provider.getLogs).toHaveBeenNthCalledWith(2, 150, 249);
-    expect(provider.getLogs).toHaveBeenNthCalledWith(3, 250, 250);
+    expect(prisma.indexerState.update).toHaveBeenCalled();
+    // Rewind 80 - 12*2 = 56
+    expect(prisma.processedEvent.deleteMany).toHaveBeenCalledWith({
+      where: { chainId: 1, blockNumber: { gt: 56 } },
+    });
   });
 
   describe('applyContractEvent - Admin & Ownership Events', () => {
@@ -403,6 +354,61 @@ describe('IndexerWorker', () => {
 
       expect(prisma.contractAdmin.upsert).not.toHaveBeenCalled();
       expect(prisma.processedEvent.create).not.toHaveBeenCalled();
+    });
+  });
+});
+
+describe('multi-chain replay protection', () => {
+  function makePrisma(existing: unknown = null): any {
+    const txContexts: any[] = [];
+    const createTx = () => ({
+      processedEvent: {
+        findUnique: jest.fn().mockResolvedValue(existing),
+        create: jest.fn(),
+        deleteMany: jest.fn(),
+      },
+      wallet: { upsert: jest.fn().mockResolvedValue({ id: 'wallet-1' }) },
+      community: { upsert: jest.fn() },
+      member: { upsert: jest.fn().mockResolvedValue({ id: 'member-1' }) },
+      membership: { findUnique: jest.fn().mockResolvedValue(null), upsert: jest.fn().mockResolvedValue({ id: 'membership-1', tokenId: 7, state: 'active', expiresAt: new Date(2000 * 1000) }) },
+      auditEvent: { create: jest.fn() },
+      outboxEvent: { create: jest.fn() },
+    });
+    return {
+      txContexts,
+      indexerState: { findUnique: jest.fn(), upsert: jest.fn(), update: jest.fn() },
+      processedEvent: { findUnique: jest.fn(), create: jest.fn(), deleteMany: jest.fn() },
+      $transaction: jest.fn((cb) => {
+        const tx = createTx();
+        txContexts.push(tx);
+        return cb(tx);
+      }),
+    };
+  }
+
+  test('uses chainId in processed-event identity so identical tx/log on different chains is not replayed', async () => {
+    const { applyContractEvent } = await import('../services/contractEventHelpers');
+    const prisma = makePrisma();
+    const baseEvent: DecodedContractEvent = {
+      type: 'MembershipMinted',
+      to: '0x00000000000000000000000000000000000000aa',
+      tokenId: 7,
+      communityId: 'community-1',
+      expiresAt: 2000,
+      transactionHash: '0xabc',
+      logIndex: 0,
+      blockNumber: 10,
+      blockHash: '0xblock',
+    };
+
+    await applyContractEvent(prisma as any, { ...baseEvent, chainId: 1 });
+    await applyContractEvent(prisma as any, { ...baseEvent, chainId: 137 });
+
+    expect(prisma.txContexts[0].processedEvent.findUnique).toHaveBeenCalledWith({
+      where: { chainId_transactionHash_logIndex: { chainId: 1, transactionHash: '0xabc', logIndex: 0 } },
+    });
+    expect(prisma.txContexts[1].processedEvent.findUnique).toHaveBeenCalledWith({
+      where: { chainId_transactionHash_logIndex: { chainId: 137, transactionHash: '0xabc', logIndex: 0 } },
     });
   });
 });

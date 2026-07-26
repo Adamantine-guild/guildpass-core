@@ -74,12 +74,11 @@ export const API_CONTRACT = {
     },
   },
   communityMembers: {
-    method: "GET",
-    pathTemplate: "/v1/communities/:communityId/members",
-    samplePath: "/v1/communities/community-1/members",
-    samplePathWithRole: "/v1/communities/community-1/members?role=admin",
-    samplePathWithStatus: "/v1/communities/community-1/members?status=active",
-    samplePathPaginated: "/v1/communities/community-1/members?page=2&limit=50",
+    method: 'GET',
+    pathTemplate: '/v1/communities/:communityId/members',
+    samplePath: '/v1/communities/community-1/members',
+    samplePathWithRole: '/v1/communities/community-1/members?role=admin',
+    samplePathWithPagination: '/v1/communities/community-1/members?limit=1&cursor=member-1',
     successStatus: 200,
     successResponse: {
       communityId: "community-1",
@@ -98,10 +97,9 @@ export const API_CONTRACT = {
         },
       ],
       pagination: {
-        page: 1,
-        limit: 20,
-        total: 2,
-        totalPages: 1,
+        limit: 50,
+        hasMore: false,
+        nextCursor: null,
       },
     },
     errorResponse: {

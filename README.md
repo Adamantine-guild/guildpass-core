@@ -80,7 +80,7 @@ npm run contracts:test    # runs: forge test
 npm run contracts:deploy  # runs: forge script contracts/script/Deploy.s.sol --broadcast
 ```
 
-After deploying, set `MEMBERSHIP_NFT_ADDRESS` and `CHAIN_ID` in `.env`.
+After deploying, set `MEMBERSHIP_NFT_ADDRESS`, `CHAIN_ID`, and `RPC_URL` in `.env` for a backward-compatible single-chain deployment. For multi-chain deployments, set `MEMBERSHIP_CHAIN_CONFIGS` to a JSON array of `{ name, chainId, rpcUrl, membershipNftAddress }` objects and associate each community with the matching `ChainConfig` row. The multi-chain indexing design and migration notes are documented in [`docs/multi-chain-membership-indexing.md`](docs/multi-chain-membership-indexing.md).
 
 ---
 
@@ -107,6 +107,17 @@ The GuildPass Access API follows a strict versioning and compatibility contract 
 Responses include `allowed`/`denied` plus human-readable and machine-readable reasons.
 
 ---
+
+
+### Requester Identity Header
+
+Admin-only routes resolve the caller's wallet address through the shared requester identity helper. API clients should send the `x-wallet` header. For backwards compatibility, the server accepts the following requester-wallet headers in this precedence order:
+
+1. `x-wallet` (preferred)
+2. `x-user-wallet`
+3. `x-requester-wallet`
+
+If more than one requester-wallet header is present, the first header in that order wins. Contributors adding routes that need requester identity should use `resolveRequesterWallet(req)` instead of parsing headers in route handlers.
 
 ## OpenAPI Specification
 
@@ -449,6 +460,7 @@ GuildPass supports deploying and indexing `MembershipNFT` contracts across multi
 - Full event attendance ingestion
 - Multi-chain support (implemented: EVM multi-chain enabled per community)
 - Advanced indexing pipeline
+- Multi-chain membership indexing with per-community `(chainId, contractAddress)` routing
 
 Clear interfaces and TODOs are left where appropriate.
 
