@@ -21,7 +21,8 @@ jest.mock('../src/services/prisma', () => {
       create: jest.fn(),
     },
     outboxEvent: {
-      create: jest.fn(),
+      // logOutboxEventTx reads `created.id`, so the mock must resolve an object.
+      create: jest.fn().mockResolvedValue({ id: 'outbox-evt-1' }),
     },
     $transaction: jest.fn().mockImplementation(async (cb) => {
       return cb(mPrisma);
@@ -59,6 +60,7 @@ describe('Resource Routes Integration Tests', () => {
         method: 'POST',
         url: '/v1/communities/community-1/resources',
         headers: {
+          'x-api-key': 'test-api-key',
           'x-wallet': '0x123',
         },
         payload: {
@@ -78,6 +80,7 @@ describe('Resource Routes Integration Tests', () => {
         method: 'PATCH',
         url: '/v1/communities/community-1/resources/res-1',
         headers: {
+          'x-api-key': 'test-api-key',
           'x-wallet': '0x123',
         },
         payload: {
@@ -96,6 +99,7 @@ describe('Resource Routes Integration Tests', () => {
         method: 'DELETE',
         url: '/v1/communities/community-1/resources/res-1',
         headers: {
+          'x-api-key': 'test-api-key',
           'x-wallet': '0x123',
         },
       });
@@ -120,6 +124,7 @@ describe('Resource Routes Integration Tests', () => {
         method: 'GET',
         url: '/v1/communities/community-1/resources',
         headers: {
+          'x-api-key': 'test-api-key',
           'x-wallet': '0xany',
         },
       });
@@ -145,6 +150,7 @@ describe('Resource Routes Integration Tests', () => {
         method: 'POST',
         url: '/v1/communities/community-1/resources',
         headers: {
+          'x-api-key': 'test-api-key',
           'x-wallet': '0xadmin',
         },
         payload: {
@@ -178,6 +184,7 @@ describe('Resource Routes Integration Tests', () => {
         method: 'PATCH',
         url: '/v1/communities/community-1/resources/res-1',
         headers: {
+          'x-api-key': 'test-api-key',
           'x-wallet': '0xadmin',
         },
         payload: {
@@ -205,6 +212,7 @@ describe('Resource Routes Integration Tests', () => {
         method: 'DELETE',
         url: '/v1/communities/community-1/resources/res-1',
         headers: {
+          'x-api-key': 'test-api-key',
           'x-wallet': '0xadmin',
         },
       });

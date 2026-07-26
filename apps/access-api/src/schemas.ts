@@ -1399,3 +1399,90 @@ export const updateCustomPolicySchema = {
     500: { description: 'Internal server error', ...errorSchema },
   },
 } as const;
+
+// ---------------------------------------------------------------------------
+// Resource routes (/v1/communities/:communityId/resources)
+//
+// Minimal request-validation schemas. These four constants were referenced by
+// routes.ts but never declared, which threw a ReferenceError during route
+// registration and prevented the app (and every registerRoutes-based test)
+// from booting. Response serialization is intentionally left off so the
+// service's full response objects pass through unfiltered; richer response
+// schemas can be added when the resources feature is finalised.
+// ---------------------------------------------------------------------------
+
+export const createResourceSchema = {
+  summary: 'Create or update a resource for a community',
+  tags: ['Resources'],
+  params: {
+    type: 'object',
+    required: ['communityId'],
+    properties: {
+      communityId: { type: 'string', description: 'Community identifier' },
+    },
+  },
+  body: {
+    type: 'object',
+    required: ['resourceId', 'name'],
+    properties: {
+      resourceId: { type: 'string', description: 'Resource identifier' },
+      name: { type: 'string', description: 'Human-readable resource name' },
+      metadata: {
+        type: 'object',
+        additionalProperties: true,
+        nullable: true,
+        description: 'Arbitrary resource metadata',
+      },
+    },
+  },
+} as const;
+
+export const updateResourceSchema = {
+  summary: 'Update an existing resource',
+  tags: ['Resources'],
+  params: {
+    type: 'object',
+    required: ['communityId', 'resourceId'],
+    properties: {
+      communityId: { type: 'string', description: 'Community identifier' },
+      resourceId: { type: 'string', description: 'Resource identifier' },
+    },
+  },
+  body: {
+    type: 'object',
+    properties: {
+      name: { type: 'string', description: 'Updated resource name' },
+      metadata: {
+        type: 'object',
+        additionalProperties: true,
+        nullable: true,
+        description: 'Arbitrary resource metadata',
+      },
+    },
+  },
+} as const;
+
+export const archiveResourceSchema = {
+  summary: 'Archive (soft-delete) a resource',
+  tags: ['Resources'],
+  params: {
+    type: 'object',
+    required: ['communityId', 'resourceId'],
+    properties: {
+      communityId: { type: 'string', description: 'Community identifier' },
+      resourceId: { type: 'string', description: 'Resource identifier' },
+    },
+  },
+} as const;
+
+export const listResourcesSchema = {
+  summary: 'List resources for a community',
+  tags: ['Resources'],
+  params: {
+    type: 'object',
+    required: ['communityId'],
+    properties: {
+      communityId: { type: 'string', description: 'Community identifier' },
+    },
+  },
+} as const;
