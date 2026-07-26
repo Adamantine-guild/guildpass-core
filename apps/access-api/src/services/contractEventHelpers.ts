@@ -6,53 +6,37 @@
  * as a test helper for integration tests.
  *
  * These helpers bridge the gap between contract events and database state updates.
+ *
+ * Event types are imported from @guildpass/contracts — the single source of truth
+ * for the MembershipNFT contract ABI and typed event definitions.
  */
 
 import type { PrismaClient } from '@prisma/client';
+import { writeChainedAuditEvent } from './auditChainHasher';
 
-/**
- * Decoded contract event types - derived from MembershipNFT.sol
- */
+// Re-export event types from the shared contracts package so that existing
+// consumers of this module continue to work without import changes.
+export type {
+  DecodedContractEvent,
+  DecodedMembershipMintedEvent,
+  DecodedMembershipRenewedEvent,
+  DecodedMembershipSuspendedEvent,
+  DecodedAdminUpdatedEvent,
+  DecodedOwnershipTransferProposedEvent,
+  DecodedOwnershipTransferredEvent,
+} from '@guildpass/contracts';
 
-export interface DecodedMembershipMintedEvent {
-  type: 'MembershipMinted';
-  to: string; // wallet address
-  tokenId: number;
-  communityId: string;
-  expiresAt: number; // unix timestamp
-  chainId?: number;
-  blockNumber?: number;
-  blockHash?: string;
-  transactionHash?: string;
-  logIndex?: number;
-}
+import type {
+  DecodedContractEvent,
+  DecodedMembershipMintedEvent,
+  DecodedMembershipRenewedEvent,
+  DecodedMembershipSuspendedEvent,
+  DecodedAdminUpdatedEvent,
+  DecodedOwnershipTransferProposedEvent,
+  DecodedOwnershipTransferredEvent,
+} from '@guildpass/contracts';
 
-export interface DecodedMembershipRenewedEvent {
-  type: 'MembershipRenewed';
-  tokenId: number;
-  newExpiresAt: number; // unix timestamp
-  chainId?: number;
-  blockNumber?: number;
-  blockHash?: string;
-  transactionHash?: string;
-  logIndex?: number;
-}
-
-export interface DecodedMembershipSuspendedEvent {
-  type: 'MembershipSuspended';
-  tokenId: number;
-  isSuspended: boolean;
-  chainId?: number;
-  blockNumber?: number;
-  blockHash?: string;
-  transactionHash?: string;
-  logIndex?: number;
-}
-
-export type DecodedContractEvent =
-  | DecodedMembershipMintedEvent
-  | DecodedMembershipRenewedEvent
-  | DecodedMembershipSuspendedEvent;
+import { invalidateMembershipsCache } from './memberService';
 
 /**
  * Validates that required fields exist in an event
@@ -69,6 +53,18 @@ function validateEvent(event: DecodedContractEvent): void {
   } else if (event.type === 'MembershipSuspended') {
     if (!event.tokenId || event.isSuspended === undefined) {
       throw new Error('Invalid MembershipSuspended event: missing required fields');
+    }
+  } else if (event.type === 'AdminUpdated') {
+    if (!event.admin || event.enabled === undefined) {
+      throw new Error('Invalid AdminUpdated event: missing required fields');
+    }
+  } else if (event.type === 'OwnershipTransferProposed') {
+    if (!event.currentOwner || !event.proposedOwner) {
+      throw new Error('Invalid OwnershipTransferProposed event: missing required fields');
+    }
+  } else if (event.type === 'OwnershipTransferred') {
+    if (!event.previousOwner || !event.newOwner) {
+      throw new Error('Invalid OwnershipTransferred event: missing required fields');
     }
   }
 }
@@ -91,17 +87,28 @@ export async function applyContractEvent(
 ): Promise<void> {
   validateEvent(event);
 
-  // Generate correlation ID to link all related events
-  const correlationId = `${event.transactionHash || 'unknown'}_${event.logIndex ?? 0}_${Date.now()}`;
+  const txHash = event.transactionHash ?? event.txHash;
+  const chainId = event.chainId ?? 31337;
+  const contractAddress = event.contractAddress ?? '0x0000000000000000000000000000000000000000';
 
-  // Access-affecting writes must be atomic.
-  await prisma.$transaction(async (tx) => {
+  // Generate correlation ID to link all related events
+  const correlationId = `${txHash || 'unknown'}_${event.logIndex ?? 0}_${Date.now()}`;
+
+  // Access-affecting writes must be atomic. Use transaction if available, otherwise reuse outer transaction client.
+  const client = (prisma as any);
+  const transaction = typeof client.$transaction === 'function'
+    ? client.$transaction.bind(client)
+    : async (cb: (tx: any) => Promise<any>) => cb(client);
+
+  await transaction(async (tx: any) => {
     // Idempotency check: If transactionHash and logIndex are provided, check if already processed.
-    if (event.transactionHash && event.logIndex !== undefined) {
+    if (txHash && event.logIndex !== undefined) {
       const alreadyProcessed = await tx.processedEvent.findUnique({
         where: {
-          transactionHash_logIndex: {
-            transactionHash: event.transactionHash,
+          chainId_contractAddress_transactionHash_logIndex: {
+            chainId,
+            contractAddress,
+            transactionHash: txHash,
             logIndex: event.logIndex,
           },
         },
@@ -134,6 +141,23 @@ export async function applyContractEvent(
         },
       });
 
+      // Register community contract mapping for multi-chain
+      await tx.communityContract.upsert({
+        where: {
+          communityId_chainId_contractAddress: {
+            communityId: event.communityId,
+            chainId,
+            contractAddress,
+          },
+        },
+        update: {},
+        create: {
+          communityId: event.communityId,
+          chainId,
+          contractAddress,
+        },
+      });
+
       // Ensure member exists in community
       const member = await tx.member.upsert({
         where: {
@@ -152,48 +176,71 @@ export async function applyContractEvent(
       // Capture before state for audit trail
       const existingMembership = await tx.membership.findUnique({
         where: { memberId: member.id },
+        include: { activeToken: true },
       });
+      const previousToken = existingMembership?.activeToken;
 
-      // Create or update membership
-      // Note: If a member receives a second MembershipMinted for the same community,
-      // this updates their existing membership (replacing the tokenId and resetting state)
-      const updatedMembership = await tx.membership.upsert({
-        where: { memberId: member.id },
+      // Create or update membership token (scoped by chainId and contractAddress)
+      const updatedToken = await tx.membershipToken.upsert({
+        where: {
+          chainId_contractAddress_tokenId: {
+            chainId,
+            contractAddress,
+            tokenId: event.tokenId,
+          },
+        },
         update: {
-          tokenId: event.tokenId,
+          memberId: member.id,
           state: 'active',
           expiresAt,
           renewedAt: new Date(),
         },
         create: {
-          memberId: member.id,
           tokenId: event.tokenId,
+          chainId,
+          contractAddress,
+          memberId: member.id,
           state: 'active',
           expiresAt,
         },
       });
 
-      // Create audit event with on-chain metadata
-      await tx.auditEvent.create({
-        data: {
-          eventType: 'MEMBERSHIP_CREATED',
-          walletId: wallet,
-          communityId: event.communityId,
-          correlationId,
-          chainId: event.chainId ?? null,
-          txHash: event.transactionHash ?? null,
-          blockNumber: event.blockNumber ?? null,
-          logIndex: event.logIndex ?? null,
-          beforeState: existingMembership ? {
-            tokenId: existingMembership.tokenId,
-            state: existingMembership.state,
-            expiresAt: existingMembership.expiresAt?.toISOString(),
-          } : null,
-          afterState: {
-            tokenId: updatedMembership.tokenId,
-            state: updatedMembership.state,
-            expiresAt: updatedMembership.expiresAt?.toISOString(),
-          },
+      // Update the active token pointer in Membership table
+      const updatedMembership = await tx.membership.upsert({
+        where: { memberId: member.id },
+        update: {
+          activeTokenId: updatedToken.id,
+        },
+        create: {
+          memberId: member.id,
+          activeTokenId: updatedToken.id,
+        },
+      });
+
+      // Create audit event with on-chain metadata and hash-chain integrity
+      await writeChainedAuditEvent(tx, {
+        eventType: 'MEMBERSHIP_CREATED',
+        walletId: wallet,
+        communityId: event.communityId,
+        correlationId,
+        chainId,
+        contractAddress: contractAddress !== '0x0000000000000000000000000000000000000000' ? contractAddress : null,
+        txHash: txHash ?? null,
+        blockNumber: event.blockNumber ?? null,
+        logIndex: event.logIndex ?? null,
+        beforeState: (previousToken ? {
+          tokenId: previousToken.tokenId,
+          chainId: previousToken.chainId,
+          contractAddress: previousToken.contractAddress,
+          state: previousToken.state,
+          expiresAt: previousToken.expiresAt?.toISOString(),
+        } : null) as any,
+        afterState: {
+          tokenId: updatedToken.tokenId,
+          chainId: updatedToken.chainId,
+          contractAddress: updatedToken.contractAddress,
+          state: updatedToken.state,
+          expiresAt: updatedToken.expiresAt?.toISOString(),
         },
       });
 
@@ -205,13 +252,16 @@ export async function applyContractEvent(
           entityType: 'Membership',
           communityId: event.communityId,
           correlationId,
-          chainId: event.chainId ?? null,
-          txHash: event.transactionHash ?? null,
+          chainId,
+          contractAddress: contractAddress !== '0x0000000000000000000000000000000000000000' ? contractAddress : null,
+          txHash: txHash ?? null,
           blockNumber: event.blockNumber ?? null,
           logIndex: event.logIndex ?? null,
           payload: {
             memberId: member.id,
             tokenId: event.tokenId,
+            chainId,
+            contractAddress,
             wallet,
             expiresAt: expiresAt.toISOString(),
           },
@@ -220,59 +270,67 @@ export async function applyContractEvent(
         },
       });
     } else if (event.type === 'MembershipRenewed') {
-      const membership = await tx.membership.findFirst({
+      const token = await tx.membershipToken.findUnique({
         where: {
-          tokenId: event.tokenId,
+          chainId_contractAddress_tokenId: {
+            chainId,
+            contractAddress,
+            tokenId: event.tokenId,
+          },
         },
         include: {
           member: {
             include: {
               wallet: true,
+              membership: true,
             },
           },
         },
       });
 
-      if (!membership) {
+      if (!token) {
         throw new Error(
-          `Cannot renew membership: tokenId ${event.tokenId} not found in database`,
+          `Cannot renew membership: tokenId ${event.tokenId} on chain ${chainId} not found in database`,
         );
       }
 
       const beforeState = {
-        tokenId: membership.tokenId,
-        state: membership.state,
-        expiresAt: membership.expiresAt?.toISOString(),
-        renewedAt: membership.renewedAt?.toISOString(),
+        tokenId: token.tokenId,
+        chainId: token.chainId,
+        contractAddress: token.contractAddress,
+        state: token.state,
+        expiresAt: token.expiresAt?.toISOString(),
+        renewedAt: token.renewedAt?.toISOString(),
       };
 
       const newExpiresAt = new Date(event.newExpiresAt * 1000);
-      const updatedMembership = await tx.membership.update({
-        where: { id: membership.id },
+      const updatedToken = await tx.membershipToken.update({
+        where: { id: token.id },
         data: {
           expiresAt: newExpiresAt,
           renewedAt: new Date(),
         },
       });
 
-      // Create audit event with on-chain metadata
-      await tx.auditEvent.create({
-        data: {
-          eventType: 'MEMBERSHIP_UPDATED',
-          walletId: membership.member.wallet.address,
-          communityId: membership.member.communityId,
-          correlationId,
-          chainId: event.chainId ?? null,
-          txHash: event.transactionHash ?? null,
-          blockNumber: event.blockNumber ?? null,
-          logIndex: event.logIndex ?? null,
-          beforeState,
-          afterState: {
-            tokenId: updatedMembership.tokenId,
-            state: updatedMembership.state,
-            expiresAt: updatedMembership.expiresAt?.toISOString(),
-            renewedAt: updatedMembership.renewedAt?.toISOString(),
-          },
+      // Create audit event with on-chain metadata and hash-chain integrity
+      await writeChainedAuditEvent(tx, {
+        eventType: 'MEMBERSHIP_UPDATED',
+        walletId: token.member.wallet.address,
+        communityId: token.member.communityId,
+        correlationId,
+        chainId,
+        contractAddress: contractAddress !== '0x0000000000000000000000000000000000000000' ? contractAddress : null,
+        txHash: txHash ?? null,
+        blockNumber: event.blockNumber ?? null,
+        logIndex: event.logIndex ?? null,
+        beforeState,
+        afterState: {
+          tokenId: updatedToken.tokenId,
+          chainId: updatedToken.chainId,
+          contractAddress: updatedToken.contractAddress,
+          state: updatedToken.state,
+          expiresAt: updatedToken.expiresAt?.toISOString(),
+          renewedAt: updatedToken.renewedAt?.toISOString(),
         },
       });
 
@@ -280,18 +338,21 @@ export async function applyContractEvent(
       await tx.outboxEvent.create({
         data: {
           eventType: 'MEMBERSHIP_RENEWED',
-          entityId: membership.id,
+          entityId: token.member.membership?.id ?? 'unknown',
           entityType: 'Membership',
-          communityId: membership.member.communityId,
+          communityId: token.member.communityId,
           correlationId,
-          chainId: event.chainId ?? null,
-          txHash: event.transactionHash ?? null,
+          chainId,
+          contractAddress: contractAddress !== '0x0000000000000000000000000000000000000000' ? contractAddress : null,
+          txHash: txHash ?? null,
           blockNumber: event.blockNumber ?? null,
           logIndex: event.logIndex ?? null,
           payload: {
-            memberId: membership.memberId,
+            memberId: token.memberId,
             tokenId: event.tokenId,
-            wallet: membership.member.wallet.address,
+            chainId,
+            contractAddress,
+            wallet: token.member.wallet.address,
             newExpiresAt: newExpiresAt.toISOString(),
           },
           status: 'pending',
@@ -299,49 +360,63 @@ export async function applyContractEvent(
         },
       });
     } else if (event.type === 'MembershipSuspended') {
-      const membership = await tx.membership.findFirst({
+      const token = await tx.membershipToken.findUnique({
         where: {
-          tokenId: event.tokenId,
+          chainId_contractAddress_tokenId: {
+            chainId,
+            contractAddress,
+            tokenId: event.tokenId,
+          },
         },
-        include: { member: { include: { wallet: true } } },
+        include: {
+          member: {
+            include: {
+              wallet: true,
+              membership: true,
+            },
+          },
+        },
       });
 
-      if (!membership) {
+      if (!token) {
         throw new Error(
-          `Cannot suspend membership: tokenId ${event.tokenId} not found in database`,
+          `Cannot suspend membership: tokenId ${event.tokenId} on chain ${chainId} not found in database`,
         );
       }
 
       const beforeState = {
-        tokenId: membership.tokenId,
-        state: membership.state,
-        expiresAt: membership.expiresAt?.toISOString(),
+        tokenId: token.tokenId,
+        chainId: token.chainId,
+        contractAddress: token.contractAddress,
+        state: token.state,
+        expiresAt: token.expiresAt?.toISOString(),
       };
 
-      const updatedMembership = await tx.membership.update({
-        where: { id: membership.id },
+      const updatedToken = await tx.membershipToken.update({
+        where: { id: token.id },
         data: {
           state: event.isSuspended ? 'suspended' : 'active',
         },
       });
 
-      // Create audit event with on-chain metadata
-      await tx.auditEvent.create({
-        data: {
-          eventType: 'MEMBERSHIP_UPDATED',
-          walletId: membership.member.wallet.address,
-          communityId: membership.member.communityId,
-          correlationId,
-          chainId: event.chainId ?? null,
-          txHash: event.transactionHash ?? null,
-          blockNumber: event.blockNumber ?? null,
-          logIndex: event.logIndex ?? null,
-          beforeState,
-          afterState: {
-            tokenId: updatedMembership.tokenId,
-            state: updatedMembership.state,
-            expiresAt: updatedMembership.expiresAt?.toISOString(),
-          },
+      // Create audit event with on-chain metadata and hash-chain integrity
+      await writeChainedAuditEvent(tx, {
+        eventType: 'MEMBERSHIP_UPDATED',
+        walletId: token.member.wallet.address,
+        communityId: token.member.communityId,
+        correlationId,
+        chainId,
+        contractAddress: contractAddress !== '0x0000000000000000000000000000000000000000' ? contractAddress : null,
+        txHash: txHash ?? null,
+        blockNumber: event.blockNumber ?? null,
+        logIndex: event.logIndex ?? null,
+        beforeState,
+        afterState: {
+          tokenId: updatedToken.tokenId,
+          chainId: updatedToken.chainId,
+          contractAddress: updatedToken.contractAddress,
+          state: updatedToken.state,
+          expiresAt: updatedToken.expiresAt?.toISOString(),
         },
       });
 
@@ -349,36 +424,170 @@ export async function applyContractEvent(
       await tx.outboxEvent.create({
         data: {
           eventType: event.isSuspended ? 'MEMBERSHIP_SUSPENDED' : 'MEMBERSHIP_UNSUSPENDED',
-          entityId: membership.id,
+          entityId: token.member.membership?.id ?? 'unknown',
           entityType: 'Membership',
-          communityId: membership.member.communityId,
+          communityId: token.member.communityId,
           correlationId,
-          chainId: event.chainId ?? null,
-          txHash: event.transactionHash ?? null,
+          chainId,
+          contractAddress: contractAddress !== '0x0000000000000000000000000000000000000000' ? contractAddress : null,
+          txHash: txHash ?? null,
           blockNumber: event.blockNumber ?? null,
           logIndex: event.logIndex ?? null,
           payload: {
-            memberId: membership.memberId,
+            memberId: token.memberId,
             tokenId: event.tokenId,
-            wallet: membership.member.wallet.address,
+            chainId,
+            contractAddress,
+            wallet: token.member.wallet.address,
             isSuspended: event.isSuspended,
           },
           status: 'pending',
           nextRetryAt: new Date(),
         },
       });
+    } else if (event.type === 'AdminUpdated') {
+      const adminAddress = event.admin.toLowerCase();
+
+      const existingAdmin = await tx.contractAdmin.findUnique({
+        where: {
+          chainId_address: {
+            chainId,
+            address: adminAddress,
+          },
+        },
+      });
+
+      const beforeState = existingAdmin
+        ? { enabled: existingAdmin.enabled }
+        : null;
+
+      const updatedAdmin = await tx.contractAdmin.upsert({
+        where: {
+          chainId_address: {
+            chainId,
+            address: adminAddress,
+          },
+        },
+        update: {
+          enabled: event.enabled,
+        },
+        create: {
+          chainId,
+          address: adminAddress,
+          enabled: event.enabled,
+        },
+      });
+
+      await writeChainedAuditEvent(tx, {
+        eventType: 'CONTRACT_ADMIN_UPDATED',
+        walletId: adminAddress,
+        communityId: null,
+        correlationId,
+        chainId,
+        contractAddress: contractAddress !== '0x0000000000000000000000000000000000000000' ? contractAddress : null,
+        txHash: txHash ?? null,
+        blockNumber: event.blockNumber ?? null,
+        logIndex: event.logIndex ?? null,
+        beforeState: beforeState as any,
+        afterState: {
+          enabled: updatedAdmin.enabled,
+        },
+      });
+    } else if (event.type === 'OwnershipTransferProposed') {
+      const currentOwner = event.currentOwner.toLowerCase();
+      const proposedOwner = event.proposedOwner.toLowerCase();
+
+      const existingOwnership = await tx.contractOwnership.findUnique({
+        where: { chainId },
+      });
+
+      const beforeState = existingOwnership
+        ? { owner: existingOwnership.owner, proposedOwner: existingOwnership.proposedOwner }
+        : null;
+
+      const updatedOwnership = await tx.contractOwnership.upsert({
+        where: { chainId },
+        update: {
+          proposedOwner,
+        },
+        create: {
+          chainId,
+          owner: currentOwner,
+          proposedOwner,
+        },
+      });
+
+      await writeChainedAuditEvent(tx, {
+        eventType: 'CONTRACT_OWNERSHIP_TRANSFERRED',
+        walletId: proposedOwner,
+        communityId: null,
+        correlationId,
+        chainId,
+        contractAddress: contractAddress !== '0x0000000000000000000000000000000000000000' ? contractAddress : null,
+        txHash: txHash ?? null,
+        blockNumber: event.blockNumber ?? null,
+        logIndex: event.logIndex ?? null,
+        beforeState: beforeState as any,
+        afterState: {
+          owner: updatedOwnership.owner,
+          proposedOwner: updatedOwnership.proposedOwner,
+        },
+      });
+    } else if (event.type === 'OwnershipTransferred') {
+      const previousOwner = event.previousOwner.toLowerCase();
+      const newOwner = event.newOwner.toLowerCase();
+
+      const existingOwnership = await tx.contractOwnership.findUnique({
+        where: { chainId },
+      });
+
+      const beforeState = existingOwnership
+        ? { owner: existingOwnership.owner, proposedOwner: existingOwnership.proposedOwner }
+        : null;
+
+      const updatedOwnership = await tx.contractOwnership.upsert({
+        where: { chainId },
+        update: {
+          owner: newOwner,
+          proposedOwner: null,
+        },
+        create: {
+          chainId,
+          owner: newOwner,
+          proposedOwner: null,
+        },
+      });
+
+      await writeChainedAuditEvent(tx, {
+        eventType: 'CONTRACT_OWNERSHIP_TRANSFERRED',
+        walletId: newOwner,
+        communityId: null,
+        correlationId,
+        chainId,
+        contractAddress: contractAddress !== '0x0000000000000000000000000000000000000000' ? contractAddress : null,
+        txHash: txHash ?? null,
+        blockNumber: event.blockNumber ?? null,
+        logIndex: event.logIndex ?? null,
+        beforeState: beforeState as any,
+        afterState: {
+          owner: updatedOwnership.owner,
+          proposedOwner: updatedOwnership.proposedOwner,
+        },
+      });
     }
 
     // Record the event as processed for reorg safety and idempotency.
     if (
-      event.transactionHash &&
+      txHash &&
       event.logIndex !== undefined &&
       event.blockHash &&
       event.blockNumber !== undefined
     ) {
       await tx.processedEvent.create({
         data: {
-          transactionHash: event.transactionHash,
+          chainId,
+          contractAddress,
+          transactionHash: txHash,
           logIndex: event.logIndex,
           blockHash: event.blockHash,
           blockNumber: event.blockNumber,
@@ -387,6 +596,37 @@ export async function applyContractEvent(
       });
     }
   });
+
+  // Invalidate the cached membership read for the affected wallet so a repeat
+  // read never serves stale data. Every membership event carries a tokenId;
+  // resolve the wallet + community from the committed token and clear the entry.
+  // best-effort: a cache failure must never fail on-chain event processing —
+  // the short TTL is the backstop.
+  if ('tokenId' in event && event.tokenId !== undefined) {
+    try {
+      const affected = await prisma.membershipToken.findUnique({
+        where: {
+          chainId_contractAddress_tokenId: {
+            chainId,
+            contractAddress,
+            tokenId: event.tokenId,
+          },
+        },
+        include: { member: { include: { wallet: true } } },
+      });
+      if (affected?.member?.wallet) {
+        await invalidateMembershipsCache(
+          affected.member.communityId,
+          affected.member.wallet.address,
+        );
+      }
+    } catch (err) {
+      console.warn(
+        `Membership cache invalidation failed for tokenId ${event.tokenId}:`,
+        err,
+      );
+    }
+  }
 }
 
 
@@ -457,31 +697,45 @@ export async function getCurrentMembershipState(
       wallet: { address: wallet.toLowerCase() },
       community: { id: communityId },
     },
-    include: { membership: true },
+    include: {
+      membership: {
+        include: {
+          activeToken: true,
+        },
+      },
+    },
   });
 
-  if (!member?.membership) {
+  if (!member?.membership?.activeToken) {
     return null;
   }
 
   return {
-    tokenId: member.membership.tokenId,
-    state: member.membership.state,
-    expiresAt: member.membership.expiresAt,
+    tokenId: member.membership.activeToken.tokenId,
+    state: member.membership.activeToken.state,
+    expiresAt: member.membership.activeToken.expiresAt,
   };
 }
 
 /**
- * Check if a tokenId is already in use
+ * Check if a tokenId is already in use on a given chain/contract
  *
  * Useful for detecting duplicate events.
  */
 export async function tokenIdExists(
   prisma: PrismaClient,
   tokenId: number,
+  chainId: number = 31337,
+  contractAddress: string = '0x0000000000000000000000000000000000000000',
 ): Promise<boolean> {
-  const membership = await prisma.membership.findUnique({
-    where: { tokenId },
+  const token = await prisma.membershipToken.findUnique({
+    where: {
+      chainId_contractAddress_tokenId: {
+        chainId,
+        contractAddress,
+        tokenId,
+      },
+    },
   });
-  return !!membership;
+  return !!token;
 }

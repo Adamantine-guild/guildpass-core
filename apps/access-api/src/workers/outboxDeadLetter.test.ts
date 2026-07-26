@@ -57,6 +57,35 @@ function makeFakeDb(event: any) {
       update: jest.fn(),
       count: jest.fn(async () => deadLetters.length),
     },
+    // Stub for claimPendingOutboxEvents' raw claim query (see
+    // outboxWorker.test.ts / outboxService.test.ts for the same pattern).
+    $queryRaw: jest.fn(async (_strings: TemplateStringsArray, ...values: any[]) => {
+      const [workerId, leaseMs, limit] = values;
+      const now = new Date();
+      const eligible = outboxEvents.filter(
+        (r: any) =>
+          r.status === "pending" &&
+          r.nextRetryAt &&
+          new Date(r.nextRetryAt) <= now &&
+          (!r.claimExpiresAt || new Date(r.claimExpiresAt) < now),
+      );
+      const claimed = eligible.slice(0, limit);
+      const claimExpiresAt = new Date(now.getTime() + leaseMs);
+      claimed.forEach((r: any) => {
+        r.claimedAt = now;
+        r.claimedBy = workerId;
+        r.claimExpiresAt = claimExpiresAt;
+      });
+      return claimed.map((r: any) => ({
+        id: r.id,
+        eventType: r.eventType,
+        entityId: r.entityId,
+        entityType: r.entityType,
+        communityId: r.communityId,
+        payload: r.payload,
+        createdAt: r.createdAt,
+      }));
+    }),
     _outboxEvents: outboxEvents,
     _deadLetters: deadLetters,
   } as any;
@@ -165,7 +194,7 @@ describe("dead-letter fallback after repeated failure", () => {
 
     await processOutboxBatch(db, alwaysFails, 50); // exhausts the single retry -> dead-lettered
     // A subsequent worker pass should no longer pick this event up at all,
-    // since getPendingOutboxEvents only selects status="pending" rows.
+    // since claimPendingOutboxEvents only selects status="pending" rows.
     await processOutboxBatch(db, alwaysFails, 50);
 
     const deadLetters = await listDeadLetterEvents(db, { communityId: "community-1" });

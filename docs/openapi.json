@@ -11,10 +11,6 @@
   "paths": {
     "/metrics": {
       "get": {
-        "summary": "Prometheus metrics scrape endpoint",
-        "tags": [
-          "Observability"
-        ],
         "responses": {
           "200": {
             "description": "Default Response"
@@ -24,7 +20,7 @@
     },
     "/health/live": {
       "get": {
-        "summary": "Liveness probe – is the process alive?",
+        "summary": "Liveness probe",
         "tags": [
           "Health"
         ],
@@ -52,7 +48,7 @@
     },
     "/health/ready": {
       "get": {
-        "summary": "Readiness probe – can we serve traffic?",
+        "summary": "Readiness probe",
         "tags": [
           "Health"
         ],
@@ -99,177 +95,7 @@
         }
       }
     },
-    "/v1/communities/{communityId}/memberships/{wallet}": {
-      "get": {
-        "parameters": [
-          {
-            "schema": {
-              "type": "string"
-            },
-            "in": "path",
-            "name": "communityId",
-            "required": true
-          },
-          {
-            "schema": {
-              "type": "string"
-            },
-            "in": "path",
-            "name": "wallet",
-            "required": true
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Default Response"
-          }
-        }
-      }
-    },
-    "/v1/communities/{communityId}/members/{wallet}": {
-      "get": {
-        "parameters": [
-          {
-            "schema": {
-              "type": "string"
-            },
-            "in": "path",
-            "name": "communityId",
-            "required": true
-          },
-          {
-            "schema": {
-              "type": "string"
-            },
-            "in": "path",
-            "name": "wallet",
-            "required": true
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Default Response"
-          }
-        }
-      }
-    },
-    "/v1/communities/{communityId}/members/{wallet}/roles": {
-      "post": {
-        "parameters": [
-          {
-            "schema": {
-              "type": "string"
-            },
-            "in": "path",
-            "name": "communityId",
-            "required": true
-          },
-          {
-            "schema": {
-              "type": "string"
-            },
-            "in": "path",
-            "name": "wallet",
-            "required": true
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Default Response"
-          }
-        }
-      }
-    },
-    "/v1/communities/{communityId}/members/{wallet}/roles/{role}": {
-      "delete": {
-        "parameters": [
-          {
-            "schema": {
-              "type": "string"
-            },
-            "in": "path",
-            "name": "communityId",
-            "required": true
-          },
-          {
-            "schema": {
-              "type": "string"
-            },
-            "in": "path",
-            "name": "wallet",
-            "required": true
-          },
-          {
-            "schema": {
-              "type": "string"
-            },
-            "in": "path",
-            "name": "role",
-            "required": true
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Default Response"
-          }
-        }
-      }
-    },
-    "/v1/communities/{communityId}/overrides": {
-      "post": {
-        "parameters": [
-          {
-            "schema": {
-              "type": "string"
-            },
-            "in": "path",
-            "name": "communityId",
-            "required": true
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Default Response"
-          }
-        }
-      }
-    },
-    "/v1/communities/{communityId}/overrides/{wallet}/{resource}": {
-      "delete": {
-        "parameters": [
-          {
-            "schema": {
-              "type": "string"
-            },
-            "in": "path",
-            "name": "communityId",
-            "required": true
-          },
-          {
-            "schema": {
-              "type": "string"
-            },
-            "in": "path",
-            "name": "wallet",
-            "required": true
-          },
-          {
-            "schema": {
-              "type": "string"
-            },
-            "in": "path",
-            "name": "resource",
-            "required": true
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Default Response"
-          }
-        }
-      }
-    },
-    "/v1/access/check": {
+    "/v1/auth/nonce": {
       "post": {
         "responses": {
           "200": {
@@ -278,8 +104,117 @@
         }
       }
     },
-    "/v1/communities/{communityId}/members": {
+    "/v1/auth/verify": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/v1/wallets/{primaryWallet}/challenges": {
+      "post": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "primaryWallet",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/v1/wallets/{primaryWallet}/link": {
+      "post": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "primaryWallet",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/v1/wallets/{primaryWallet}/linked": {
       "get": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "primaryWallet",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/v1/memberships/{wallet}/appeals": {
+      "post": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "wallet",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/v1/appeals/{appealId}/transition": {
+      "post": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "appealId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/v1/communities/{communityId}/roles": {
+      "get": {
+        "summary": "Get community roles and hierarchy metadata",
+        "tags": [
+          "Communities",
+          "Roles"
+        ],
         "parameters": [
           {
             "schema": {
@@ -324,7 +259,147 @@
         ],
         "responses": {
           "200": {
-            "description": "Default Response"
+            "description": "List of community roles and hierarchy metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "List of community roles and hierarchy metadata",
+                  "type": "object",
+                  "required": [
+                    "roles"
+                  ],
+                  "properties": {
+                    "roles": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "name",
+                          "description",
+                          "implies"
+                        ],
+                        "properties": {
+                          "name": {
+                            "type": "string",
+                            "enum": [
+                              "admin",
+                              "member",
+                              "contributor"
+                            ]
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "implies": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "enum": [
+                                "admin",
+                                "member",
+                                "contributor"
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Community not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Community not found",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Internal server error",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
           }
         },
         "summary": "List community members for admins",
@@ -333,7 +408,3787 @@
         ]
       }
     },
+    "/v1/communities/{communityId}/memberships/{wallet}": {
+      "get": {
+        "summary": "Get membership status summary for a wallet in a community",
+        "tags": [
+          "Memberships"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "communityId",
+            "required": true,
+            "description": "Community identifier"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^0x[0-9a-fA-F]{40}$"
+            },
+            "in": "path",
+            "name": "wallet",
+            "required": true,
+            "description": "EVM-compatible wallet address (checksummed or lowercase)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Membership summary for the wallet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Membership summary for the wallet",
+                  "type": "object",
+                  "properties": {
+                    "wallet": {
+                      "type": "string",
+                      "pattern": "^0x[0-9a-fA-F]{40}$",
+                      "description": "EVM-compatible wallet address (checksummed or lowercase)"
+                    },
+                    "communities": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "communityId",
+                          "state"
+                        ],
+                        "properties": {
+                          "communityId": {
+                            "type": "string"
+                          },
+                          "state": {
+                            "type": "string",
+                            "enum": [
+                              "invited",
+                              "active",
+                              "expired",
+                              "suspended"
+                            ]
+                          },
+                          "expiresAt": {
+                            "type": "string",
+                            "format": "date-time",
+                            "nullable": true
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Wallet not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Wallet not found",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Internal server error",
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/communities/{communityId}/members/{wallet}": {
+      "get": {
+        "summary": "Get member profile with membership state and roles",
+        "tags": [
+          "Members"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "communityId",
+            "required": true,
+            "description": "Community identifier"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^0x[0-9a-fA-F]{40}$"
+            },
+            "in": "path",
+            "name": "wallet",
+            "required": true,
+            "description": "EVM-compatible wallet address (checksummed or lowercase)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Member profile",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Member profile",
+                  "type": "object",
+                  "properties": {
+                    "wallet": {
+                      "type": "string",
+                      "pattern": "^0x[0-9a-fA-F]{40}$",
+                      "description": "EVM-compatible wallet address (checksummed or lowercase)"
+                    },
+                    "communityId": {
+                      "type": "string"
+                    },
+                    "profile": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "displayName": {
+                          "type": "string"
+                        },
+                        "bio": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "avatarUrl": {
+                          "type": "string",
+                          "nullable": true
+                        }
+                      }
+                    },
+                    "membership": {
+                      "type": "object",
+                      "properties": {
+                        "state": {
+                          "type": "string",
+                          "enum": [
+                            "invited",
+                            "active",
+                            "expired",
+                            "suspended"
+                          ]
+                        },
+                        "expiresAt": {
+                          "type": "string",
+                          "format": "date-time",
+                          "nullable": true
+                        }
+                      }
+                    },
+                    "roles": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "admin",
+                          "member",
+                          "contributor"
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Validation error",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Member not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Member not found",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Internal server error",
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/communities/{communityId}/members/{wallet}/roles": {
+      "post": {
+        "summary": "Assign a role to a community member",
+        "tags": [
+          "Members",
+          "Roles"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "role"
+                ],
+                "properties": {
+                  "role": {
+                    "type": "string",
+                    "enum": [
+                      "admin",
+                      "member",
+                      "contributor"
+                    ],
+                    "description": "Role to assign"
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "communityId",
+            "required": true,
+            "description": "Community identifier"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^0x[0-9a-fA-F]{40}$"
+            },
+            "in": "path",
+            "name": "wallet",
+            "required": true,
+            "description": "EVM-compatible wallet address (checksummed or lowercase)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Role assigned successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Role assigned successfully",
+                  "type": "object",
+                  "required": [
+                    "communityId",
+                    "wallet",
+                    "role",
+                    "assigned",
+                    "removed"
+                  ],
+                  "properties": {
+                    "communityId": {
+                      "type": "string"
+                    },
+                    "wallet": {
+                      "type": "string",
+                      "pattern": "^0x[0-9a-fA-F]{40}$",
+                      "description": "EVM-compatible wallet address (checksummed or lowercase)"
+                    },
+                    "role": {
+                      "type": "string",
+                      "enum": [
+                        "admin",
+                        "member",
+                        "contributor"
+                      ]
+                    },
+                    "assigned": {
+                      "type": "boolean"
+                    },
+                    "removed": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error (invalid wallet, unknown community, or unrecognized role)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Validation error (invalid wallet, unknown community, or unrecognized role)",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — requester does not have permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Forbidden — requester does not have permission",
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Internal server error",
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/communities/{communityId}/members/{wallet}/roles/{role}": {
+      "delete": {
+        "summary": "Remove a role from a community member",
+        "tags": [
+          "Members",
+          "Roles"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "communityId",
+            "required": true,
+            "description": "Community identifier"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^0x[0-9a-fA-F]{40}$"
+            },
+            "in": "path",
+            "name": "wallet",
+            "required": true,
+            "description": "EVM-compatible wallet address (checksummed or lowercase)"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "admin",
+                "member",
+                "contributor"
+              ]
+            },
+            "in": "path",
+            "name": "role",
+            "required": true,
+            "description": "Role to remove"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Role removed successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Role removed successfully",
+                  "type": "object",
+                  "required": [
+                    "communityId",
+                    "wallet",
+                    "role",
+                    "assigned",
+                    "removed"
+                  ],
+                  "properties": {
+                    "communityId": {
+                      "type": "string"
+                    },
+                    "wallet": {
+                      "type": "string",
+                      "pattern": "^0x[0-9a-fA-F]{40}$",
+                      "description": "EVM-compatible wallet address (checksummed or lowercase)"
+                    },
+                    "role": {
+                      "type": "string",
+                      "enum": [
+                        "admin",
+                        "member",
+                        "contributor"
+                      ]
+                    },
+                    "assigned": {
+                      "type": "boolean"
+                    },
+                    "removed": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error (invalid wallet, unknown community, or unrecognized role)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Validation error (invalid wallet, unknown community, or unrecognized role)",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — requester does not have permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Forbidden — requester does not have permission",
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Internal server error",
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/communities/{communityId}/members/{wallet}/badges": {
+      "post": {
+        "summary": "Assign a badge to a community member",
+        "tags": [
+          "Members",
+          "Badges"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "label"
+                ],
+                "properties": {
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Badge label to assign"
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "communityId",
+            "required": true,
+            "description": "Community identifier"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^0x[0-9a-fA-F]{40}$"
+            },
+            "in": "path",
+            "name": "wallet",
+            "required": true,
+            "description": "EVM-compatible wallet address (checksummed or lowercase)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Badge assigned successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Badge assigned successfully",
+                  "type": "object",
+                  "required": [
+                    "communityId",
+                    "wallet",
+                    "assigned",
+                    "removed"
+                  ],
+                  "properties": {
+                    "communityId": {
+                      "type": "string"
+                    },
+                    "wallet": {
+                      "type": "string",
+                      "pattern": "^0x[0-9a-fA-F]{40}$",
+                      "description": "EVM-compatible wallet address (checksummed or lowercase)"
+                    },
+                    "badge": {
+                      "type": "object",
+                      "required": [
+                        "id",
+                        "memberId",
+                        "label",
+                        "issuedAt"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "memberId": {
+                          "type": "string"
+                        },
+                        "label": {
+                          "type": "string"
+                        },
+                        "issuedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      }
+                    },
+                    "assigned": {
+                      "type": "boolean"
+                    },
+                    "removed": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error (invalid wallet, unknown community, or missing label)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Validation error (invalid wallet, unknown community, or missing label)",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — requester does not have permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Forbidden — requester does not have permission",
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Target wallet is not a member of the community",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Target wallet is not a member of the community",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Internal server error",
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "List badges assigned to a community member",
+        "tags": [
+          "Members",
+          "Badges"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "communityId",
+            "required": true,
+            "description": "Community identifier"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^0x[0-9a-fA-F]{40}$"
+            },
+            "in": "path",
+            "name": "wallet",
+            "required": true,
+            "description": "EVM-compatible wallet address (checksummed or lowercase)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Badges for the member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Badges for the member",
+                  "type": "object",
+                  "required": [
+                    "communityId",
+                    "wallet",
+                    "badges"
+                  ],
+                  "properties": {
+                    "communityId": {
+                      "type": "string"
+                    },
+                    "wallet": {
+                      "type": "string",
+                      "pattern": "^0x[0-9a-fA-F]{40}$",
+                      "description": "EVM-compatible wallet address (checksummed or lowercase)"
+                    },
+                    "badges": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "memberId",
+                          "label",
+                          "issuedAt"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "memberId": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "issuedAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error (invalid wallet or unknown community)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Validation error (invalid wallet or unknown community)",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Target wallet is not a member of the community",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Target wallet is not a member of the community",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Internal server error",
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/communities/{communityId}/members/{wallet}/badges/{badgeId}": {
+      "delete": {
+        "summary": "Revoke a badge from a community member",
+        "tags": [
+          "Members",
+          "Badges"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "communityId",
+            "required": true,
+            "description": "Community identifier"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^0x[0-9a-fA-F]{40}$"
+            },
+            "in": "path",
+            "name": "wallet",
+            "required": true,
+            "description": "EVM-compatible wallet address (checksummed or lowercase)"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "badgeId",
+            "required": true,
+            "description": "Badge identifier"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Badge revoked (or was already absent)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Badge revoked (or was already absent)",
+                  "type": "object",
+                  "required": [
+                    "communityId",
+                    "wallet",
+                    "assigned",
+                    "removed"
+                  ],
+                  "properties": {
+                    "communityId": {
+                      "type": "string"
+                    },
+                    "wallet": {
+                      "type": "string",
+                      "pattern": "^0x[0-9a-fA-F]{40}$",
+                      "description": "EVM-compatible wallet address (checksummed or lowercase)"
+                    },
+                    "assigned": {
+                      "type": "boolean"
+                    },
+                    "removed": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error (invalid wallet or unknown community)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Validation error (invalid wallet or unknown community)",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — requester does not have permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Forbidden — requester does not have permission",
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Target wallet is not a member of the community",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Target wallet is not a member of the community",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Internal server error",
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/communities/{communityId}/overrides": {
+      "post": {
+        "summary": "Create or update an access override for a wallet/resource pair",
+        "tags": [
+          "Overrides"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "wallet",
+                  "resource",
+                  "effect"
+                ],
+                "properties": {
+                  "wallet": {
+                    "type": "string",
+                    "pattern": "^0x[0-9a-fA-F]{40}$",
+                    "description": "EVM-compatible wallet address (checksummed or lowercase)"
+                  },
+                  "resource": {
+                    "type": "string",
+                    "description": "Resource identifier"
+                  },
+                  "effect": {
+                    "type": "string",
+                    "enum": [
+                      "ALLOW",
+                      "DENY"
+                    ],
+                    "description": "Override effect"
+                  },
+                  "reason": {
+                    "type": "string",
+                    "description": "Human-readable reason for the override",
+                    "nullable": true
+                  },
+                  "expiresAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "Optional ISO 8601 expiry timestamp",
+                    "nullable": true
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "communityId",
+            "required": true,
+            "description": "Community identifier"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Override created or updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Override created or updated",
+                  "type": "object",
+                  "required": [
+                    "communityId",
+                    "wallet",
+                    "resource",
+                    "effect",
+                    "created",
+                    "removed"
+                  ],
+                  "properties": {
+                    "communityId": {
+                      "type": "string"
+                    },
+                    "wallet": {
+                      "type": "string",
+                      "pattern": "^0x[0-9a-fA-F]{40}$",
+                      "description": "EVM-compatible wallet address (checksummed or lowercase)"
+                    },
+                    "resource": {
+                      "type": "string"
+                    },
+                    "effect": {
+                      "type": "string",
+                      "enum": [
+                        "ALLOW",
+                        "DENY"
+                      ]
+                    },
+                    "created": {
+                      "type": "boolean"
+                    },
+                    "removed": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error — missing required fields",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Validation error — missing required fields",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — requester does not have permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Forbidden — requester does not have permission",
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Internal server error",
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "List access overrides for a community (admin)",
+        "tags": [
+          "Overrides"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "communityId",
+            "required": true,
+            "description": "Community identifier"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Access overrides for the community",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Access overrides for the community",
+                  "type": "object",
+                  "required": [
+                    "communityId",
+                    "overrides"
+                  ],
+                  "properties": {
+                    "communityId": {
+                      "type": "string"
+                    },
+                    "overrides": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "wallet",
+                          "resource",
+                          "effect",
+                          "expired",
+                          "createdAt"
+                        ],
+                        "properties": {
+                          "wallet": {
+                            "type": "string",
+                            "pattern": "^0x[0-9a-fA-F]{40}$",
+                            "description": "EVM-compatible wallet address (checksummed or lowercase)"
+                          },
+                          "resource": {
+                            "type": "string"
+                          },
+                          "effect": {
+                            "type": "string",
+                            "enum": [
+                              "ALLOW",
+                              "DENY"
+                            ]
+                          },
+                          "reason": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "expiresAt": {
+                            "type": "string",
+                            "format": "date-time",
+                            "nullable": true
+                          },
+                          "expired": {
+                            "type": "boolean",
+                            "description": "Whether expiresAt has passed; expired overrides no longer affect access decisions"
+                          },
+                          "createdAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — requester does not have permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Forbidden — requester does not have permission",
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Internal server error",
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/communities/{communityId}/overrides/{wallet}/{resource}": {
+      "delete": {
+        "summary": "Revoke an access override for a wallet/resource pair",
+        "tags": [
+          "Overrides"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "communityId",
+            "required": true,
+            "description": "Community identifier"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^0x[0-9a-fA-F]{40}$"
+            },
+            "in": "path",
+            "name": "wallet",
+            "required": true,
+            "description": "EVM-compatible wallet address (checksummed or lowercase)"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "resource",
+            "required": true,
+            "description": "Resource identifier"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Override revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Override revoked",
+                  "type": "object",
+                  "required": [
+                    "communityId",
+                    "wallet",
+                    "resource",
+                    "effect",
+                    "created",
+                    "removed"
+                  ],
+                  "properties": {
+                    "communityId": {
+                      "type": "string"
+                    },
+                    "wallet": {
+                      "type": "string",
+                      "pattern": "^0x[0-9a-fA-F]{40}$",
+                      "description": "EVM-compatible wallet address (checksummed or lowercase)"
+                    },
+                    "resource": {
+                      "type": "string"
+                    },
+                    "effect": {
+                      "type": "string",
+                      "enum": [
+                        "ALLOW",
+                        "DENY"
+                      ]
+                    },
+                    "created": {
+                      "type": "boolean"
+                    },
+                    "removed": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — requester does not have permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Forbidden — requester does not have permission",
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Internal server error",
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/access/check": {
+      "post": {
+        "summary": "Check whether a wallet has access to a resource in a community",
+        "tags": [
+          "Access"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "wallet",
+                  "communityId",
+                  "resource"
+                ],
+                "properties": {
+                  "wallet": {
+                    "type": "string",
+                    "pattern": "^0x[0-9a-fA-F]{40}$",
+                    "description": "EVM-compatible wallet address (checksummed or lowercase)"
+                  },
+                  "communityId": {
+                    "type": "string",
+                    "description": "Community identifier"
+                  },
+                  "resource": {
+                    "type": "string",
+                    "description": "Resource identifier"
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Access decision",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Access decision",
+                  "type": "object",
+                  "required": [
+                    "allowed",
+                    "code"
+                  ],
+                  "properties": {
+                    "allowed": {
+                      "type": "boolean",
+                      "description": "Whether access is granted"
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "ALLOW",
+                        "DENY"
+                      ],
+                      "description": "Machine-readable decision code"
+                    },
+                    "reasons": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "code",
+                          "message"
+                        ],
+                        "properties": {
+                          "code": {
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "effectiveRoles": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "admin",
+                          "member",
+                          "contributor"
+                        ]
+                      },
+                      "nullable": true
+                    },
+                    "membershipState": {
+                      "type": "string",
+                      "enum": [
+                        "invited",
+                        "active",
+                        "expired",
+                        "suspended"
+                      ],
+                      "nullable": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error — missing required fields",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Validation error — missing required fields",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Internal server error",
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/communities/{communityId}/members": {
+      "get": {
+        "summary": "List community members (admin)",
+        "tags": [
+          "Members"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "admin",
+                "member",
+                "contributor"
+              ]
+            },
+            "in": "query",
+            "name": "role",
+            "required": false,
+            "description": "Filter members by role"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "invited",
+                "active",
+                "expired",
+                "suspended"
+              ]
+            },
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "description": "Filter members by membership status"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            },
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "description": "Page number for pagination"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "description": "Number of members per page (max 100)"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "communityId",
+            "required": true,
+            "description": "Community identifier"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated member list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Paginated member list",
+                  "type": "object",
+                  "required": [
+                    "communityId",
+                    "members",
+                    "pagination"
+                  ],
+                  "properties": {
+                    "communityId": {
+                      "type": "string"
+                    },
+                    "members": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "wallet": {
+                            "type": "string",
+                            "pattern": "^0x[0-9a-fA-F]{40}$",
+                            "description": "EVM-compatible wallet address (checksummed or lowercase)"
+                          },
+                          "displayName": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "state": {
+                            "type": "string",
+                            "enum": [
+                              "invited",
+                              "active",
+                              "expired",
+                              "suspended"
+                            ]
+                          },
+                          "roles": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "enum": [
+                                "admin",
+                                "member",
+                                "contributor"
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "pagination": {
+                      "type": "object",
+                      "required": [
+                        "page",
+                        "limit",
+                        "total",
+                        "totalPages"
+                      ],
+                      "properties": {
+                        "page": {
+                          "type": "integer"
+                        },
+                        "limit": {
+                          "type": "integer"
+                        },
+                        "total": {
+                          "type": "integer"
+                        },
+                        "totalPages": {
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — requester is not a community admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Forbidden — requester is not a community admin",
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Internal server error",
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/communities/{communityId}/dead-letter-events": {
+      "get": {
+        "summary": "List dead-lettered webhook delivery events for a community",
+        "tags": [
+          "Dead Letter"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "retried",
+                "resolved"
+              ]
+            },
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "description": "Filter events by status"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "communityId",
+            "required": true,
+            "description": "Community identifier"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of dead-letter events",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "List of dead-letter events",
+                  "type": "object",
+                  "required": [
+                    "events"
+                  ],
+                  "properties": {
+                    "events": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "originalEventId",
+                          "eventType",
+                          "failureReason",
+                          "retryCount",
+                          "status",
+                          "createdAt"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "originalEventId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "eventType": {
+                            "type": "string"
+                          },
+                          "entityId": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "entityType": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "communityId": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "payload": {
+                            "type": "object",
+                            "additionalProperties": true
+                          },
+                          "failureReason": {
+                            "type": "string"
+                          },
+                          "retryCount": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "pending",
+                              "retried",
+                              "resolved"
+                            ]
+                          },
+                          "createdAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "resolvedAt": {
+                            "type": "string",
+                            "format": "date-time",
+                            "nullable": true
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — requester is not a community admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Forbidden — requester is not a community admin",
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Internal server error",
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/communities/{communityId}/dead-letter-events/{id}/retry": {
+      "post": {
+        "summary": "Re-enqueue a dead-lettered event for redelivery",
+        "tags": [
+          "Dead Letter"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "communityId",
+            "required": true,
+            "description": "Community identifier"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "Dead-letter event ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Event re-enqueued successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Event re-enqueued successfully",
+                  "type": "object",
+                  "required": [
+                    "newEventId"
+                  ],
+                  "properties": {
+                    "newEventId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "ID of the newly created pending outbox event"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — requester is not a community admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Forbidden — requester is not a community admin",
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Dead-letter event not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Dead-letter event not found",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Event has already been retried or resolved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Event has already been retried or resolved",
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Internal server error",
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/audit/trace/{*}": {
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "*",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/v1/communities/{communityId}/audit-events": {
+      "get": {
+        "summary": "List and filter audit events for a community (admin only)",
+        "tags": [
+          "Audit"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "actorWallet",
+            "required": false,
+            "description": "Filter events by actor wallet address"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "ACCESS_CHECK",
+                "MEMBERSHIP_CREATED",
+                "MEMBERSHIP_UPDATED",
+                "MEMBERSHIP_DELETED",
+                "POLICY_EVALUATION",
+                "MEMBERSHIP_RECONCILED",
+                "OTHER"
+              ]
+            },
+            "in": "query",
+            "name": "eventType",
+            "required": false,
+            "description": "Filter events by event type"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "resource",
+            "required": false,
+            "description": "Filter events by resource identifier"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "description": "ISO 8601 timestamp to filter events created at or after"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "description": "ISO 8601 timestamp to filter events created at or before"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            },
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "description": "Page number for pagination"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "description": "Number of events per page"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "communityId",
+            "required": true,
+            "description": "Community identifier"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated audit events list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Paginated audit events list",
+                  "type": "object",
+                  "required": [
+                    "events",
+                    "pagination"
+                  ],
+                  "properties": {
+                    "events": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "eventType",
+                          "createdAt"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "eventType": {
+                            "type": "string"
+                          },
+                          "walletId": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "communityId": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "resource": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "policyRule": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "decision": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "reasonCode": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "beforeState": {
+                            "type": "object",
+                            "additionalProperties": true,
+                            "nullable": true
+                          },
+                          "afterState": {
+                            "type": "object",
+                            "additionalProperties": true,
+                            "nullable": true
+                          },
+                          "correlationId": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "chainId": {
+                            "type": "integer",
+                            "nullable": true
+                          },
+                          "txHash": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "blockNumber": {
+                            "type": "integer",
+                            "nullable": true
+                          },
+                          "logIndex": {
+                            "type": "integer",
+                            "nullable": true
+                          },
+                          "membershipStateVersion": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "roleStateVersion": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "recordHash": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "previousRecordHash": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "createdAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        }
+                      }
+                    },
+                    "pagination": {
+                      "type": "object",
+                      "required": [
+                        "page",
+                        "limit",
+                        "total",
+                        "totalPages"
+                      ],
+                      "properties": {
+                        "page": {
+                          "type": "integer"
+                        },
+                        "limit": {
+                          "type": "integer"
+                        },
+                        "total": {
+                          "type": "integer"
+                        },
+                        "totalPages": {
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error (e.g. invalid date format)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Validation error (e.g. invalid date format)",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — requester is not a community admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Forbidden — requester is not a community admin",
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Internal server error",
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/communities/{communityId}/resources": {
+      "post": {
+        "summary": "Create a new resource in a community",
+        "tags": [
+          "Resources"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "resourceId",
+                  "name"
+                ],
+                "properties": {
+                  "resourceId": {
+                    "type": "string",
+                    "description": "Resource identifier"
+                  },
+                  "name": {
+                    "type": "string",
+                    "description": "Human-readable name"
+                  },
+                  "metadata": {
+                    "type": "object",
+                    "additionalProperties": true,
+                    "nullable": true
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "communityId",
+            "required": true,
+            "description": "Community identifier"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resource created or restored",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Resource created or restored",
+                  "type": "object",
+                  "required": [
+                    "communityId",
+                    "resourceId",
+                    "name",
+                    "archived",
+                    "created"
+                  ],
+                  "properties": {
+                    "communityId": {
+                      "type": "string"
+                    },
+                    "resourceId": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "metadata": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "nullable": true
+                    },
+                    "archived": {
+                      "type": "boolean"
+                    },
+                    "created": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Validation error",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Unauthorized",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — requester does not have permission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Forbidden — requester does not have permission",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "List resources for a community",
+        "tags": [
+          "Resources"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "communityId",
+            "required": true,
+            "description": "Community identifier"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of resources",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "List of resources",
+                  "type": "object",
+                  "required": [
+                    "communityId",
+                    "resources"
+                  ],
+                  "properties": {
+                    "communityId": {
+                      "type": "string"
+                    },
+                    "resources": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "resourceId",
+                          "name",
+                          "metadata",
+                          "archived"
+                        ],
+                        "properties": {
+                          "resourceId": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "metadata": {
+                            "type": "object",
+                            "additionalProperties": true,
+                            "nullable": true
+                          },
+                          "archived": {
+                            "type": "boolean"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Validation error",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Unauthorized",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Forbidden",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/communities/{communityId}/resources/{resourceId}": {
+      "patch": {
+        "summary": "Update an existing resource",
+        "tags": [
+          "Resources"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "description": "New human-readable name"
+                  },
+                  "metadata": {
+                    "type": "object",
+                    "additionalProperties": true,
+                    "nullable": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "communityId",
+            "required": true,
+            "description": "Community identifier"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "resourceId",
+            "required": true,
+            "description": "Resource identifier"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resource updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Resource updated",
+                  "type": "object",
+                  "required": [
+                    "communityId",
+                    "resourceId",
+                    "name",
+                    "archived"
+                  ],
+                  "properties": {
+                    "communityId": {
+                      "type": "string"
+                    },
+                    "resourceId": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "metadata": {
+                      "type": "object",
+                      "additionalProperties": true,
+                      "nullable": true
+                    },
+                    "archived": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Validation error",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Unauthorized",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Forbidden",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Resource not found",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Archive a resource",
+        "tags": [
+          "Resources"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "communityId",
+            "required": true,
+            "description": "Community identifier"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "resourceId",
+            "required": true,
+            "description": "Resource identifier"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resource archived",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Resource archived",
+                  "type": "object",
+                  "required": [
+                    "communityId",
+                    "resourceId",
+                    "archived"
+                  ],
+                  "properties": {
+                    "communityId": {
+                      "type": "string"
+                    },
+                    "resourceId": {
+                      "type": "string"
+                    },
+                    "archived": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Validation error",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Unauthorized",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Forbidden",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Resource not found",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/communities/{communityId}/constitutional-rulesets": {
+      "post": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "communityId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
       "get": {
         "parameters": [
           {
@@ -352,8 +4207,8 @@
         }
       }
     },
-    "/v1/communities/{communityId}/dead-letter-events/{id}/retry": {
-      "post": {
+    "/v1/communities/{communityId}/constitutional-rulesets/active": {
+      "get": {
         "parameters": [
           {
             "schema": {
@@ -362,19 +4217,294 @@
             "in": "path",
             "name": "communityId",
             "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/v1/communities/{communityId}/resources/{resource}/policy": {
+      "put": {
+        "summary": "Create or update a custom rule tree policy for a resource in a community",
+        "tags": [
+          "Policies",
+          "Governance"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "ruleTree"
+                ],
+                "properties": {
+                  "ruleTree": {
+                    "type": "object",
+                    "description": "Versioned, serializable rule tree AST",
+                    "additionalProperties": true
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "communityId",
+            "required": true,
+            "description": "Community ID"
           },
           {
             "schema": {
               "type": "string"
             },
             "in": "path",
-            "name": "id",
-            "required": true
+            "name": "resource",
+            "required": true,
+            "description": "Resource identifier"
           }
         ],
         "responses": {
           "200": {
-            "description": "Default Response"
+            "description": "Custom rule tree policy successfully saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Custom rule tree policy successfully saved",
+                  "type": "object",
+                  "required": [
+                    "success",
+                    "policy"
+                  ],
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "policy": {
+                      "type": "object",
+                      "required": [
+                        "id",
+                        "communityId",
+                        "resource",
+                        "ruleType"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "communityId": {
+                          "type": "string"
+                        },
+                        "resource": {
+                          "type": "string"
+                        },
+                        "ruleType": {
+                          "type": "string"
+                        },
+                        "params": {
+                          "type": "object",
+                          "additionalProperties": true,
+                          "nullable": true
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed or oversized rule tree validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Malformed or oversized rule tree validation error",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Unauthorized",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Forbidden",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Internal server error",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
