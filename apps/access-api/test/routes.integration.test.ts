@@ -1,5 +1,6 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import { API_CONTRACT } from '../../../packages/shared-types/src/apiContract';
+import { resolveRequesterWallet } from '../src/utils/requesterIdentity';
 
 /**
  * Fastify route integration tests using app.inject().
@@ -90,7 +91,6 @@ async function buildTestApp(mockService: ReturnType<typeof createMockMemberServi
 
   app.get('/v1/communities/:communityId/members', async (request, reply) => {
     const { communityId } = request.params as { communityId: string };
-    const requesterWallet = request.headers['x-wallet'] ?? request.headers['x-user-wallet'] ?? request.headers['x-requester-wallet'];
     // The integration test app doesn't enforce auth; service unit tests do.
     // This just ensures request parsing is stable.
     const role = (request.query as { role?: string })?.role;
@@ -101,10 +101,7 @@ async function buildTestApp(mockService: ReturnType<typeof createMockMemberServi
   app.post('/v1/communities/:communityId/members/:wallet/roles', async (request, reply) => {
     const { communityId, wallet } = request.params as { communityId: string; wallet: string };
     const body = request.body as { role?: string };
-    const requesterWalletHeader = request.headers['x-wallet'] ?? request.headers['x-user-wallet'] ?? request.headers['x-requester-wallet'];
-    const requesterWallet = Array.isArray(requesterWalletHeader)
-      ? requesterWalletHeader[0] ?? ''
-      : (requesterWalletHeader as string | undefined) ?? '';
+    const requesterWallet = resolveRequesterWallet(request);
 
     try {
       return mockService.assignMemberRole({
@@ -121,10 +118,7 @@ async function buildTestApp(mockService: ReturnType<typeof createMockMemberServi
   // DELETE /v1/communities/:communityId/members/:wallet/roles/:role — remove an assigned role
   app.delete('/v1/communities/:communityId/members/:wallet/roles/:role', async (request, reply) => {
     const { communityId, wallet, role } = request.params as { communityId: string; wallet: string; role: string };
-    const requesterWalletHeader = request.headers['x-wallet'] ?? request.headers['x-user-wallet'] ?? request.headers['x-requester-wallet'];
-    const requesterWallet = Array.isArray(requesterWalletHeader)
-      ? requesterWalletHeader[0] ?? ''
-      : (requesterWalletHeader as string | undefined) ?? '';
+    const requesterWallet = resolveRequesterWallet(request);
 
     try {
       return mockService.removeMemberRole({
@@ -154,10 +148,7 @@ async function buildTestApp(mockService: ReturnType<typeof createMockMemberServi
         message: 'Missing required fields: wallet, resource, effect',
       });
     }
-    const requesterWalletHeader = request.headers['x-wallet'] ?? request.headers['x-user-wallet'] ?? request.headers['x-requester-wallet'];
-    const requesterWallet = Array.isArray(requesterWalletHeader)
-      ? requesterWalletHeader[0] ?? ''
-      : (requesterWalletHeader as string | undefined) ?? '';
+    const requesterWallet = resolveRequesterWallet(request);
 
     try {
       return await mockService.createAccessOverride({
@@ -177,10 +168,7 @@ async function buildTestApp(mockService: ReturnType<typeof createMockMemberServi
   // DELETE /v1/communities/:communityId/overrides/:wallet/:resource — revoke an access override
   app.delete('/v1/communities/:communityId/overrides/:wallet/:resource', async (request, reply) => {
     const { communityId, wallet, resource } = request.params as { communityId: string; wallet: string; resource: string };
-    const requesterWalletHeader = request.headers['x-wallet'] ?? request.headers['x-user-wallet'] ?? request.headers['x-requester-wallet'];
-    const requesterWallet = Array.isArray(requesterWalletHeader)
-      ? requesterWalletHeader[0] ?? ''
-      : (requesterWalletHeader as string | undefined) ?? '';
+    const requesterWallet = resolveRequesterWallet(request);
 
     try {
       return await mockService.revokeAccessOverride({
