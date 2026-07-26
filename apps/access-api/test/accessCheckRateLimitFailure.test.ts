@@ -87,7 +87,7 @@ describe('POST /v1/access/check Rate Limiting Failure Modes', () => {
     // Should fail closed and return 503
     expect(response.statusCode).toBe(503);
     const body = JSON.parse(response.payload);
-    expect(body.error).toBe('Service Unavailable');
-    expect(body.message).toBe('Rate limiter unavailable');
+    expect(body.error.code).toBe('SERVICE_UNAVAILABLE');
+    expect(body.error.message).toBe('Rate limiter unavailable');
   });
 });

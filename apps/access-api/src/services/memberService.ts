@@ -1,4 +1,5 @@
 import { PrismaClient, Prisma } from "@prisma/client";
+import { normalizeWalletAddress as normaliseWallet } from "../lib/wallet";
 import {
   AccessCheckInput,
   AccessDecision,
@@ -53,9 +54,7 @@ export class MemberServiceError extends Error {
   }
 }
 
-function normaliseWallet(wallet: string): string {
-  return wallet.toLowerCase();
-}
+// normaliseWallet is imported from ../lib/wallet — single shared source (#173).
 
 function getNormalizedMembershipState(
   state: string,
@@ -150,7 +149,7 @@ async function loadContributionScore(
   communityId: string,
 ): Promise<ContributionScore | undefined> {
   const score = await prismaClient.contributionScore.findUnique({
-    where: { walletId_communityId: { walletId: wallet, communityId } },
+    where: { walletId_communityId: { walletId: normaliseWallet(wallet), communityId } },
   });
   if (!score) return undefined;
   return {
@@ -446,6 +445,31 @@ export function getMemberService(
       }
     }
 
+    // To support multi-chain, we aggregate tokens. But on the same chain and contract,
+    // we only consider the latest token (highest tokenId) to support supersedence.
+    const latestTokensMap = new Map<string, {
+      tokenId: number;
+      chainId: number;
+      contractAddress: string;
+      state: string;
+      expiresAt: Date | null;
+    }>();
+    const unfilterableTokens: typeof allTokens = [];
+
+    for (const token of allTokens) {
+      if (token.tokenId === undefined || token.chainId === undefined) {
+        unfilterableTokens.push(token);
+        continue;
+      }
+      const contractAddr = token.contractAddress ? token.contractAddress.toLowerCase() : "";
+      const key = `${token.chainId}_${contractAddr}`;
+      const existing = latestTokensMap.get(key);
+      if (!existing || token.tokenId > existing.tokenId) {
+        latestTokensMap.set(key, token);
+      }
+    }
+    const filteredTokens = [...Array.from(latestTokensMap.values()), ...unfilterableTokens];
+
     let membershipState: "invited" | "active" | "expired" | "suspended" = "invited";
     let activeTokenId: number | null = null;
     let rawState: string | null = null;
@@ -455,19 +479,19 @@ export function getMemberService(
     // 2. Any-Active-Grants: If not suspended & ANY token is active (and unexpired) -> state is active
     // 3. Expiration Fallback: If not suspended/active & ANY token is expired -> state is expired
     // 4. Default: invited
-    const hasSuspended = allTokens.some(
+    const hasSuspended = filteredTokens.some(
       (t) => getNormalizedMembershipState(t.state, t.expiresAt) === "suspended",
     );
 
     if (hasSuspended) {
       membershipState = "suspended";
-      const suspendedTok = allTokens.find(
+      const suspendedTok = filteredTokens.find(
         (t) => getNormalizedMembershipState(t.state, t.expiresAt) === "suspended",
       );
       activeTokenId = suspendedTok?.tokenId ?? null;
       rawState = suspendedTok?.state ?? "suspended";
     } else {
-      const activeTok = allTokens.find(
+      const activeTok = filteredTokens.find(
         (t) => getNormalizedMembershipState(t.state, t.expiresAt) === "active",
       );
       if (activeTok) {
@@ -475,7 +499,7 @@ export function getMemberService(
         activeTokenId = activeTok.tokenId;
         rawState = activeTok.state;
       } else {
-        const expiredTok = allTokens.find(
+        const expiredTok = filteredTokens.find(
           (t) => getNormalizedMembershipState(t.state, t.expiresAt) === "expired",
         );
         if (expiredTok) {

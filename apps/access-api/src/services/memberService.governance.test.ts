@@ -40,6 +40,7 @@ function buildMockPrisma(state: MockState) {
     },
     member: {
       findMany: jest.fn().mockResolvedValue([member]),
+      findFirst: jest.fn().mockResolvedValue(member),
     },
     accessPolicy: {
       // PUBLIC base policy → base decision is ALLOW for everyone.

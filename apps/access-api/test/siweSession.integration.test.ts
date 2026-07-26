@@ -117,7 +117,7 @@ describe("#240 SIWE session enforcement on admin/mutation routes", () => {
       });
 
       expect(res.statusCode).toBe(400);
-      expect(JSON.parse(res.body).error).toMatch(/expired/i);
+      expect(JSON.parse(res.body).error.message).toMatch(/expired/i);
     });
 
     test("rejects a reused/unknown nonce (400)", async () => {
@@ -136,7 +136,7 @@ describe("#240 SIWE session enforcement on admin/mutation routes", () => {
       });
 
       expect(res.statusCode).toBe(400);
-      expect(JSON.parse(res.body).error).toMatch(/nonce/i);
+      expect(JSON.parse(res.body).error.message).toMatch(/nonce/i);
     });
 
     test("rejects a signature that does not match the message address (400)", async () => {

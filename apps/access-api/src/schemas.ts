@@ -1401,18 +1401,26 @@ export const updateCustomPolicySchema = {
 } as const;
 
 // ---------------------------------------------------------------------------
-// Resource routes (/v1/communities/:communityId/resources)
-//
-// Minimal request-validation schemas. These four constants were referenced by
-// routes.ts but never declared, which threw a ReferenceError during route
-// registration and prevented the app (and every registerRoutes-based test)
-// from booting. Response serialization is intentionally left off so the
-// service's full response objects pass through unfiltered; richer response
-// schemas can be added when the resources feature is finalised.
+// Resource management shared fragments
+// ---------------------------------------------------------------------------
+
+const resourceItemSchema = {
+  type: 'object',
+  required: ['resourceId', 'name', 'metadata', 'archived'],
+  properties: {
+    resourceId: { type: 'string' },
+    name: { type: 'string' },
+    metadata: { type: 'object', additionalProperties: true, nullable: true },
+    archived: { type: 'boolean' },
+  },
+} as const;
+
+// ---------------------------------------------------------------------------
+// POST /v1/communities/:communityId/resources
 // ---------------------------------------------------------------------------
 
 export const createResourceSchema = {
-  summary: 'Create or update a resource for a community',
+  summary: 'Create a new resource in a community',
   tags: ['Resources'],
   params: {
     type: 'object',
@@ -1426,16 +1434,42 @@ export const createResourceSchema = {
     required: ['resourceId', 'name'],
     properties: {
       resourceId: { type: 'string', description: 'Resource identifier' },
-      name: { type: 'string', description: 'Human-readable resource name' },
-      metadata: {
-        type: 'object',
-        additionalProperties: true,
-        nullable: true,
-        description: 'Arbitrary resource metadata',
+      name: { type: 'string', description: 'Human-readable name' },
+      metadata: { type: 'object', additionalProperties: true, nullable: true },
+    },
+  },
+  response: {
+    200: {
+      description: 'Resource created or restored',
+      type: 'object',
+      required: ['communityId', 'resourceId', 'name', 'archived', 'created'],
+      properties: {
+        communityId: { type: 'string' },
+        resourceId: { type: 'string' },
+        name: { type: 'string' },
+        metadata: { type: 'object', additionalProperties: true, nullable: true },
+        archived: { type: 'boolean' },
+        created: { type: 'boolean' },
       },
+    },
+    400: {
+      description: 'Validation error',
+      ...errorSchema,
+    },
+    401: {
+      description: 'Unauthorized',
+      ...errorSchema,
+    },
+    403: {
+      description: 'Forbidden — requester does not have permission',
+      ...errorSchema,
     },
   },
 } as const;
+
+// ---------------------------------------------------------------------------
+// PATCH /v1/communities/:communityId/resources/:resourceId
+// ---------------------------------------------------------------------------
 
 export const updateResourceSchema = {
   summary: 'Update an existing resource',
@@ -1451,19 +1485,48 @@ export const updateResourceSchema = {
   body: {
     type: 'object',
     properties: {
-      name: { type: 'string', description: 'Updated resource name' },
-      metadata: {
-        type: 'object',
-        additionalProperties: true,
-        nullable: true,
-        description: 'Arbitrary resource metadata',
+      name: { type: 'string', description: 'New human-readable name' },
+      metadata: { type: 'object', additionalProperties: true, nullable: true },
+    },
+  },
+  response: {
+    200: {
+      description: 'Resource updated',
+      type: 'object',
+      required: ['communityId', 'resourceId', 'name', 'archived'],
+      properties: {
+        communityId: { type: 'string' },
+        resourceId: { type: 'string' },
+        name: { type: 'string' },
+        metadata: { type: 'object', additionalProperties: true, nullable: true },
+        archived: { type: 'boolean' },
       },
+    },
+    400: {
+      description: 'Validation error',
+      ...errorSchema,
+    },
+    401: {
+      description: 'Unauthorized',
+      ...errorSchema,
+    },
+    403: {
+      description: 'Forbidden',
+      ...errorSchema,
+    },
+    404: {
+      description: 'Resource not found',
+      ...errorSchema,
     },
   },
 } as const;
 
+// ---------------------------------------------------------------------------
+// DELETE /v1/communities/:communityId/resources/:resourceId
+// ---------------------------------------------------------------------------
+
 export const archiveResourceSchema = {
-  summary: 'Archive (soft-delete) a resource',
+  summary: 'Archive a resource',
   tags: ['Resources'],
   params: {
     type: 'object',
@@ -1473,7 +1536,39 @@ export const archiveResourceSchema = {
       resourceId: { type: 'string', description: 'Resource identifier' },
     },
   },
+  response: {
+    200: {
+      description: 'Resource archived',
+      type: 'object',
+      required: ['communityId', 'resourceId', 'archived'],
+      properties: {
+        communityId: { type: 'string' },
+        resourceId: { type: 'string' },
+        archived: { type: 'boolean' },
+      },
+    },
+    400: {
+      description: 'Validation error',
+      ...errorSchema,
+    },
+    401: {
+      description: 'Unauthorized',
+      ...errorSchema,
+    },
+    403: {
+      description: 'Forbidden',
+      ...errorSchema,
+    },
+    404: {
+      description: 'Resource not found',
+      ...errorSchema,
+    },
+  },
 } as const;
+
+// ---------------------------------------------------------------------------
+// GET /v1/communities/:communityId/resources
+// ---------------------------------------------------------------------------
 
 export const listResourcesSchema = {
   summary: 'List resources for a community',
@@ -1483,6 +1578,32 @@ export const listResourcesSchema = {
     required: ['communityId'],
     properties: {
       communityId: { type: 'string', description: 'Community identifier' },
+    },
+  },
+  response: {
+    200: {
+      description: 'List of resources',
+      type: 'object',
+      required: ['communityId', 'resources'],
+      properties: {
+        communityId: { type: 'string' },
+        resources: {
+          type: 'array',
+          items: resourceItemSchema,
+        },
+      },
+    },
+    400: {
+      description: 'Validation error',
+      ...errorSchema,
+    },
+    401: {
+      description: 'Unauthorized',
+      ...errorSchema,
+    },
+    403: {
+      description: 'Forbidden',
+      ...errorSchema,
     },
   },
 } as const;

@@ -8,12 +8,14 @@ import Fastify, { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
 import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
 import rateLimit from '@fastify/rate-limit';
+import { createClient } from 'redis';
 
 import { buildPinoHttp } from './observability/logger';
 import { registry, metrics } from './observability/metrics';
 import { registerRoutes } from './routes';
 import { getPrisma } from './services/prisma';
 import { createApiError, unauthorized } from './errors';
+import { isValidWalletAddress } from './lib/wallet';
 import { config } from './config';
 import accessCheckRateLimiter from './plugins/accessCheckRateLimiter';
 
@@ -51,6 +53,28 @@ function normaliseRoute(url: string): string {
 // --------------------------------------------------------------------------
 // Application factory
 // --------------------------------------------------------------------------
+
+/**
+ * preHandler that rejects a malformed EVM address in any `:wallet` path param
+ * with a clear 400 before it reaches the database layer, where a mixed-case or
+ * invalid value would otherwise silently miss an existing record (#173).
+ * Exported so it can be exercised in isolation.
+ */
+export async function walletParamGuard(
+  req: FastifyRequest,
+  reply: FastifyReply,
+) {
+  const wallet = (req.params as { wallet?: string } | undefined)?.wallet;
+  if (wallet !== undefined && !isValidWalletAddress(wallet)) {
+    return reply.code(400).send(
+      createApiError({
+        statusCode: 400,
+        code: 'INVALID_WALLET',
+        message: `Invalid wallet address: '${wallet}'`,
+      }),
+    );
+  }
+}
 
 export async function buildApp(): Promise<FastifyInstance> {
   const app = Fastify({
@@ -105,6 +129,10 @@ export async function buildApp(): Promise<FastifyInstance> {
     },
   );
 
+  // Reject malformed EVM addresses in any :wallet path param with a clear 400
+  // before they reach the database layer (see walletParamGuard, #173).
+  app.addHook('preHandler', walletParamGuard);
+
   await app.register(swagger, {
     openapi: {
       info: {
@@ -118,11 +146,25 @@ export async function buildApp(): Promise<FastifyInstance> {
 
   await app.register(swaggerUi, { routePrefix: '/docs' });
 
+  let redisClient: any;
+  if (config.rateLimitEnabled && config.redisUrl) {
+    redisClient = createClient({ url: config.redisUrl });
+    redisClient.on('error', (err: any) => {
+      app.log.error({ err }, 'Redis connection error in global rateLimit');
+    });
+    await redisClient.connect();
+    app.addHook('onClose', async () => {
+      await redisClient.disconnect();
+    });
+  }
+
   if (config.rateLimitEnabled) {
     await app.register(rateLimit, {
       global: true,
       max: config.rateLimitDefaultMax,
       timeWindow: config.rateLimitWindowMs,
+      redis: redisClient,
+      skipOnError: true,
       // Prefer the caller's API key so that integrators sharing an egress IP
       // (cloud providers, NAT'd Discord bots) get independent budgets. Falls
       // back to request.ip, which Fastify derives under the trustProxy policy
@@ -134,9 +176,11 @@ export async function buildApp(): Promise<FastifyInstance> {
       },
       errorResponseBuilder: (_req, context) => ({
         statusCode: 429,
-        error: 'Too Many Requests',
-        message: `Rate limit exceeded. Retry after ${Math.ceil(context.ttl / 1000)} seconds.`,
-        retryAfter: Math.ceil(context.ttl / 1000),
+        error: {
+          code: 'RATE_LIMITED',
+          message: `Rate limit exceeded. Retry after ${Math.ceil(context.ttl / 1000)} seconds.`,
+          details: { retryAfter: Math.ceil(context.ttl / 1000) },
+        },
       }),
       addHeaders: {
         'x-ratelimit-limit': true,
@@ -160,11 +204,49 @@ export async function buildApp(): Promise<FastifyInstance> {
     return reply.send(output);
   });
 
-  app.get('/health/live', { config: { rateLimit: false } }, async (_req, reply) => {
+  app.get('/health/live', {
+    config: { rateLimit: false },
+    schema: {
+      tags: ['Health'],
+      summary: 'Liveness probe',
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            status: { type: 'string' },
+            version: { type: 'string' }
+          }
+        }
+      }
+    }
+  }, async (_req, reply) => {
     return reply.send({ status: 'ok', version: '1.0.0' });
   });
 
-  app.get('/health/ready', { config: { rateLimit: false } }, async (_req, reply) => {
+  app.get('/health/ready', {
+    config: { rateLimit: false },
+    schema: {
+      tags: ['Health'],
+      summary: 'Readiness probe',
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            status: { type: 'string' },
+            db: { type: 'string' }
+          }
+        },
+        503: {
+          type: 'object',
+          properties: {
+            status: { type: 'string' },
+            db: { type: 'string' },
+            error: { type: 'string' }
+          }
+        }
+      }
+    }
+  }, async (_req, reply) => {
     const prisma = getPrisma();
     try {
       await prisma.$queryRaw`SELECT 1`;
@@ -188,32 +270,41 @@ export async function buildApp(): Promise<FastifyInstance> {
   app.setErrorHandler(async (error: any, req: FastifyRequest, reply: FastifyReply) => {
     req.log.error({ err: error, reqId: req.id }, 'Unhandled error');
 
-    const statusCode = error.statusCode || 500;
+    // If the error already carries our structured { error: { code, message } } envelope
+    // (e.g. from @fastify/rate-limit's errorResponseBuilder), forward it as-is.
+    if (error.error && typeof error.error === 'object' && error.error.code) {
+      return reply.code(error.statusCode || 429).send({ error: error.error });
+    }
+
+    const statusCode2 = error.statusCode || 500;
     let code = 'INTERNAL_ERROR';
     let message = 'Internal server error';
 
     if (error.validation) {
       code = 'VALIDATION_ERROR';
       message = 'Invalid request payload';
-    } else if (statusCode === 401) {
+    } else if (statusCode2 === 401) {
       code = 'UNAUTHORIZED';
       message = error.message || 'Unauthorized';
-    } else if (statusCode === 404) {
+    } else if (statusCode2 === 404) {
       code = 'NOT_FOUND';
       message = error.message || 'Resource not found';
-    } else if (statusCode === 409) {
+    } else if (statusCode2 === 409) {
       code = 'CONFLICT';
       message = error.message || 'Resource conflict';
+    } else if (statusCode2 === 429) {
+      code = 'RATE_LIMITED';
+      message = error.message || 'Rate limit exceeded';
     }
 
     const response = createApiError({
-      statusCode,
+      statusCode: statusCode2,
       code,
       message,
       details: error.details || error.message,
     });
 
-    return reply.code(statusCode).send(response);
+    return reply.code(statusCode2).send(response);
   });
 
   return app;

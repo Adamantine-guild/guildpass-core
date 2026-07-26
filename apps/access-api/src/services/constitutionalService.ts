@@ -96,7 +96,7 @@ export async function createConstitutionalRuleSet(
     rules: params.rules,
     createdBy: params.createdBy,
     description: params.description,
-  };
+  } as any;
 
   const validation = validateRuleSet(candidateRuleSet);
   if (!validation.valid) {
@@ -262,7 +262,7 @@ export async function validateAndEvaluateMutation(
         targetWallet: params.targetWallet,
         reasons: evaluationResult.reasons,
         traces: evaluationResult.traces,
-      },
+      } as any,
     },
   });
 

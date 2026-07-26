@@ -94,8 +94,13 @@ export async function applyContractEvent(
   // Generate correlation ID to link all related events
   const correlationId = `${txHash || 'unknown'}_${event.logIndex ?? 0}_${Date.now()}`;
 
-  // Access-affecting writes must be atomic.
-  await prisma.$transaction(async (tx) => {
+  // Access-affecting writes must be atomic. Use transaction if available, otherwise reuse outer transaction client.
+  const client = (prisma as any);
+  const transaction = typeof client.$transaction === 'function'
+    ? client.$transaction.bind(client)
+    : async (cb: (tx: any) => Promise<any>) => cb(client);
+
+  await transaction(async (tx) => {
     // Idempotency check: If transactionHash and logIndex are provided, check if already processed.
     if (txHash && event.logIndex !== undefined) {
       const alreadyProcessed = await tx.processedEvent.findUnique({
@@ -595,9 +600,9 @@ export async function applyContractEvent(
   // Invalidate the cached membership read for the affected wallet so a repeat
   // read never serves stale data. Every membership event carries a tokenId;
   // resolve the wallet + community from the committed token and clear the entry.
-  // Best-effort: a cache failure must never fail on-chain event processing —
+  // best-effort: a cache failure must never fail on-chain event processing —
   // the short TTL is the backstop.
-  if (event.tokenId !== undefined) {
+  if ('tokenId' in event && event.tokenId !== undefined) {
     try {
       const affected = await prisma.membershipToken.findUnique({
         where: {

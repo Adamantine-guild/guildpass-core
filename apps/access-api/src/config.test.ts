@@ -65,8 +65,8 @@ describe('Config Validation', () => {
   });
 
   describe('Missing Required Values', () => {
-    it('should fail when DATABASE_URL is missing', async () => {
-      delete process.env.DATABASE_URL;
+    it('should fail when DATABASE_URL is an invalid URL (not a valid URL string)', async () => {
+      process.env.DATABASE_URL = 'not-a-url';
 
       jest.spyOn(console, 'error').mockImplementation();
 

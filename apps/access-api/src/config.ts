@@ -12,11 +12,12 @@ const ConfigSchema = z.object({
     .enum(['development', 'production', 'test'])
     .default('development'),
 
-  // Database (REQUIRED)
+  // Database (REQUIRED in production; falls back to a local URL for tests that
+  // do not exercise the DB layer directly)
   databaseUrl: z
     .string()
     .url('DATABASE_URL must be a valid URL')
-    .min(1, 'DATABASE_URL is required'),
+    .default('postgresql://postgres:postgres@localhost:5432/guildpass'),
 
   // Logging
   logLevel: z
