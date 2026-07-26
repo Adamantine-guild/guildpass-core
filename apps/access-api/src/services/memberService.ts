@@ -38,6 +38,7 @@ import { getIdentityService } from "./identityService";
 import { validateAndEvaluateMutation } from "./constitutionalService";
 
 import { config } from "../config";
+import { metrics } from "../observability/metrics";
 import { createDefaultCacheService } from "./redisCacheService";
 import type { CacheService } from "./cacheService";
 
@@ -619,6 +620,7 @@ export function getMemberService(
       });
       const reasonCode = decision.reasons?.[0]?.code ?? null;
       const allowedDecision = decision.allowed ? "ALLOW" : "DENY";
+      metrics.accessDecisionsTotal.inc({ decision: decision.allowed ? "allowed" : "denied" });
       await auditAccess({
         walletId: primaryWallet,
         communityId,
@@ -671,6 +673,7 @@ export function getMemberService(
 
     const reasonCode = decision.reasons?.[0]?.code ?? null;
     const allowedDecision = decision.allowed ? "ALLOW" : "DENY";
+    metrics.accessDecisionsTotal.inc({ decision: decision.allowed ? "allowed" : "denied" });
 
     await auditAccess({
       walletId: primaryWallet,
