@@ -666,11 +666,7 @@ describe('JSON Parsing and Validation', () => {
   });
 
   test('rejects JSON with injection attempt', () => {
-    const json = JSON.stringify({
-      type: 'HasRole',
-      role: 'admin',
-      __proto__: { malicious: true },
-    });
+    const json = '{"type":"HasRole","role":"admin","__proto__":{"malicious":true}}';
 
     const { ast, validation } = parseAndValidateRuleJSON(json);
     expect(validation.valid).toBe(false);

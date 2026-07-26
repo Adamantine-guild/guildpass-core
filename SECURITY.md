@@ -45,11 +45,13 @@ findings, fixes, and regression tests — is documented in
 ### API Security
 
 In-scope:
-- Unauthorised access to admin endpoints
+- Unauthorised access to admin endpoints (gated by API-key authentication)
 - SQL injection or Prisma query manipulation
 - Privilege escalation via role endpoints
-- Wallet address spoofing in access checks
+- Wallet address spoofing in access checks and mutations. Admin/mutation routes resolve the requester's wallet from a verified SIWE session (EIP-4361 sign-in → short-lived Bearer session token issued by `/v1/auth/verify`), not from client-supplied `x-wallet`/`x-user-wallet`/`x-requester-wallet` headers. Enforcement is gated by the `SIWE_ENFORCED` flag: default off during migration; when on, requests without a valid session are rejected with `401` even if identity headers are present.
 - Exposure of secrets or private keys in logs or responses
+
+For details on our trust boundaries and endpoint gating, refer to [THREAT_MODEL.md](file:///Users/boufdaddy/Documents/web3%20projects/guildpass-core/docs/THREAT_MODEL.md).
 
 ### Out-of-scope
 

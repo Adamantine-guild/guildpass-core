@@ -9,7 +9,7 @@ contract MembershipFuzzInvariantTest is Test {
     address admin = address(0xA1);
 
     function setUp() public {
-        nft = new MembershipNFT("GuildPass", "GUILD");
+        nft = new MembershipNFT("GuildPass", "GUILD", "https://guildpass.example.com/metadata/");
         // msg.sender (this test contract) is the owner, allow admin
         nft.setAdmin(admin, true);
     }
@@ -159,5 +159,40 @@ contract MembershipFuzzInvariantTest is Test {
 
         vm.warp(expiresAt);
         assertFalse(nft.isActive(id));
+    }
+
+    // Fuzz: suspension/unsuspension transitions work correctly regardless of expiry state
+    function testFuzz_suspensionTransitions(uint256 initialDuration, uint256 warpOffset, bool firstSuspend) public {
+        uint256 dur = (initialDuration % 3650 days) + 1;
+        vm.prank(admin);
+        uint256 tokenId = nft.mint(address(0xF), "comm-suspend-fuzz", dur);
+        uint256 expiresAt = nft.expiry(tokenId);
+
+        // Warp to arbitrary offset (before, at, or after expiry)
+        uint256 warp = block.timestamp + (warpOffset % (3650 days * 2));
+        vm.warp(warp);
+
+        // Apply first action (suspend or not)
+        bool expectedSuspended = false;
+        if (firstSuspend) {
+            vm.prank(admin);
+            nft.setSuspended(tokenId, true);
+            expectedSuspended = true;
+        }
+
+        // Toggle again
+        vm.prank(admin);
+        nft.setSuspended(tokenId, !expectedSuspended);
+        expectedSuspended = !expectedSuspended;
+
+        // Verify state is correct
+        bool isActive = !expectedSuspended && (expiresAt > block.timestamp);
+        assertEq(nft.suspended(tokenId), expectedSuspended);
+        assertEq(nft.isActive(tokenId), isActive);
+        if (isActive) {
+            assertEq(nft.balanceOf(address(0xF)), 1);
+        } else {
+            assertEq(nft.balanceOf(address(0xF)), 0);
+        }
     }
 }

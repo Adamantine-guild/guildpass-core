@@ -12,11 +12,12 @@ const ConfigSchema = z.object({
     .enum(['development', 'production', 'test'])
     .default('development'),
 
-  // Database (REQUIRED)
+  // Database (REQUIRED in production; falls back to a local URL for tests that
+  // do not exercise the DB layer directly)
   databaseUrl: z
     .string()
     .url('DATABASE_URL must be a valid URL')
-    .min(1, 'DATABASE_URL is required'),
+    .default('postgresql://postgres:postgres@localhost:5432/guildpass'),
 
   // Logging
   logLevel: z
@@ -61,6 +62,27 @@ const ConfigSchema = z.object({
     .int()
     .positive()
     .default(50),
+  // How long a worker's claim on a batch of events is honored before another
+  // worker instance/shard may reclaim them (distributed-locking crash
+  // recovery — see workers/outboxWorker.ts and the README's Integration
+  // Event Outbox section). Must comfortably exceed the slowest realistic
+  // handler call; the bundled webhook handler's default per-subscription
+  // timeout is 5s.
+  outboxWorkerClaimLeaseMs: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(60_000),
+  outboxWorkerCount: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(1),
+  outboxWorkerMinBatchSize: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(5),
 
   // Indexer worker
   indexerIntervalMs: z.coerce
@@ -73,6 +95,23 @@ const ConfigSchema = z.object({
     .int()
     .nonnegative()
     .default(12), // e.g., 12 blocks for Ethereum mainnet-like safety
+  indexerConfirmationDepth: z.coerce
+    .number()
+    .int()
+    .nonnegative()
+    .default(12), // Number of confirmations before block is treated as final
+
+  // On-chain reconciliation worker
+  onChainReconciliationIntervalMs: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(300_000), // 5 minutes
+  onChainReconciliationSampleSize: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(50),
 
   // Rate limiting
   rateLimitEnabled: z
@@ -94,6 +133,47 @@ const ConfigSchema = z.object({
     .int()
     .positive()
     .default(20),
+  // Access check specific rate limits
+  accessCheckRateLimitIpMax: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(100),
+  accessCheckRateLimitWalletMax: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(50),
+  accessCheckRateLimitWindowMs: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(60_000),
+  accessCheckRateLimitFailOpen: z
+    .string()
+    .optional()
+    .transform((v) => v !== 'false' && v !== '0')
+    .default('true'),
+  // Proxy trust for client-IP derivation. Disabled by default: honouring
+  // X-Forwarded-For unconditionally lets any caller mint a fresh rate-limit
+  // bucket per request. Accepts 'true'/'false', a hop count, or a
+  // comma-separated list of trusted proxy IPs/CIDRs.
+  trustProxy: z.string().optional().default('false'),
+
+  apiKey: z
+    .string()
+    .default("test-api-key"),
+
+  // When true, admin/mutation routes require a verified SIWE session (Bearer
+  // token backed by the Session table) and the requester wallet is resolved
+  // from that session only — client-supplied x-wallet* identity headers are no
+  // longer trusted. Default false preserves the legacy header behaviour so
+  // existing integrators migrate before enforcement is flipped (see #240).
+  siweEnforced: z
+    .string()
+    .optional()
+    .transform((v) => v === 'true')
+    .default('false'),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
@@ -111,13 +191,26 @@ function validateConfig(): Config {
     reconciliationIntervalMs: process.env.RECONCILIATION_INTERVAL_MS,
     outboxWorkerIntervalMs: process.env.OUTBOX_WORKER_INTERVAL_MS,
     outboxWorkerBatchSize: process.env.OUTBOX_WORKER_BATCH_SIZE,
+    outboxWorkerClaimLeaseMs: process.env.OUTBOX_WORKER_CLAIM_LEASE_MS,
+    outboxWorkerCount: process.env.OUTBOX_WORKER_COUNT,
+    outboxWorkerMinBatchSize: process.env.OUTBOX_WORKER_MIN_BATCH_SIZE,
     indexerIntervalMs: process.env.INDEXER_INTERVAL_MS,
     indexerFinalityWindow: process.env.INDEXER_FINALITY_WINDOW,
+    indexerConfirmationDepth: process.env.INDEXER_CONFIRMATION_DEPTH || process.env.INDEXER_FINALITY_WINDOW,
+    onChainReconciliationIntervalMs: process.env.ON_CHAIN_RECONCILIATION_INTERVAL_MS,
+    onChainReconciliationSampleSize: process.env.ON_CHAIN_RECONCILIATION_SAMPLE_SIZE,
     rateLimitEnabled: process.env.RATE_LIMIT_ENABLED,
     rateLimitWindowMs: process.env.RATE_LIMIT_WINDOW_MS,
     rateLimitDefaultMax: process.env.RATE_LIMIT_DEFAULT_MAX,
     rateLimitExpensiveMax: process.env.RATE_LIMIT_EXPENSIVE_MAX,
+    accessCheckRateLimitIpMax: process.env.ACCESS_CHECK_RATE_LIMIT_IP_MAX,
+    accessCheckRateLimitWalletMax: process.env.ACCESS_CHECK_RATE_LIMIT_WALLET_MAX,
+    accessCheckRateLimitWindowMs: process.env.ACCESS_CHECK_RATE_LIMIT_WINDOW_MS,
+    accessCheckRateLimitFailOpen: process.env.ACCESS_CHECK_RATE_LIMIT_FAIL_OPEN,
+    trustProxy: process.env.TRUST_PROXY,
     redisUrl: process.env.REDIS_URL,
+    apiKey: process.env.API_KEY || "test-api-key",
+    siweEnforced: process.env.SIWE_ENFORCED,
   };
 
   const result = ConfigSchema.safeParse(envVars);

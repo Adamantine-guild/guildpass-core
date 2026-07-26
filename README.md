@@ -19,6 +19,7 @@ This monorepo contains a runnable MVP backend and protocol foundation. It is int
 | `packages/contracts` | TypeScript helpers for on-chain contract addresses and ABIs |
 | `packages/shared-types` | Shared types and enums for roles, membership, and decisions |
 | `packages/policy-engine` | Simple, explainable access policy engine |
+| `packages/contribution-engine` | Pluggable signal-based contribution scoring engine |
 | `packages/sdk-lite` | Minimal HTTP client for the access API |
 | `contracts/` | Foundry Solidity project (MembershipNFT + tests + deploy scripts) |
 
@@ -139,6 +140,8 @@ CI will automatically verify that the OpenAPI specification is up-to-date with y
 
 Prisma schema includes: `communities`, `wallets`, `members`, `memberships`, `roles`, `access policies`, `profiles`, `badges` (placeholder), `audit_events`, and `outbox_events`.
 
+For an entity-relationship diagram and a per-table explanation of how these models connect (e.g. how `memberships` ties to `wallets` and `communities`, or how `access policies` reference roles), see [`docs/data-model.md`](docs/data-model.md).
+
 ---
 
 ## Integration Event Outbox
@@ -150,18 +153,31 @@ The API uses the **transactional outbox pattern** to emit reliable integration e
 | Concept | Description |
 | ------- | ----------- |
 | **Event creation** | Events are written atomically with the domain mutation inside a Prisma `$transaction`. If the mutation fails, no event is created. If the event write fails, the entire transaction rolls back. |
-| **Event types** | `MEMBERSHIP_CREATED`, `MEMBERSHIP_UPDATED`, `MEMBERSHIP_DELETED`, `ROLE_ASSIGNED`, `ROLE_REMOVED`, `RESOURCE_CREATED`, `RESOURCE_UPDATED`, `RESOURCE_ARCHIVED`, `POLICY_CREATED`, `POLICY_UPDATED`, `POLICY_DELETED`, `ACCESS_DECISION` |
+| **Event types** | `MEMBERSHIP_CREATED`, `MEMBERSHIP_UPDATED`, `MEMBERSHIP_DELETED`, `ROLE_ASSIGNED`, `ROLE_REMOVED`, `RESOURCE_CREATED`, `RESOURCE_UPDATED`, `RESOURCE_ARCHIVED`, `POLICY_CREATED`\*, `POLICY_UPDATED`\*, `POLICY_DELETED`\*, `ACCESS_DECISION`, `ACCESS_OVERRIDE_CREATED`, `ACCESS_OVERRIDE_UPDATED`, `ACCESS_OVERRIDE_REVOKED`, `MEMBER_ATTENDED`, `BADGE_ASSIGNED`, `BADGE_REVOKED` |
 | **Statuses** | `pending` (awaiting delivery), `delivered` (successfully processed), `failed` (permanently failed after max retries) |
 | **Retry strategy** | Exponential backoff: `nextRetryAt = now + 10 × 2^retryCount` seconds. Default max 5 retries. |
 | **Delivery worker** | `outboxWorker` polls for pending events every `OUTBOX_WORKER_INTERVAL_MS` (default 10s) and delegates to a pluggable handler. The default handler is a no-op logger. |
 | **Pruning** | Delivered events older than 7 days are automatically pruned to prevent unbounded table growth. |
 
+\* `POLICY_CREATED`/`POLICY_UPDATED`/`POLICY_DELETED` are reserved for future CRUD on the base `AccessPolicy` (per-resource `ruleType`) record, which today is only read, not managed via an API. Wallet-specific **access overrides** (see Policy Engine, above) are a separate concept with their own `ACCESS_OVERRIDE_*` event types.
+
+### Delivery Guarantees
+
+The outbox mechanism guarantees **at-least-once** delivery.
+
+- If a consumer (or webhook handler) successfully processes an event, but the outbox worker crashes or is restarted before it can mark the event as `delivered` in the database, the event **will be redelivered** on the next poll.
+- To handle redeliveries safely, consumers **must be idempotent**.
+- Every outbox event payload explicitly includes a stable, unique `id` and a `createdAt` timestamp. Consumers should use `id` (e.g., checking it against a cache or database table of processed IDs) to de-duplicate incoming events.
+- See `@guildpass/sdk-lite` for an `IdempotentWebhookConsumer` helper demonstrating this pattern.
+
 ### Configuration
 
 | Environment Variable | Default | Description |
 | -------------------- | ------- | ----------- |
-| `OUTBOX_WORKER_INTERVAL_MS` | `10000` | Polling interval for the outbox worker (ms) |
-| `OUTBOX_WORKER_BATCH_SIZE` | `50` | Max events processed per worker pass |
+| `OUTBOX_WORKER_INTERVAL_MS` | `10000` | Polling interval per shard (ms) |
+| `OUTBOX_WORKER_BATCH_SIZE` | `50` | Max events per shard per poll |
+| `OUTBOX_WORKER_COUNT` | `1` | Number of concurrent shards for horizontal scaling |
+| `OUTBOX_WORKER_MIN_BATCH_SIZE` | `5` | Min batch size under backpressure |
 
 ### Pluggable Handler
 
@@ -178,7 +194,7 @@ const myHandler: OutboxEventHandler = async (event) => {
   });
 };
 
-const worker = createOutboxWorker(10_000, myHandler);
+const worker = createOutboxWorker({ intervalMs: 10_000, handler: myHandler });
 worker.start();
 ```
 
@@ -193,7 +209,7 @@ filtered by event type:
 import { createOutboxWorker } from './workers/outboxWorker';
 import { createWebhookHandler } from './handlers/webhookHandler';
 
-const worker = createOutboxWorker(10_000, createWebhookHandler());
+const worker = createOutboxWorker({ intervalMs: 10_000, handler: createWebhookHandler() });
 worker.start();
 ```
 
@@ -264,10 +280,20 @@ Simple rules: `PUBLIC`, `MEMBERS_ONLY`, `ADMINS_ONLY`, `CONTRIBUTORS_OR_ADMINS`.
 
 Role resolution combines:
 - Membership state (adds `member` role when active)
-- Backend role assignments
-- Room for future manual override rules (TODO)
+- Backend role assignments (including custom role hierarchies and delegated grants)
+- **Manual access overrides** — an explicit `ALLOW`/`DENY` for a single `(wallet, communityId, resource)` triple, e.g. a temporary ban or a one-off grant for a partner wallet. An active override is checked **before** any rule evaluation and, if present, short-circuits the decision — it takes precedence over every role- or membership-derived outcome. Overrides are managed via the `/v1/communities/:communityId/overrides` admin routes below and expire automatically via their optional `expiresAt`.
 
-**Full spec** (policy semantics, exact role-resolution algorithm, precedence between membership-derived and backend-assigned roles, worked examples): [`packages/policy-engine/README.md`](./packages/policy-engine/README.md).
+**Full spec** (policy semantics, exact role-resolution algorithm, override precedence, worked examples): [`packages/policy-engine/README.md`](./packages/policy-engine/README.md).
+
+### Managing access overrides
+
+| Method | Path | Description |
+| ------ | ---- | ----------- |
+| POST | `/v1/communities/:communityId/overrides` | Create or update an override for a wallet/resource pair (admin only) |
+| GET | `/v1/communities/:communityId/overrides` | List overrides for a community, including expired ones (admin only) |
+| DELETE | `/v1/communities/:communityId/overrides/:wallet/:resource` | Revoke an override (admin only) |
+
+Every mutation is written transactionally with an `ACCESS_OVERRIDE_CREATED`, `ACCESS_OVERRIDE_UPDATED`, or `ACCESS_OVERRIDE_REVOKED` outbox event (see below).
 
 ---
 
@@ -343,15 +369,96 @@ See [`.env.example`](./.env.example) for all required variables.
 
 ---
 
+---
+
+## On-Chain Reconciliation Worker
+
+The `onChainReconciliationWorker` is a defense-in-depth mechanism that periodically cross-checks the database's membership state against the **actual current state returned by the contract's view functions** (`ownerOf`, `isActive`, `expiry`, `suspended`, `communityOf`).
+
+### Why this is needed
+
+The `IndexerWorker` keeps off-chain state current by applying live contract events, but its correctness depends entirely on every relevant event being captured and applied without error. If an event is missed (due to a reorg edge case, a missed event type, or a future application bug), the database will silently drift from on-chain truth. The `onChainReconciliationWorker` catches any such drift — regardless of cause — through a direct, systematic comparison.
+
+### What it does
+
+For each sampled `MembershipToken`, the worker:
+
+1. Reads the current on-chain state via `OnChainViewProvider.getTokenState(tokenId)` (five view-function calls: `ownerOf`, `isActive`, `expiry`, `suspended`, `communityOf`).
+2. Compares each field against the database record.
+3. On any mismatch, writes a `RECONCILIATION_DISCREPANCY` audit event with full structured detail (`beforeState` = on-chain snapshot, `afterState` = database snapshot).
+4. **Does not auto-correct either side** — a mismatch could mean the DB is stale, or that the RPC read is momentarily at a different block than the indexer. An operator must investigate and apply the correct remediation.
+
+### Discrepancy audit events
+
+Query for outstanding discrepancies:
+
+```sql
+SELECT * FROM audit_events
+WHERE event_type = 'RECONCILIATION_DISCREPANCY'
+ORDER BY created_at DESC;
+```
+
+Each event contains:
+- `walletId` / `communityId` — which member
+- `beforeState` — on-chain values at read time (`owner`, `isActive`, `expiry`, `suspended`, `communityId`)
+- `afterState` — database values (`owner`, `isActive`, `expiry`, `suspended`, `tokenId`, `memberId`)
+- `reasonCode: "ON_CHAIN_STATE_MISMATCH"`
+- `correlationId` — links the event to a specific reconciliation pass and tokenId
+
+### Sampling strategy and RPC cost
+
+| Option | Default | Description |
+| ------ | ------- | ----------- |
+| `sampleSize` | `50` | Max tokens checked per pass. Use `Infinity` for exhaustive (small communities only). |
+| `randomSample` | `true` | Randomly subsample so all tokens are reached over time, not just the oldest. |
+| `communityId` | – | Restrict sample to one community. |
+| `activeOnly` | `true` | Only check `active`/`suspended` tokens (highest operational relevance). |
+
+**RPC budget per pass (worst case):** `sampleSize × 5 eth_call`
+
+With defaults (sampleSize=50, interval=5 min): ≈250 calls/5 min — well within free-tier limits of all major managed RPC providers.
+
+### Configuration
+
+| Environment Variable | Default | Description |
+| -------------------- | ------- | ----------- |
+| `ON_CHAIN_RECONCILIATION_INTERVAL_MS` | `300000` | How often the worker runs (ms). Default: 5 minutes. |
+| `ON_CHAIN_RECONCILIATION_SAMPLE_SIZE` | `50` | Max tokens checked per pass. |
+
+### Enabling in production
+
+The worker is instantiated but **disabled by default** (`start()` is commented out in `index.ts`) until a real `OnChainViewProvider` is configured. To enable:
+
+1. Implement `OnChainViewProvider` backed by your RPC endpoint (see the comment block in `apps/access-api/src/index.ts` for a ready-to-paste `ethers.js` example).
+2. Set `MEMBERSHIP_NFT_ADDRESS` and `RPC_URL` in `.env`.
+3. Uncomment `onChainReconciliationWorker.start()` in `index.ts`.
+
+---
+
+## Multi-Chain Architecture & Resolution
+
+GuildPass supports deploying and indexing `MembershipNFT` contracts across multiple EVM chains (e.g. Ethereum Mainnet, Polygon, Arbitrum) for the same community.
+
+### Key Concepts
+
+- **Community Contract Mapping**: A community can be configured with multiple `(chainId, contractAddress)` contracts via `CommunityContract`.
+- **Scoped Data Model**: `MembershipToken` records carry explicit `chainId` and `contractAddress` fields and are uniquely identified by `(chainId, contractAddress, tokenId)`.
+- **Collision-Free Event Ingestion**: `ProcessedEvent` idempotency records are scoped by `(chainId, contractAddress, transactionHash, logIndex)` to eliminate cross-chain collisions.
+- **Cross-Chain Resolution Policy**:
+  - **Suspension-First (Deny Overrides Allow)**: If a wallet's membership state on ANY configured chain is `suspended`, the resolved cross-chain membership status for that community is `suspended` (access denied).
+  - **Any-Active-Grants**: If not suspended on any chain, holding an active, non-expired membership token on AT LEAST ONE configured chain grants `active` membership (access allowed).
+  - **Expiration Fallback**: If not suspended or active, having an expired membership token on any chain resolves to `expired`.
+- **Single-Chain Backward Compatibility**: Single-chain setups using `MEMBERSHIP_NFT_ADDRESS` and `CHAIN_ID` environment variables continue to function seamlessly without extra configuration.
+
+---
+
 ## Deferred Areas (Intentionally Not Implemented)
 
 - Advanced governance permissions
-- Constitutional rule engine
 - Complex moderation workflows / appeals / reinstatement
 - Rich reward distribution and advanced streak logic
-- Contribution scoring engine
 - Full event attendance ingestion
-- Multi-chain support (current: EVM only)
+- Multi-chain support (implemented: EVM multi-chain enabled per community)
 - Advanced indexing pipeline
 
 Clear interfaces and TODOs are left where appropriate.

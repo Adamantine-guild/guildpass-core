@@ -15,20 +15,43 @@ export async function findOrCreateProfile(
   return prisma.profile.create({ data: { displayName } });
 }
 
-/**
- * Idempotent: upsert membership by memberId. `memberId` has a `@unique`
- * constraint, so the second call updates the existing row to the seeded
- * state/expiresAt instead of erroring on duplicate.
- */
 export async function upsertMembership(
   prisma: PrismaClient,
   memberId: string,
-  data: { state: 'active' | 'expired' | 'invited' | 'suspended'; expiresAt: Date | null }
+  data: { state: 'active' | 'expired' | 'invited' | 'suspended'; expiresAt: Date | null },
+  tokenId?: number,
+  chainId: number = 31337,
+  contractAddress: string = '0x0000000000000000000000000000000000000000',
 ) {
+  const resolvedTokenId = tokenId ?? Math.abs(memberId.split('').reduce((acc, char) => (acc << 5) - acc + char.charCodeAt(0), 0)) % 1000000;
+
+  const token = await prisma.membershipToken.upsert({
+    where: {
+      chainId_contractAddress_tokenId: {
+        chainId,
+        contractAddress,
+        tokenId: resolvedTokenId,
+      },
+    },
+    update: {
+      memberId,
+      state: data.state as any,
+      expiresAt: data.expiresAt,
+    },
+    create: {
+      tokenId: resolvedTokenId,
+      chainId,
+      contractAddress,
+      memberId,
+      state: data.state as any,
+      expiresAt: data.expiresAt,
+    },
+  });
+
   return prisma.membership.upsert({
     where: { memberId },
-    create: { memberId, state: data.state, expiresAt: data.expiresAt },
-    update: { state: data.state, expiresAt: data.expiresAt },
+    create: { memberId, activeTokenId: token.id },
+    update: { activeTokenId: token.id },
   });
 }
 
