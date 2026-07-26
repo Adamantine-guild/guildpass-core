@@ -230,7 +230,6 @@ model OutboxEvent {
   @@index([nextRetryAt])
   @@index([correlationId])
   @@index([status, nextRetryAt])
-  @@index([correlationId])
 }
 
 // --- Chain Indexer Reorg Safety & Idempotency ---
