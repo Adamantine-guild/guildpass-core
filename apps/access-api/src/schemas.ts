@@ -625,17 +625,29 @@ export const revokeBadgeSchema = {
 // ---------------------------------------------------------------------------
 // POST /v1/access/check
 // ---------------------------------------------------------------------------
-
 export const accessCheckSchema = {
   summary: "Check whether a wallet has access to a resource in a community",
   tags: ["Access"],
   body: {
     type: "object",
     required: ["wallet", "communityId", "resource"],
+    additionalProperties: false,
     properties: {
-      wallet: walletAddressSchema,
-      communityId: { type: "string", description: "Community identifier" },
-      resource: { type: "string", description: "Resource identifier" },
+      wallet: {
+        type: "string",
+        pattern: "^0x[0-9a-fA-F]{40}$",
+        description: "EVM-compatible wallet address (checksummed or lowercase)",
+      },
+      communityId: {
+        type: "string",
+        format: "uuid",
+        description: "Community identifier",
+      },
+      resource: {
+        type: "string",
+        minLength: 1,
+        description: "Resource identifier",
+      },
     },
   },
   response: {
@@ -644,12 +656,8 @@ export const accessCheckSchema = {
       type: "object",
       required: ["allowed", "code"],
       properties: {
-        allowed: { type: "boolean", description: "Whether access is granted" },
-        code: {
-          type: "string",
-          enum: ["ALLOW", "DENY"],
-          description: "Machine-readable decision code",
-        },
+        allowed: { type: "boolean" },
+        code: { type: "string", enum: ["ALLOW", "DENY"] },
         reasons: {
           type: "array",
           items: {
@@ -663,26 +671,49 @@ export const accessCheckSchema = {
         },
         effectiveRoles: {
           type: "array",
-          items: { type: "string", enum: roleEnum },
+          items: { type: "string" },
           nullable: true,
         },
-        membershipState: {
-          type: "string",
-          enum: membershipStateEnum,
-          nullable: true,
-        },
+        membershipState: { type: "string", nullable: true },
       },
     },
     400: {
-      description: "Validation error — missing required fields",
-      ...errorSchema,
+      description: "Validation error — missing required fields or invalid format",
+      type: "object",
+      required: ["error"],
+      properties: {
+        error: {
+          type: "object",
+          required: ["code", "message"],
+          properties: {
+            code: { type: "string" },
+            message: { type: "string" },
+            details: {
+              type: "array",
+              items: { type: "object", additionalProperties: true },
+              nullable: true,
+            },
+          },
+        },
+      },
     },
     500: {
       description: "Internal server error",
-      ...forbiddenSchema,
+      type: "object",
+      required: ["error"],
+      properties: {
+        error: {
+          type: "object",
+          required: ["code", "message"],
+          properties: {
+            code: { type: "string" },
+            message: { type: "string" },
+          },
+        },
+      },
     },
   },
-} as const;
+};
 
 // ---------------------------------------------------------------------------
 // GET /v1/communities/:communityId/members  (admin listing)
