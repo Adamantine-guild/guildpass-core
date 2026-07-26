@@ -67,3 +67,16 @@ In-scope:
 - We will not take legal action against good-faith security reporters.
 
 Thank you for helping keep GuildPass secure.
+
+### Requester Identity for Privileged API Routes
+
+Privileged API routes must not trust plaintext wallet headers as proof of the requester's identity. Earlier MVP builds accepted `x-wallet`, `x-user-wallet`, or `x-requester-wallet` for admin member listings, role mutations, override moderation, and dead-letter administration. That model allowed a caller to spoof any known admin wallet address.
+
+The Access API now establishes requester identity through a SIWE-style flow:
+
+1. `GET /v1/auth/siwe/nonce` issues a short-lived nonce.
+2. The client signs an EIP-4361 message containing that nonce with the wallet private key.
+3. `POST /v1/auth/siwe/verify` verifies the signature and returns a short-lived bearer session token.
+4. Privileged routes derive `requesterWallet` from that verified bearer token.
+
+For temporary migration only, unsigned wallet headers can be re-enabled with `GUILDPASS_ALLOW_UNSIGNED_WALLET_HEADERS=true`. This flag is insecure, disabled by default, and should only be used for a documented compatibility window while clients migrate to SIWE bearer sessions.

@@ -58,6 +58,18 @@ export interface RoleMutationInput {
   role: CommunityRole;
 }
 
+export interface SiweNonceResult {
+  nonce: string;
+  expiresInSeconds: number;
+}
+
+export interface SiweVerifyResult {
+  token: string;
+  wallet: string;
+  tokenType: 'Bearer';
+  expiresInSeconds: number;
+}
+
 export interface RoleMutationResult {
   communityId: string;
   wallet: string;
@@ -177,16 +189,11 @@ export class GuildPassClient {
    */
   async assignMemberRole(
     input: RoleMutationInput,
-    options: { requesterWallet?: string } = {},
   ): Promise<RoleMutationResult> {
-    const headers = options.requesterWallet
-      ? { 'x-wallet': options.requesterWallet }
-      : undefined;
     return this._request<RoleMutationResult>(
       `/v1/communities/${encodePathSegment(input.communityId)}/members/${encodePathSegment(input.wallet)}/roles`,
       {
         method: 'POST',
-        headers,
         body: JSON.stringify({ role: input.role }),
       },
     );
@@ -197,18 +204,26 @@ export class GuildPassClient {
    */
   async removeMemberRole(
     input: RoleMutationInput,
-    options: { requesterWallet?: string } = {},
   ): Promise<RoleMutationResult> {
-    const headers = options.requesterWallet
-      ? { 'x-wallet': options.requesterWallet }
-      : undefined;
     return this._request<RoleMutationResult>(
       `/v1/communities/${encodePathSegment(input.communityId)}/members/${encodePathSegment(input.wallet)}/roles/${encodePathSegment(input.role)}`,
       {
         method: 'DELETE',
-        headers,
       },
     );
+  }
+
+  /** Request a one-time SIWE nonce. */
+  async getSiweNonce(): Promise<SiweNonceResult> {
+    return this._request<SiweNonceResult>('/v1/auth/siwe/nonce', { method: 'GET' });
+  }
+
+  /** Verify a signed SIWE message and receive a bearer session token. */
+  async verifySiwe(message: string, signature: string): Promise<SiweVerifyResult> {
+    return this._request<SiweVerifyResult>('/v1/auth/siwe/verify', {
+      method: 'POST',
+      body: JSON.stringify({ message, signature }),
+    });
   }
 
   /**

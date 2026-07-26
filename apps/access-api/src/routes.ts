@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { getMemberService, MemberServiceError } from './services/memberService';
 import { getPrisma } from './services/prisma';
 import { notFound, validationError } from './errors';
+import { getAuthenticatedWallet, registerAuthRoutes } from './plugins/auth';
 import {
   listDeadLetterEvents,
   retryDeadLetterEvent,
@@ -10,18 +11,7 @@ import {
 } from './services/deadLetterService';
 
 function getRequesterWallet(request: FastifyRequest): string {
-  const header = request.headers['x-wallet'] ?? request.headers['x-user-wallet'] ?? request.headers['x-requester-wallet'];
-  if (Array.isArray(header)) {
-    return header[0] ?? '';
-  }
-  if (header) {
-    return header;
-  }
-  const authorization = request.headers.authorization;
-  if (typeof authorization === 'string' && authorization.startsWith('Bearer ')) {
-    return authorization.slice(7).trim();
-  }
-  return '';
+  return getAuthenticatedWallet(request);
 }
 
 function sendRoleMutationError(reply: FastifyReply, error: unknown) {
@@ -36,6 +26,8 @@ function sendRoleMutationError(reply: FastifyReply, error: unknown) {
  * Uses app.inject() friendly routes — no network binding required for tests.
  */
 export async function registerRoutes(app: FastifyInstance): Promise<void> {
+  await registerAuthRoutes(app);
+
   const prisma = getPrisma();
   const memberService = getMemberService(prisma);
 
@@ -166,22 +158,13 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     // Ensure caller is an authenticated community admin by reusing mutation auth check.
     const requesterWallet = getRequesterWallet(request);
     try {
-      // Reuse a minimal auth check by verifying requester has admin role in the community.
-      // We do this by calling listMembersForAdmin only after requester is validated.
-      const requesterMembers = await memberService.listMembersForAdmin(
+      if (!(await requireCommunityAdmin(communityId, requesterWallet))) {
+        return reply.status(403).send({ error: 'Forbidden' });
+      }
+      return await memberService.listMembersForAdmin(
         communityId,
         role as 'admin' | 'member' | 'contributor' | undefined,
       );
-      // listMembersForAdmin is not requester-scoped; enforce admin authorization in a lightweight way:
-      // If requester is missing from admin-filtered listing, deny.
-      if (role === 'admin') {
-        // If caller requested admin-only view, still require requester to be admin.
-        const isAdmin = requesterMembers.members.some(
-          (m: any) => m.wallet?.toLowerCase?.() === requesterWallet.toLowerCase(),
-        );
-        if (!isAdmin) return reply.status(403).send({ error: 'Forbidden' });
-      }
-      return requesterMembers;
     } catch (error) {
       if (error instanceof MemberServiceError) {
         return reply.status(error.statusCode).send({ error: error.message });
