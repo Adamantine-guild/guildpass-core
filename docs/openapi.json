@@ -6,7 +6,15 @@
     "version": "0.1.0"
   },
   "components": {
-    "schemas": {}
+    "schemas": {},
+    "securitySchemes": {
+      "RequesterWallet": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-wallet",
+        "description": "Requester identity for admin-only routes. Clients should send x-wallet. For backwards compatibility, the server resolves requester headers in this precedence order: x-wallet, x-user-wallet, then x-requester-wallet."
+      }
+    }
   },
   "paths": {
     "/metrics": {

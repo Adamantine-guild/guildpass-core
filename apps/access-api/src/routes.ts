@@ -8,21 +8,7 @@ import {
   DeadLetterNotFoundError,
   DeadLetterAlreadyResolvedError,
 } from './services/deadLetterService';
-
-function getRequesterWallet(request: FastifyRequest): string {
-  const header = request.headers['x-wallet'] ?? request.headers['x-user-wallet'] ?? request.headers['x-requester-wallet'];
-  if (Array.isArray(header)) {
-    return header[0] ?? '';
-  }
-  if (header) {
-    return header;
-  }
-  const authorization = request.headers.authorization;
-  if (typeof authorization === 'string' && authorization.startsWith('Bearer ')) {
-    return authorization.slice(7).trim();
-  }
-  return '';
-}
+import { resolveRequesterWallet } from './utils/requesterIdentity';
 
 function sendRoleMutationError(reply: FastifyReply, error: unknown) {
   if (error instanceof MemberServiceError) {
@@ -60,7 +46,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   app.post('/v1/communities/:communityId/members/:wallet/roles', async (request: FastifyRequest, reply: FastifyReply) => {
     const { communityId, wallet } = request.params as { communityId: string; wallet: string };
     const body = request.body as { role?: string };
-    const requesterWallet = getRequesterWallet(request);
+    const requesterWallet = resolveRequesterWallet(request);
 
     try {
       const result = await memberService.assignMemberRole({
@@ -78,7 +64,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   // DELETE /v1/communities/:communityId/members/:wallet/roles/:role — remove an assigned role
   app.delete('/v1/communities/:communityId/members/:wallet/roles/:role', async (request: FastifyRequest, reply: FastifyReply) => {
     const { communityId, wallet, role } = request.params as { communityId: string; wallet: string; role: string };
-    const requesterWallet = getRequesterWallet(request);
+    const requesterWallet = resolveRequesterWallet(request);
 
     try {
       const result = await memberService.removeMemberRole({
@@ -108,7 +94,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
         validationError('Missing required fields: wallet, resource, effect'),
       );
     }
-    const requesterWallet = getRequesterWallet(request);
+    const requesterWallet = resolveRequesterWallet(request);
     try {
       const result = await memberService.createAccessOverride({
         requesterWallet: requesterWallet as import('@guildpass/shared-types').WalletAddress,
@@ -128,7 +114,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   // DELETE /v1/communities/:communityId/overrides/:wallet/:resource — revoke an access override
   app.delete('/v1/communities/:communityId/overrides/:wallet/:resource', async (request: FastifyRequest, reply: FastifyReply) => {
     const { communityId, wallet, resource } = request.params as { communityId: string; wallet: string; resource: string };
-    const requesterWallet = getRequesterWallet(request);
+    const requesterWallet = resolveRequesterWallet(request);
     try {
       const result = await memberService.revokeAccessOverride({
         requesterWallet: requesterWallet as import('@guildpass/shared-types').WalletAddress,
@@ -164,7 +150,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     const { communityId } = request.params as { communityId: string };
     const role = (request.query as { role?: string })?.role;
     // Ensure caller is an authenticated community admin by reusing mutation auth check.
-    const requesterWallet = getRequesterWallet(request);
+    const requesterWallet = resolveRequesterWallet(request);
     try {
       // Reuse a minimal auth check by verifying requester has admin role in the community.
       // We do this by calling listMembersForAdmin only after requester is validated.
@@ -205,7 +191,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   app.get('/v1/communities/:communityId/dead-letter-events', async (request: FastifyRequest, reply: FastifyReply) => {
     const { communityId } = request.params as { communityId: string };
     const { status } = request.query as { status?: 'pending' | 'retried' | 'resolved' };
-    const requesterWallet = getRequesterWallet(request);
+    const requesterWallet = resolveRequesterWallet(request);
     try {
       if (!(await requireCommunityAdmin(communityId, requesterWallet))) {
         return reply.status(403).send({ error: 'Forbidden' });
@@ -224,7 +210,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   // a dead-lettered event as a fresh pending OutboxEvent
   app.post('/v1/communities/:communityId/dead-letter-events/:id/retry', async (request: FastifyRequest, reply: FastifyReply) => {
     const { communityId, id } = request.params as { communityId: string; id: string };
-    const requesterWallet = getRequesterWallet(request);
+    const requesterWallet = resolveRequesterWallet(request);
     try {
       if (!(await requireCommunityAdmin(communityId, requesterWallet))) {
         return reply.status(403).send({ error: 'Forbidden' });
