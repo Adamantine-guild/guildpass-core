@@ -1,8 +1,38 @@
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { getMemberService, MemberServiceError } from "./services/memberService";
+import {
+  getIdentityService,
+  IdentityServiceError,
+} from "./services/identityService";
+import { getGovernanceService } from "./services/governanceService";
+import { registerGovernanceRoutes } from "./routes/governanceRoutes";
+import {
+  getModerationService,
+  ModerationError,
+} from "./services/moderation/moderationService";
+import { queryAuditEvents } from "./services/auditService";
+import { getPrisma } from "./services/prisma";
+import {
+  getAuditTraceByCorrelationId,
+  getAuditTracesByTxHash,
+  getAuditTracesByWallet,
+} from "./services/auditTraceService";
+import {
+    notFound,
+    validationError,
+    validationErrorWithReason,
+    internalError,
+    forbidden,
+    conflict,
+    unauthorized,
+    createApiError
+} from "./errors";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { getMemberService, MemberServiceError } from './services/memberService';
 import { getPrisma } from './services/prisma';
 import { notFound, validationError } from './errors';
+
 import {
   listDeadLetterEvents,
   retryDeadLetterEvent,
@@ -690,36 +720,36 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 
-  // POST /v1/access/check — check access for wallet/resource
-  app.post(
-    "/v1/access/check",
-    {
-      schema: accessCheckSchema,
-      preHandler: app.accessCheckRateLimitHook
-        ? [app.accessCheckRateLimitHook]
-        : undefined,
-    },
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      const body = request.body as {
-        wallet: `0x${string}`;
-        communityId: string;
-        resource: string;
-      };
-      if (!body?.wallet || !body?.communityId || !body?.resource) {
-        return reply
-          .status(400)
-          .send(
-            validationError(
-              "Missing required fields: wallet, communityId, resource",
-            ),
-          );
-      }
-      const result = await memberService.checkAccess(
-        body as import("@guildpass/shared-types").AccessCheckInput,
-      );
-      return result;
-    },
-  );
+      // POST /v1/access/check — check access for wallet/resource
+    interface AccessCheckBody {
+      wallet: string;
+      communityId: string;
+      resource: string;
+    }
+
+    app.post<{ Body: AccessCheckBody }>(
+      "/v1/access/check",
+      {
+        schema: accessCheckSchema,
+        preHandler: app.accessCheckRateLimitHook
+          ? [app.accessCheckRateLimitHook]
+          : undefined,
+      },
+      async (request: FastifyRequest<{ Body: AccessCheckBody }>, reply: FastifyReply) => {
+        const { wallet, communityId, resource } = request.body;
+
+        // Normalize wallet address
+        const normalizedWallet = wallet.toLowerCase() as `0x${string}`;
+
+        const result = await memberService.checkAccess({
+          wallet: normalizedWallet,
+          communityId,
+          resource,
+        } as import("@guildpass/shared-types").AccessCheckInput);
+
+        return result;
+      },
+    );
 
   // GET /v1/communities/:communityId/members — list members for admin
   app.get('/v1/communities/:communityId/members', {

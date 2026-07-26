@@ -11,8 +11,18 @@
  * for the MembershipNFT contract ABI and typed event definitions.
  */
 
-import type { PrismaClient } from '@prisma/client';
+import type { PrismaClient, Prisma } from '@prisma/client';
 import { writeChainedAuditEvent } from './auditChainHasher';
+
+import type {
+  DecodedContractEvent,
+  DecodedMembershipMintedEvent,
+  DecodedMembershipRenewedEvent,
+  DecodedMembershipSuspendedEvent,
+  DecodedAdminUpdatedEvent,
+  DecodedOwnershipTransferProposedEvent,
+  DecodedOwnershipTransferredEvent,
+} from '@guildpass/contracts';
 
 // Re-export event types from the shared contracts package so that existing
 // consumers of this module continue to work without import changes.
@@ -24,17 +34,7 @@ export type {
   DecodedAdminUpdatedEvent,
   DecodedOwnershipTransferProposedEvent,
   DecodedOwnershipTransferredEvent,
-} from '@guildpass/contracts';
-
-import type {
-  DecodedContractEvent,
-  DecodedMembershipMintedEvent,
-  DecodedMembershipRenewedEvent,
-  DecodedMembershipSuspendedEvent,
-  DecodedAdminUpdatedEvent,
-  DecodedOwnershipTransferProposedEvent,
-  DecodedOwnershipTransferredEvent,
-} from '@guildpass/contracts';
+};
 
 import { invalidateMembershipsCache } from './memberService';
 
@@ -87,9 +87,25 @@ export async function applyContractEvent(
 ): Promise<void> {
   validateEvent(event);
 
-  if (event.chainId !== undefined && (!Number.isInteger(event.chainId) || event.chainId <= 0)) {
-    throw new Error('Invalid contract event: chainId must be a positive integer when provided');
-  }
+  const txHash = event.transactionHash ?? event.txHash;
+  const chainId = event.chainId ?? 31337;
+  const contractAddress = event.contractAddress ?? '0x0000000000000000000000000000000000000000';
+
+  // Generate correlation ID to link all related events
+  const correlationId = `${txHash || 'unknown'}_${event.logIndex ?? 0}_${Date.now()}`;
+
+  // Access-affecting writes must be atomic. Use transaction if available, otherwise reuse outer transaction client.
+  const client = (prisma as any);
+  const transaction = typeof client.$transaction === 'function'
+    ? client.$transaction.bind(client)
+    : async (cb: (tx: any) => Promise<any>) => cb(client);
+
+  await transaction(async (tx: Prisma.TransactionClient) => {
+    // Idempotency check: If transactionHash and logIndex are provided, check if already processed.
+  if (txHash && event.logIndex !== undefined) {
+    if (event.chainId !== undefined && (!Number.isInteger(event.chainId) || event.chainId <= 0)) {
+      throw new Error('Invalid contract event: chainId must be a positive integer when provided');
+    }
 
   // Generate correlation ID to link all related events. Include chainId so otherwise-identical
   // logs from different chains do not collide in downstream correlation/audit systems.
