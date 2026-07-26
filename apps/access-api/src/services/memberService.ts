@@ -926,9 +926,50 @@ export function getMemberService(
 
     checkAccess,
 
-    listMembersForAdmin,
-
-    isCommunityAdmin,
+    async listMembersForAdmin(
+      communityId: string,
+      role?: Role,
+      pagination: { limit?: number; cursor?: string } = {},
+    ) {
+      const limit = pagination.limit ?? 50;
+      const members = await prismaClient.member.findMany({
+        where: {
+          communityId,
+          ...(role ? { roles: { some: { role, active: true } } } : {}),
+        },
+        include: { wallet: true, membership: true, roles: true, profile: true },
+        orderBy: { id: 'asc' },
+        take: limit + 1,
+        ...(pagination.cursor ? { cursor: { id: pagination.cursor }, skip: 1 } : {}),
+      });
+      const page = members.slice(0, limit);
+      const list = page
+        .map((m: any) => {
+          const activeRoles = m.roles
+            .filter((r: any) => r.active)
+            .map((r: any) => r.role);
+          return {
+            wallet: m.wallet.address,
+            displayName: m.profile?.displayName ?? null,
+            state: getNormalizedMembershipState(
+              m.membership?.state ?? "invited",
+              m.membership?.expiresAt,
+            ),
+            roles: activeRoles,
+          };
+        })
+        .filter((item: any) => (role ? item.roles.includes(role) : true));
+      const hasMore = members.length > limit;
+      return {
+        communityId,
+        members: list,
+        pagination: {
+          limit,
+          hasMore,
+          nextCursor: hasMore ? page[page.length - 1]?.id ?? null : null,
+        },
+      };
+    },
 
     async assignMemberRole(
       input: AssignRoleInput,

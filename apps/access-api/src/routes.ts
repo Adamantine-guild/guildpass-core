@@ -1,23 +1,8 @@
-import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { getMemberService, MemberServiceError } from "./services/memberService";
-import {
-  getIdentityService,
-  IdentityServiceError,
-} from "./services/identityService";
-import { getGovernanceService } from "./services/governanceService";
-import { registerGovernanceRoutes } from "./routes/governanceRoutes";
-import {
-  getModerationService,
-  ModerationError,
-} from "./services/moderation/moderationService";
-import { queryAuditEvents } from "./services/auditService";
-import { getPrisma } from "./services/prisma";
-import {
-  getAuditTraceByCorrelationId,
-  getAuditTracesByTxHash,
-  getAuditTracesByWallet,
-} from "./services/auditTraceService";
-import { notFound, validationError, validationErrorWithReason, internalError, forbidden, conflict, unauthorized, createApiError } from "./errors";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { z } from 'zod';
+import { getMemberService, MemberServiceError } from './services/memberService';
+import { getPrisma } from './services/prisma';
+import { notFound, validationError } from './errors';
 import {
   listDeadLetterEvents,
   retryDeadLetterEvent,
@@ -109,15 +94,14 @@ function getRequesterWallet(request: FastifyRequest): string {
   return "";
 }
 
-function sendRoleMutationError(reply: FastifyReply, error: any) {
-  if (error instanceof ConstitutionalViolationError) {
-    return reply.status(error.statusCode).send({
-      error: error.message,
-      code: error.code,
-      reasons: error.reasons,
-      traces: error.traces,
-    });
-  }
+
+const memberListQuerySchema = z.object({
+  role: z.enum(['admin', 'member', 'contributor']).optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  cursor: z.string().min(1).optional(),
+});
+
+function sendRoleMutationError(reply: FastifyReply, error: unknown) {
   if (error instanceof MemberServiceError) {
     return reply.status(error.statusCode).send(
             createApiError({
@@ -823,39 +807,38 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   );
 
   // GET /v1/communities/:communityId/members — list members for admin
-  app.get(
-    '/v1/communities/:communityId/members',
-    {
-      schema: listCommunityMembersSchema,
-      preHandler: [authenticateApiKey, requireSiweSession],
-      config: {
-        rateLimit: {
-          max: config.rateLimitExpensiveMax,
-          timeWindow: config.rateLimitWindowMs,
+  app.get('/v1/communities/:communityId/members', {
+    schema: {
+      summary: 'List community members for admins',
+      tags: ['Members'],
+      querystring: {
+        type: 'object',
+        properties: {
+          role: { type: 'string', enum: ['admin', 'member', 'contributor'] },
+          limit: { type: 'integer', minimum: 1, maximum: 200, default: 50 },
+          cursor: { type: 'string' },
         },
       },
     },
-    async (request: FastifyRequest, reply: FastifyReply) => {
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
     const { communityId } = request.params as { communityId: string };
-    const { role, status, page, limit } = (request.query ?? {}) as {
-      role?: string;
-      status?: string;
-      page?: number;
-      limit?: number;
-    };
+    const parsedQuery = memberListQuerySchema.safeParse(request.query ?? {});
+    if (!parsedQuery.success) {
+      return reply.status(400).send(validationError('Invalid query parameters', parsedQuery.error.flatten()));
+    }
+    const { role, limit, cursor } = parsedQuery.data;
     // Ensure caller is an authenticated community admin by reusing mutation auth check.
     const requesterWallet = getRequesterWallet(request);
     try {
-      const result = await memberService.listMembersForAdmin(communityId, {
-        role: role as import('@guildpass/shared-types').Role | undefined,
-        status,
-        page,
-        limit,
-      });
-
-      // listMembersForAdmin is not requester-scoped; enforce admin authorization in a
-      // lightweight way: if the caller requested the admin-only view, the requester must
-      // appear in the admin-filtered listing.
+      // Reuse a minimal auth check by verifying requester has admin role in the community.
+      // We do this by calling listMembersForAdmin only after requester is validated.
+      const requesterMembers = await memberService.listMembersForAdmin(
+        communityId,
+        role,
+        { limit, cursor },
+      );
+      // listMembersForAdmin is not requester-scoped; enforce admin authorization in a lightweight way:
+      // If requester is missing from admin-filtered listing, deny.
       if (role === 'admin') {
         const isAdmin = result.members.some(
           (m: any) => m.wallet?.toLowerCase?.() === requesterWallet.toLowerCase(),

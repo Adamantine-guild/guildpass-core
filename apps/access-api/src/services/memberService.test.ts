@@ -541,8 +541,9 @@ describe("getMemberService - Membership State Normalization", () => {
       const futureDate = new Date(Date.now() + 86400000);
       const mockMembers = [
         {
-          wallet: { address: "0x1111111111111111" },
-          profile: { displayName: "Member 1" },
+          id: 'member-1',
+          wallet: { address: '0x1111111111111111' },
+          profile: { displayName: 'Member 1' },
           membership: {
             state: "active" as MembershipState,
             expiresAt: pastDate, // expired
@@ -550,8 +551,9 @@ describe("getMemberService - Membership State Normalization", () => {
           roles: [{ role: "member", source: "auto", active: true }],
         },
         {
-          wallet: { address: "0x2222222222222222" },
-          profile: { displayName: "Member 2" },
+          id: 'member-2',
+          wallet: { address: '0x2222222222222222' },
+          profile: { displayName: 'Member 2' },
           membership: {
             state: "active" as MembershipState,
             expiresAt: futureDate, // still valid
@@ -747,6 +749,39 @@ describe("getMemberService - Membership State Normalization", () => {
 
       expect(result.members[0].roles).toEqual(["admin"]);
     });
+
+    test('should apply default pagination and return end-of-results metadata', async () => {
+      (mockPrisma.member.findMany as jest.Mock).mockResolvedValue([]);
+
+      const result = await memberService.listMembersForAdmin('community-1');
+
+      expect(mockPrisma.member.findMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: { communityId: 'community-1' },
+        orderBy: { id: 'asc' },
+        take: 51,
+      }));
+      expect(result.pagination).toEqual({ limit: 50, hasMore: false, nextCursor: null });
+    });
+
+    test('should return next cursor when another page exists', async () => {
+      const mockMembers = [
+        { id: 'member-1', wallet: { address: '0x111' }, profile: null, membership: null, roles: [] },
+        { id: 'member-2', wallet: { address: '0x222' }, profile: null, membership: null, roles: [] },
+        { id: 'member-3', wallet: { address: '0x333' }, profile: null, membership: null, roles: [] },
+      ];
+      (mockPrisma.member.findMany as jest.Mock).mockResolvedValue(mockMembers);
+
+      const result = await memberService.listMembersForAdmin('community-1', undefined, { limit: 2, cursor: 'member-0' });
+
+      expect(mockPrisma.member.findMany).toHaveBeenCalledWith(expect.objectContaining({
+        cursor: { id: 'member-0' },
+        skip: 1,
+        take: 3,
+      }));
+      expect(result.members).toHaveLength(2);
+      expect(result.pagination).toEqual({ limit: 2, hasMore: true, nextCursor: 'member-2' });
+    });
+
   });
 
   describe("assignMemberRole", () => {

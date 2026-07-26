@@ -222,8 +222,39 @@
             },
             "in": "path",
             "name": "communityId",
-            "required": true,
-            "description": "Community identifier"
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "admin",
+                "member",
+                "contributor"
+              ]
+            },
+            "in": "query",
+            "name": "role",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "cursor",
+            "required": false
           }
         ],
         "responses": {
@@ -370,7 +401,11 @@
               }
             }
           }
-        }
+        },
+        "summary": "List community members for admins",
+        "tags": [
+          "Members"
+        ]
       }
     },
     "/v1/communities/{communityId}/memberships/{wallet}": {
