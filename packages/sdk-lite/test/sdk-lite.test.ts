@@ -232,7 +232,6 @@ describe('GuildPassClient', () => {
           wallet: '0x1234567890abcdef1234567890abcdef12345678',
           role: 'admin',
         },
-        { requesterWallet: '0x1111111111111111111111111111111111111111' },
       );
 
       expect(result).toEqual(API_CONTRACT.assignMemberRole.successResponse);
@@ -245,7 +244,8 @@ describe('GuildPassClient', () => {
         JSON.stringify(API_CONTRACT.assignMemberRole.requestBody),
       );
       const headers = (calledInit.headers ?? {}) as Record<string, string>;
-      expect(headers['x-wallet']).toBe('0x1111111111111111111111111111111111111111');
+      expect(headers.authorization).toBe('Bearer t');
+      expect(headers['x-wallet']).toBeUndefined();
     });
 
     it('matches the member role removal contract', async () => {
@@ -267,7 +267,6 @@ describe('GuildPassClient', () => {
           wallet: '0x1234567890abcdef1234567890abcdef12345678',
           role: 'admin',
         },
-        { requesterWallet: '0x1111111111111111111111111111111111111111' },
       );
 
       expect(result).toEqual(API_CONTRACT.removeMemberRole.successResponse);
@@ -277,7 +276,8 @@ describe('GuildPassClient', () => {
       );
       expect(calledInit.method).toBe(API_CONTRACT.removeMemberRole.method);
       const headers = (calledInit.headers ?? {}) as Record<string, string>;
-      expect(headers['x-wallet']).toBe('0x1111111111111111111111111111111111111111');
+      expect(headers.authorization).toBe('Bearer t');
+      expect(headers['x-wallet']).toBeUndefined();
     });
   });
 

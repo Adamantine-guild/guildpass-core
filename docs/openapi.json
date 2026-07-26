@@ -6,7 +6,14 @@
     "version": "0.1.0"
   },
   "components": {
-    "schemas": {}
+    "schemas": {},
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "SIWE session token returned by /v1/auth/siwe/verify."
+      }
+    }
   },
   "paths": {
     "/metrics": {
@@ -24,7 +31,7 @@
     },
     "/health/live": {
       "get": {
-        "summary": "Liveness probe – is the process alive?",
+        "summary": "Liveness probe \u2013 is the process alive?",
         "tags": [
           "Health"
         ],
@@ -52,7 +59,7 @@
     },
     "/health/ready": {
       "get": {
-        "summary": "Readiness probe – can we serve traffic?",
+        "summary": "Readiness probe \u2013 can we serve traffic?",
         "tags": [
           "Health"
         ],
@@ -123,7 +130,12 @@
           "200": {
             "description": "Default Response"
           }
-        }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
       }
     },
     "/v1/communities/{communityId}/members/{wallet}": {
@@ -150,7 +162,12 @@
           "200": {
             "description": "Default Response"
           }
-        }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
       }
     },
     "/v1/communities/{communityId}/members/{wallet}/roles": {
@@ -177,7 +194,12 @@
           "200": {
             "description": "Default Response"
           }
-        }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
       }
     },
     "/v1/communities/{communityId}/members/{wallet}/roles/{role}": {
@@ -212,7 +234,12 @@
           "200": {
             "description": "Default Response"
           }
-        }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
       }
     },
     "/v1/communities/{communityId}/overrides": {
@@ -231,7 +258,12 @@
           "200": {
             "description": "Default Response"
           }
-        }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
       }
     },
     "/v1/communities/{communityId}/overrides/{wallet}/{resource}": {
@@ -266,7 +298,12 @@
           "200": {
             "description": "Default Response"
           }
-        }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
       }
     },
     "/v1/access/check": {
@@ -294,7 +331,12 @@
           "200": {
             "description": "Default Response"
           }
-        }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
       }
     },
     "/v1/communities/{communityId}/dead-letter-events": {
@@ -313,7 +355,12 @@
           "200": {
             "description": "Default Response"
           }
-        }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
       }
     },
     "/v1/communities/{communityId}/dead-letter-events/{id}/retry": {
@@ -339,6 +386,98 @@
         "responses": {
           "200": {
             "description": "Default Response"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
+    "/v1/auth/siwe/nonce": {
+      "get": {
+        "summary": "Request SIWE nonce",
+        "tags": [
+          "Auth"
+        ],
+        "responses": {
+          "200": {
+            "description": "Nonce issued",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "nonce": {
+                      "type": "string"
+                    },
+                    "expiresInSeconds": {
+                      "type": "number"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/siwe/verify": {
+      "post": {
+        "summary": "Verify SIWE signature",
+        "tags": [
+          "Auth"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "message",
+                  "signature"
+                ],
+                "properties": {
+                  "message": {
+                    "type": "string"
+                  },
+                  "signature": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Session issued",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "token": {
+                      "type": "string"
+                    },
+                    "wallet": {
+                      "type": "string"
+                    },
+                    "tokenType": {
+                      "type": "string"
+                    },
+                    "expiresInSeconds": {
+                      "type": "number"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid SIWE signature or nonce"
           }
         }
       }
