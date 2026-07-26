@@ -17,3 +17,16 @@ apps/access-api/prisma/dev.db
 cache
 out
 broadcast
+contracts/script/fixtures/*.determinism-check.out.json
+
+# Excluded files
+AGENTS.md
+update-test.js
+update-test.mjs
+temp/
+
+# Lock files
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+bun.lock

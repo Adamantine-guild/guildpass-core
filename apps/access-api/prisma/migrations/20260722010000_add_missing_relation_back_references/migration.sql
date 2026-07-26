@@ -1,0 +1,10 @@
+-- No-op migration.
+--
+-- schema.prisma gained opposite relation fields (Wallet.delegatedGrantsAsGranter/
+-- delegatedGrantsAsGrantee, Community.delegatedGrants, Community.roleDefinitions,
+-- RoleDefinition.roleAssignments) so that `prisma generate` stops failing with
+-- "missing an opposite relation field" validation errors. These are Prisma-side
+-- navigation properties only; the underlying foreign key columns
+-- (DelegatedGrant.granterWalletId/granteeWalletId/communityId,
+-- RoleAssignment.roleDefinitionId) already exist from earlier migrations, so
+-- there is no schema drift to apply here.

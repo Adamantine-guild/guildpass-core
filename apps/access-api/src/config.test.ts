@@ -1,15 +1,19 @@
-import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
-
 describe('Config Validation', () => {
   const originalEnv = process.env;
+
+  let exitSpy: jest.SpyInstance;
 
   beforeEach(() => {
     jest.resetModules();
     process.env = { ...originalEnv };
+    exitSpy = jest.spyOn(process, 'exit').mockImplementation((code?: string | number | null | undefined): never => {
+      throw new Error(`process.exit called with "${code}"`);
+    });
   });
 
   afterEach(() => {
     process.env = originalEnv;
+    exitSpy.mockRestore();
   });
 
   describe('Valid Configuration', () => {
@@ -35,6 +39,7 @@ describe('Config Validation', () => {
     it('should apply defaults when optional values are missing', async () => {
       process.env.DATABASE_URL =
         'postgresql://user:pass@localhost:5432/test_db';
+      delete process.env.NODE_ENV;
 
       jest.spyOn(console, 'log').mockImplementation();
 
@@ -60,8 +65,8 @@ describe('Config Validation', () => {
   });
 
   describe('Missing Required Values', () => {
-    it('should fail when DATABASE_URL is missing', async () => {
-      delete process.env.DATABASE_URL;
+    it('should fail when DATABASE_URL is an invalid URL (not a valid URL string)', async () => {
+      process.env.DATABASE_URL = 'not-a-url';
 
       jest.spyOn(console, 'error').mockImplementation();
 

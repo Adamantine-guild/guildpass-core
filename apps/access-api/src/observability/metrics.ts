@@ -16,7 +16,7 @@
  * Dependencies: prom-client
  */
 
-import { Registry, Counter, Histogram, collectDefaultMetrics } from 'prom-client';
+import { Registry, Counter, Histogram, Gauge, collectDefaultMetrics } from 'prom-client';
 
 // --------------------------------------------------------------------------
 // Registry
@@ -54,18 +54,10 @@ const httpRequestsTotal = new Counter({
 // Access Policy Decision Metrics
 // --------------------------------------------------------------------------
 
-/**
- * Tracks every allow/deny decision emitted by the policy engine.
- *
- * Labels:
- *   outcome     – "ALLOW" | "DENY"
- *   rule_id     – the policy rule id (e.g. "MEMBERS_ONLY")
- *   reason_code – the first reason code from AccessDecision.reasons
- */
 const accessDecisionsTotal = new Counter({
-  name: 'access_policy_decisions_total',
-  help: 'Total access policy decisions by outcome, rule, and reason',
-  labelNames: ['outcome', 'rule_id', 'reason_code'] as const,
+  name: 'access_decisions_total',
+  help: 'Total access policy decisions',
+  labelNames: ['decision'] as const,
   registers: [registry],
 });
 
@@ -119,9 +111,73 @@ const outboxEventsFailedTotal = new Counter({
   registers: [registry],
 });
 
+/**
+ * Backlog depth: current count of pending events that are due for processing.
+ * A rising backlog indicates the worker(s) cannot keep up with the production
+ * rate and that more worker instances (or a larger batch size) may be needed.
+ */
+const outboxBacklogDepth = new Gauge({
+  name: 'outbox_backlog_depth',
+  help: 'Number of pending outbox events currently due for processing',
+  registers: [registry],
+});
+
+/**
+ * Tracks the current adaptive batch size of each worker shard so operators
+ * can observe backpressure-driven reductions.
+ */
+const outboxWorkerBatchSize = new Gauge({
+  name: 'outbox_worker_batch_size',
+  help: 'Current adaptive batch size per outbox worker shard',
+  labelNames: ['shard'] as const,
+  registers: [registry],
+});
+
 // --------------------------------------------------------------------------
 // Exported handle
 // --------------------------------------------------------------------------
+
+// --------------------------------------------------------------------------
+// Audit Chain Metrics
+// --------------------------------------------------------------------------
+
+const auditChainWriteDuration = new Histogram({
+  name: 'audit_chain_write_duration_seconds',
+  help: 'Duration of audit chain hash computation and write in seconds',
+  buckets: [0.001, 0.005, 0.01, 0.025, 0.05, 0.1],
+  registers: [registry],
+});
+
+/**
+ * Tracks the indexing lag in blocks per chain.
+ */
+const indexerLag = new Gauge({
+  name: 'guildpass_indexer_lag_blocks',
+  help: 'Difference between current chain tip and last processed block',
+  labelNames: ['chain_id'] as const,
+  registers: [registry],
+});
+
+/**
+ * Tracks the total number of reorgs detected per chain.
+ */
+const indexerReorgsDetectedTotal = new Counter({
+  name: 'indexer_reorgs_detected_total',
+  help: 'Total number of blockchain reorganizations detected',
+  labelNames: ['chain_id'] as const,
+  registers: [registry],
+});
+
+/**
+ * Tracks the duration of indexer reorg state reconciliation in seconds.
+ */
+const indexerReconciliationDuration = new Histogram({
+  name: 'indexer_reconciliation_duration_seconds',
+  help: 'Duration of indexer reorg reconciliation in seconds',
+  labelNames: ['chain_id'] as const,
+  buckets: [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5],
+  registers: [registry],
+});
 
 export const metrics = {
   httpRequestDuration,
@@ -131,4 +187,10 @@ export const metrics = {
   outboxEventsCreatedTotal,
   outboxEventsDeliveredTotal,
   outboxEventsFailedTotal,
+  outboxBacklogDepth,
+  outboxWorkerBatchSize,
+  auditChainWriteDuration,
+  indexerLag,
+  indexerReorgsDetectedTotal,
+  indexerReconciliationDuration,
 };

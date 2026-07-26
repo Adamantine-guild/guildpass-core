@@ -1,4 +1,5 @@
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, Prisma, EventType } from "@prisma/client";
+import { writeChainedAuditEvent } from "./auditChainHasher";
 
 const prisma = new PrismaClient();
 
@@ -27,6 +28,7 @@ export type AuditEventInput = {
     | "MEMBERSHIP_DELETED"
     | "POLICY_EVALUATION"
     | "MEMBERSHIP_RECONCILED"
+    | "RECONCILIATION_DISCREPANCY"
     | "OTHER";
   walletId?: string | null;
   communityId?: string | null;
@@ -46,85 +48,65 @@ export type AuditEventInput = {
 };
 
 /**
- * Persist an audit event to the DB.
+ * Persist an audit event to the DB with hash-chain integrity.
+ *
+ * Each record includes a keccak256 hash of its own content chained to the
+ * previous record's hash, forming a tamper-evident, append-only log.
+ * Concurrent writes are serialized via a PostgreSQL advisory lock.
  */
 export async function logEvent(event: AuditEventInput) {
-  return logEventTx(prisma, event);
+  return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+    return writeChainedAuditEvent(tx, event);
+  });
 }
 
 /**
- * Transaction-aware audit event creation.
+ * Transaction-aware audit event creation with hash-chain integrity.
  *
- * Important: we run this inside the caller's Prisma transaction so audit events
- * cannot cause partial visibility of access-affecting mutations.
+ * Must be called inside a Prisma `$transaction` callback so the PostgreSQL
+ * advisory lock that serializes the chain is held for the full read-then-write.
  *
  * Also emits a durable outbox event for ACCESS_CHECK decisions so downstream
  * integrations (dashboards, bots, webhooks, analytics) can consume them
  * reliably.
  */
-export async function logEventTx(db: PrismaLikeClient, event: AuditEventInput) {
-  // Create audit event and optionally an outbox event in parallel within
-  // the same transaction for atomicity.
-  const promises: Promise<any>[] = [
-    db.auditEvent.create({
+export async function logEventTx(
+  tx: Prisma.TransactionClient,
+  event: AuditEventInput,
+) {
+  const auditResult = await writeChainedAuditEvent(tx, event);
+
+  // Also emit a durable outbox event for ACCESS_CHECK decisions so
+  // downstream integrations can consume them reliably.
+  if (tx.outboxEvent && event.eventType === "ACCESS_CHECK") {
+    await tx.outboxEvent.create({
       data: {
-        eventType: event.eventType,
-        walletId: event.walletId ?? null,
+        eventType: "ACCESS_DECISION",
+        entityId: event.walletId ?? null,
+        entityType: "AccessDecision",
         communityId: event.communityId ?? null,
-        resource: event.resource ?? null,
-        policyRule: event.policyRule ?? null,
-        decision: event.decision ?? null,
-        reasonCode: event.reasonCode ?? null,
-        beforeState: event.beforeState ?? null,
-        afterState: event.afterState ?? null,
         correlationId: event.correlationId ?? null,
         chainId: event.chainId ?? null,
         txHash: event.txHash ?? null,
         blockNumber: event.blockNumber ?? null,
         logIndex: event.logIndex ?? null,
-        membershipStateVersion: event.membershipStateVersion ?? null,
-        roleStateVersion: event.roleStateVersion ?? null,
-      },
-    }),
-  ];
-
-  // Also emit a durable outbox event for ACCESS_CHECK decisions so
-  // downstream integrations can consume them reliably.
-  if (
-    db.outboxEvent &&
-    event.eventType === "ACCESS_CHECK"
-  ) {
-    promises.push(
-      db.outboxEvent.create({
-        data: {
-          eventType: "ACCESS_DECISION",
-          entityId: event.walletId ?? null,
-          entityType: "AccessDecision",
-          communityId: event.communityId ?? null,
-          correlationId: event.correlationId ?? null,
-          chainId: event.chainId ?? null,
-          txHash: event.txHash ?? null,
-          blockNumber: event.blockNumber ?? null,
-          logIndex: event.logIndex ?? null,
-          payload: {
-            walletId: event.walletId ?? null,
-            resource: event.resource ?? null,
-            policyRule: event.policyRule ?? null,
-            decision: event.decision ?? null,
-            reasonCode: event.reasonCode ?? null,
-            membershipStateVersion: event.membershipStateVersion ?? null,
-            roleStateVersion: event.roleStateVersion ?? null,
-          },
-          status: "pending",
-          retryCount: 0,
-          maxRetries: 5,
-          nextRetryAt: new Date(),
+        payload: {
+          walletId: event.walletId ?? null,
+          resource: event.resource ?? null,
+          policyRule: event.policyRule ?? null,
+          decision: event.decision ?? null,
+          reasonCode: event.reasonCode ?? null,
+          membershipStateVersion: event.membershipStateVersion ?? null,
+          roleStateVersion: event.roleStateVersion ?? null,
         },
-      }),
-    );
+        status: "pending",
+        retryCount: 0,
+        maxRetries: 5,
+        nextRetryAt: new Date(),
+      },
+    });
   }
 
-  const [auditResult] = await Promise.all(promises);
   return auditResult;
 }
 
@@ -172,5 +154,87 @@ export async function getEventsByCommunity(
   }
   return prisma.auditEvent.findMany(args);
 }
+
+export interface QueryAuditEventsInput {
+  communityId: string;
+  actorWallet?: string;
+  eventType?: EventType | string;
+  resource?: string;
+  from?: Date;
+  to?: Date;
+  page?: number;
+  limit?: number;
+}
+
+export interface PaginatedAuditEventsResult {
+  events: any[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
+}
+
+/**
+ * Filterable, paginated audit_events query service.
+ * Supports filtering by communityId, actorWallet, eventType, resource, date range (from/to),
+ * with page/limit pagination.
+ */
+export async function queryAuditEvents(
+  client: PrismaClient | Prisma.TransactionClient = prisma,
+  options: QueryAuditEventsInput,
+): Promise<PaginatedAuditEventsResult> {
+  const page = Math.max(1, options.page ?? 1);
+  const limit = Math.min(100, Math.max(1, options.limit ?? 20));
+  const skip = (page - 1) * limit;
+
+  const where: any = {
+    communityId: options.communityId,
+  };
+
+  if (options.actorWallet) {
+    where.walletId = { equals: options.actorWallet, mode: "insensitive" };
+  }
+
+  if (options.eventType) {
+    where.eventType = options.eventType as EventType;
+  }
+
+  if (options.resource) {
+    where.resource = options.resource;
+  }
+
+  if (options.from || options.to) {
+    where.createdAt = {};
+    if (options.from) {
+      where.createdAt.gte = options.from;
+    }
+    if (options.to) {
+      where.createdAt.lte = options.to;
+    }
+  }
+
+  const [events, total] = await Promise.all([
+    (client as any).auditEvent.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      skip,
+      take: limit,
+    }),
+    (client as any).auditEvent.count({ where }),
+  ]);
+
+  return {
+    events,
+    pagination: {
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
+    },
+  };
+}
+
 
 
