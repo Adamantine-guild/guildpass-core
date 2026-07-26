@@ -93,8 +93,9 @@ async function buildTestApp(mockService: ReturnType<typeof createMockMemberServi
     const requesterWallet = request.headers['x-wallet'] ?? request.headers['x-user-wallet'] ?? request.headers['x-requester-wallet'];
     // The integration test app doesn't enforce auth; service unit tests do.
     // This just ensures request parsing is stable.
-    const role = (request.query as { role?: string })?.role;
-    return mockService.listMembersForAdmin(communityId, role);
+    const query = request.query as { role?: string; limit?: string; cursor?: string };
+    const limit = query.limit ? Number(query.limit) : 50;
+    return mockService.listMembersForAdmin(communityId, query.role, { limit, cursor: query.cursor });
   });
 
   // POST /v1/communities/:communityId/members/:wallet/roles — assign a role to a member
@@ -395,7 +396,7 @@ describe('GET /v1/communities/:communityId/members', () => {
     expect(response.statusCode).toBe(API_CONTRACT.communityMembers.successStatus);
     const body = response.json();
     expect(body.members).toHaveLength(2);
-    expect(mock.listMembersForAdmin).toHaveBeenCalledWith('community-1', undefined);
+    expect(mock.listMembersForAdmin).toHaveBeenCalledWith('community-1', undefined, { limit: 50, cursor: undefined });
 
     await app.close();
   });
@@ -412,10 +413,32 @@ describe('GET /v1/communities/:communityId/members', () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(mock.listMembersForAdmin).toHaveBeenCalledWith('community-1', 'admin');
+    expect(mock.listMembersForAdmin).toHaveBeenCalledWith('community-1', 'admin', { limit: 50, cursor: undefined });
 
     await app.close();
   });
+
+  test('passes pagination query params', async () => {
+    const mock = createMockMemberService({
+      listMembersForAdmin: jest.fn().mockResolvedValue({
+        members: [],
+        pagination: { limit: 2, hasMore: true, nextCursor: 'member-2' },
+      }),
+    });
+    const app = await buildTestApp(mock);
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/v1/communities/community-1/members?limit=2&cursor=member-1',
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().pagination).toEqual({ limit: 2, hasMore: true, nextCursor: 'member-2' });
+    expect(mock.listMembersForAdmin).toHaveBeenCalledWith('community-1', undefined, { limit: 2, cursor: 'member-1' });
+
+    await app.close();
+  });
+
 });
 
 describe('POST /v1/communities/:communityId/members/:wallet/roles', () => {
@@ -466,6 +489,7 @@ describe('DELETE /v1/communities/:communityId/members/:wallet/roles/:role', () =
 
     await app.close();
   });
+
 });
 
 describe('POST /v1/communities/:communityId/overrides', () => {

@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { z } from 'zod';
 import { getMemberService, MemberServiceError } from './services/memberService';
 import { getPrisma } from './services/prisma';
 import { notFound, validationError } from './errors';
@@ -23,6 +24,13 @@ function getRequesterWallet(request: FastifyRequest): string {
   }
   return '';
 }
+
+
+const memberListQuerySchema = z.object({
+  role: z.enum(['admin', 'member', 'contributor']).optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  cursor: z.string().min(1).optional(),
+});
 
 function sendRoleMutationError(reply: FastifyReply, error: unknown) {
   if (error instanceof MemberServiceError) {
@@ -160,9 +168,26 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // GET /v1/communities/:communityId/members — list members for admin
-  app.get('/v1/communities/:communityId/members', async (request: FastifyRequest, reply: FastifyReply) => {
+  app.get('/v1/communities/:communityId/members', {
+    schema: {
+      summary: 'List community members for admins',
+      tags: ['Members'],
+      querystring: {
+        type: 'object',
+        properties: {
+          role: { type: 'string', enum: ['admin', 'member', 'contributor'] },
+          limit: { type: 'integer', minimum: 1, maximum: 200, default: 50 },
+          cursor: { type: 'string' },
+        },
+      },
+    },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
     const { communityId } = request.params as { communityId: string };
-    const role = (request.query as { role?: string })?.role;
+    const parsedQuery = memberListQuerySchema.safeParse(request.query ?? {});
+    if (!parsedQuery.success) {
+      return reply.status(400).send(validationError('Invalid query parameters', parsedQuery.error.flatten()));
+    }
+    const { role, limit, cursor } = parsedQuery.data;
     // Ensure caller is an authenticated community admin by reusing mutation auth check.
     const requesterWallet = getRequesterWallet(request);
     try {
@@ -170,7 +195,8 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       // We do this by calling listMembersForAdmin only after requester is validated.
       const requesterMembers = await memberService.listMembersForAdmin(
         communityId,
-        role as 'admin' | 'member' | 'contributor' | undefined,
+        role,
+        { limit, cursor },
       );
       // listMembersForAdmin is not requester-scoped; enforce admin authorization in a lightweight way:
       // If requester is missing from admin-filtered listing, deny.
