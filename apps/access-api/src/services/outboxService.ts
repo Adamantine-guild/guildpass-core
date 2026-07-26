@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { PrismaClient } from "@prisma/client";
 import type {
   OutboxEventType,
@@ -5,6 +6,7 @@ import type {
   OutboxDispatchResult,
   OutboxEventStatus,
 } from "@guildpass/shared-types";
+import { getCorrelationId } from "./requestContext";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -27,6 +29,7 @@ export type OutboxEventInput = {
   entityType?: string | null;
   communityId?: string | null;
   payload?: Record<string, unknown>;
+  correlationId?: string | null;
 };
 
 // ---------------------------------------------------------------------------
@@ -75,12 +78,15 @@ export async function logOutboxEventTx(
   db: PrismaLikeClient,
   event: OutboxEventInput,
 ): Promise<OutboxDispatchResult> {
+  const correlationId = event.correlationId ?? getCorrelationId() ?? randomUUID();
+
   const created = await db.outboxEvent.create({
     data: {
       eventType: event.eventType,
       entityId: event.entityId ?? null,
       entityType: event.entityType ?? null,
       communityId: event.communityId ?? null,
+      correlationId,
       payload: event.payload ?? {},
       status: "pending",
       retryCount: 0,

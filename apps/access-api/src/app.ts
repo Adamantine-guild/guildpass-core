@@ -16,6 +16,7 @@
  * integration tests can import it without binding a port.
  */
 
+import { randomUUID } from 'node:crypto';
 import Fastify, { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
@@ -27,6 +28,7 @@ import { registerRoutes } from './routes';
 import { getPrisma } from './services/prisma';
 import { unauthorized } from './errors';
 import { config } from './config';
+import { setRequestContext } from './services/requestContext';
 
 // --------------------------------------------------------------------------
 // Helper: normalise a Fastify route URL into a stable label
@@ -80,13 +82,20 @@ export async function buildApp(): Promise<FastifyInstance> {
         req.headers['x-request-id'] || req.headers['x-correlation-id'];
       const id = Array.isArray(upstream) ? upstream[0] : upstream;
       if (id) return id;
-      // crypto.randomUUID is available in Node 14.17+ without any import
-      return crypto.randomUUID();
+      return randomUUID();
     },
+  });
+
+  // Make the correlation ID available to services/outbox writes for the
+  // lifetime of the request.
+  app.addHook('onRequest', async (req) => {
+    setRequestContext({ correlationId: req.id });
+    req.log.info({ correlationId: req.id }, 'Request correlation context initialized');
   });
 
   // Echo the correlation ID back to the caller on every response.
   app.addHook('onSend', async (req, reply) => {
+    reply.header('x-request-id', req.id);
     reply.header('x-correlation-id', req.id);
     reply.header('x-guildpass-api-version', '1.0.0');
 
