@@ -91,6 +91,7 @@ export type OutboxEventHandler = (event: {
   communityId: string | null;
   payload: any;
   createdAt: Date;
+  correlationId?: string | null;
 }) => Promise<void>;
 
 /**
@@ -100,7 +101,8 @@ const defaultHandler: OutboxEventHandler = async (event) => {
   // eslint-disable-next-line no-console
   console.log(
     `[outboxWorker] Delivered event ${event.id} (${event.eventType})` +
-      ` community=${event.communityId ?? "N/A"}`,
+      ` community=${event.communityId ?? "N/A"}` +
+      ` correlationId=${event.correlationId ?? "N/A"}`,
   );
 };
 
@@ -264,6 +266,7 @@ export async function processOutboxBatch(
         communityId: event.communityId,
         payload: event.payload,
         createdAt: event.createdAt,
+        correlationId: event.correlationId ?? null,
       });
 
       await markOutboxDelivered(db as any, event.id);
@@ -274,7 +277,8 @@ export async function processOutboxBatch(
         err?.message ?? "Unknown delivery error";
       // eslint-disable-next-line no-console
       console.error(
-        `[outboxWorker] Failed to deliver event ${event.id}:`,
+        `[outboxWorker] Failed to deliver event ${event.id}` +
+          ` correlationId=${event.correlationId ?? "N/A"}:`,
         errorMessage,
       );
 

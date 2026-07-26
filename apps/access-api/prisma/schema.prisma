@@ -410,7 +410,6 @@ model OutboxEvent {
   // An unused index is a permanent write-path cost with no read-side
   // benefit here, so neither was added.
   @@index([status, nextRetryAt])
-  @@index([correlationId])
 }
 
 // --- Client-Facing Request Idempotency (Issue #184) ---

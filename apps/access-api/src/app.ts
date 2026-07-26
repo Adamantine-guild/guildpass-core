@@ -4,6 +4,7 @@
  * Fastify application factory.
  */
 
+import { randomUUID } from 'node:crypto';
 import Fastify, { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
@@ -17,26 +18,7 @@ import { getPrisma } from './services/prisma';
 import { createApiError, unauthorized } from './errors';
 import { isValidWalletAddress } from './lib/wallet';
 import { config } from './config';
-import accessCheckRateLimiter from './plugins/accessCheckRateLimiter';
-
-// --------------------------------------------------------------------------
-// Helper: interpret the TRUST_PROXY setting for Fastify
-//
-// Fastify only derives request.ip from X-Forwarded-For when trustProxy is set.
-// Left off (the default), the header is ignored and request.ip is the socket
-// address — which is what rate limiting must key on, since an untrusted
-// X-Forwarded-For lets any caller mint a fresh bucket on every request.
-// --------------------------------------------------------------------------
-export function parseTrustProxy(value: string): boolean | number | string[] {
-  const raw = value.trim();
-  if (raw === '' || raw === 'false' || raw === '0') return false;
-  if (raw === 'true') return true;
-  if (/^\d+$/.test(raw)) return Number(raw);
-  return raw
-    .split(',')
-    .map((entry) => entry.trim())
-    .filter(Boolean);
-}
+import { setRequestContext } from './services/requestContext';
 
 // --------------------------------------------------------------------------
 // Helper: normalise a Fastify route URL into a stable label
@@ -101,11 +83,20 @@ export async function buildApp(): Promise<FastifyInstance> {
       const upstream = req.headers['x-request-id'] || req.headers['x-correlation-id'];
       const id = Array.isArray(upstream) ? upstream[0] : upstream;
       if (id) return id;
-      return crypto.randomUUID();
+      return randomUUID();
     },
   });
 
+  // Make the correlation ID available to services/outbox writes for the
+  // lifetime of the request.
+  app.addHook('onRequest', async (req) => {
+    setRequestContext({ correlationId: req.id });
+    req.log.info({ correlationId: req.id }, 'Request correlation context initialized');
+  });
+
+  // Echo the correlation ID back to the caller on every response.
   app.addHook('onSend', async (req, reply) => {
+    reply.header('x-request-id', req.id);
     reply.header('x-correlation-id', req.id);
     reply.header('x-guildpass-api-version', '1.0.0');
 
