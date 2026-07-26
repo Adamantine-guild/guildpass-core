@@ -3,6 +3,11 @@ export interface ContractAddresses {
   chainId: number;
 }
 
+export interface MembershipChainConfig extends ContractAddresses {
+  rpcUrl?: string;
+  name?: string;
+}
+
 /**
  * Validates that a string is a valid EVM address (0x + 40 hex chars).
  */
@@ -40,6 +45,24 @@ export interface ContractValidationResult {
   errors: string[];
 }
 
+export function parseMembershipChainConfigs(raw = process.env.MEMBERSHIP_CHAIN_CONFIGS): MembershipChainConfig[] {
+  if (raw?.trim()) {
+    const parsed = JSON.parse(raw) as Array<{ chainId: number | string; membershipNftAddress: string; rpcUrl?: string; name?: string }>;
+    return parsed.map((entry) => ({
+      chainId: Number(entry.chainId),
+      membershipNFT: entry.membershipNftAddress,
+      rpcUrl: entry.rpcUrl,
+      name: entry.name,
+    }));
+  }
+
+  return [{
+    membershipNFT: process.env.MEMBERSHIP_NFT_ADDRESS || '',
+    chainId: process.env.CHAIN_ID === undefined ? NaN : parseInt(process.env.CHAIN_ID, 10),
+    rpcUrl: process.env.RPC_URL,
+  }];
+}
+
 /**
  * Validates the contract configuration from environment variables.
  * Returns a result object with validation status and any errors.
@@ -47,26 +70,35 @@ export interface ContractValidationResult {
 export function validateContractConfig(): ContractValidationResult {
   const errors: string[] = [];
 
-  const membershipNFT = process.env.MEMBERSHIP_NFT_ADDRESS ?? '';
-  if (!membershipNFT) {
-    errors.push('MEMBERSHIP_NFT_ADDRESS is not set');
-  } else if (!isValidEvmAddress(membershipNFT)) {
-    errors.push(
-      `MEMBERSHIP_NFT_ADDRESS "${membershipNFT}" is not a valid EVM address (expected 0x + 40 hex chars)`,
-    );
+  let configs: MembershipChainConfig[] = [];
+  try {
+    configs = parseMembershipChainConfigs();
+  } catch (error) {
+    errors.push(`MEMBERSHIP_CHAIN_CONFIGS is not valid JSON: ${(error as Error).message}`);
   }
 
-  const chainIdRaw = process.env.CHAIN_ID ?? '';
-  if (!chainIdRaw) {
-    errors.push('CHAIN_ID is not set');
-  } else {
-    const parsed = Number(chainIdRaw);
-    if (!isValidChainId(parsed)) {
-      errors.push(
-        `CHAIN_ID "${chainIdRaw}" is not a valid positive integer`,
-      );
-    }
+  if (configs.length === 0) {
+    errors.push('At least one membership chain config is required');
   }
+
+  configs.forEach((config, index) => {
+    const legacy = configs.length === 1 && !process.env.MEMBERSHIP_CHAIN_CONFIGS;
+    const prefix = legacy ? '' : `MEMBERSHIP_CHAIN_CONFIGS[${index}].`;
+    if (!config.membershipNFT) {
+      errors.push(legacy ? 'MEMBERSHIP_NFT_ADDRESS is not set' : `${prefix}membershipNftAddress is not set`);
+    } else if (!isValidEvmAddress(config.membershipNFT)) {
+      errors.push(legacy
+        ? `MEMBERSHIP_NFT_ADDRESS "${config.membershipNFT}" is not a valid EVM address (expected 0x + 40 hex chars)`
+        : `${prefix}membershipNftAddress "${config.membershipNFT}" is not a valid EVM address (expected 0x + 40 hex chars)`);
+    }
+
+    if (!isValidChainId(config.chainId)) {
+      const chainIdRaw = legacy ? (process.env.CHAIN_ID ?? '') : String(config.chainId);
+      errors.push(legacy
+        ? (chainIdRaw ? `CHAIN_ID "${chainIdRaw}" is not a valid positive integer` : 'CHAIN_ID is not set')
+        : `${prefix}chainId "${config.chainId}" is not a valid positive integer`);
+    }
+  });
 
   return {
     valid: errors.length === 0,
@@ -87,14 +119,19 @@ export function getContractAddresses(): ContractAddresses {
     );
   }
 
-  return {
-    membershipNFT: process.env.MEMBERSHIP_NFT_ADDRESS!,
-    chainId: parseInt(process.env.CHAIN_ID!, 10),
-  };
+  return parseMembershipChainConfigs()[0];
 }
 
-// Legacy export — silently returns empty contract address in production.
-// Prefer getContractAddresses() which validates before returning.
+// Returns all configured membership deployments. Prefer this for multi-chain indexing.
+export function getMembershipChainConfigs(): MembershipChainConfig[] {
+  const validation = validateContractConfig();
+  if (!validation.valid) {
+    throw new Error(`Invalid contract configuration:\n${validation.errors.join('\n')}`);
+  }
+  return parseMembershipChainConfigs();
+}
+
+// Legacy export — first configured contract only. Prefer getMembershipChainConfigs().
 export const addresses: ContractAddresses = {
   membershipNFT: process.env.MEMBERSHIP_NFT_ADDRESS || '',
   chainId: parseInt(process.env.CHAIN_ID || '31337', 10),
