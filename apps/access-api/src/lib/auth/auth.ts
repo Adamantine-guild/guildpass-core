@@ -124,3 +124,53 @@ export async function authenticateSessionOrApiKey(
   request.authenticatedWallet = session.walletAddress;
 }
 
+/**
+ * Fastify preHandler that resolves the requester's wallet from a verified SIWE
+ * session (Bearer token backed by the Session table) and sets
+ * request.authenticatedWallet, which getRequesterWallet then prefers over any
+ * client-supplied identity header.
+ *
+ * When config.siweEnforced is true, a request without a valid, unexpired
+ * session is rejected with 401 — the identity headers are no longer a fallback.
+ * When false (default), the request is allowed through so existing header-based
+ * integrators keep working during migration; a deprecation warning is logged
+ * and, if a session token happens to be present, it is still honoured so
+ * clients can migrate ahead of enforcement (see #240).
+ */
+export async function requireSiweSession(
+  request: any,
+  reply: any,
+): Promise<void> {
+  const authHeader = request.headers.authorization;
+  if (typeof authHeader === "string" && authHeader.startsWith("Bearer ")) {
+    const token = authHeader.substring(7).trim();
+    const { getPrisma } = require("../../services/prisma");
+    const prisma = getPrisma();
+    const session = await prisma.session.findUnique({ where: { token } });
+    if (session && new Date(session.expiresAt) >= new Date()) {
+      request.authenticatedWallet = session.walletAddress;
+      return;
+    }
+    if (session) {
+      prisma.session.delete({ where: { id: session.id } }).catch(() => {});
+    }
+  }
+
+  const { config } = require("../../config");
+  if (config.siweEnforced) {
+    const { createApiError } = require("../../errors");
+    return reply.status(401).send(
+      createApiError({
+        statusCode: 401,
+        code: "UNAUTHORIZED",
+        message: "A valid SIWE session is required for this route",
+      }),
+    );
+  }
+
+  request.log?.warn?.(
+    { route: request.url },
+    "SIWE legacy mode: no verified session; falling back to header identity (deprecated)",
+  );
+}
+

@@ -46,10 +46,10 @@ flowchart TD
 
 ### 1. Wallet Spoofing (Client-Side Header Injection)
 * **Threat**: A malicious caller spoofing their identity by setting the `x-wallet` (or `x-user-wallet`/`x-requester-wallet`) header to an arbitrary admin's or member's wallet address, escalating privileges or acting on their behalf.
-* **Mitigation**: 
-  - Gate all admin/server routes behind the `x-api-key` header.
-  - Require wallet-scoped mutation routes (like linking a secondary wallet) to submit cryptographic signature proofs.
-  - For user sessions, verify the SIWE session token rather than blindly trusting the `x-wallet` header.
+* **Mitigation (implemented — #240)**:
+  - Admin/mutation routes run the `requireSiweSession` preHandler, which resolves the requester wallet from a verified SIWE session (Bearer token issued by `/v1/auth/verify`) and sets `request.authenticatedWallet`. Under `SIWE_ENFORCED`, a request without a valid, unexpired session is rejected with `401`, and `getRequesterWallet` no longer trusts the `x-wallet`/`x-user-wallet`/`x-requester-wallet` headers.
+  - `x-api-key` still authenticates the calling service (server-to-server), but it no longer substitutes for a verified requester identity in admin authorization decisions.
+  - Migration: `SIWE_ENFORCED` defaults to `false` so existing header-based integrators keep working; deployments flip it on once clients present sessions. (This is the `/v1`-compatible migration path — a flag rather than a new `/v2`.)
 
 ### 2. Challenge Replay Attacks
 * **Threat**: An attacker intercepting a valid challenge signature and re-submitting it to link wallets or authenticate a session.
@@ -76,11 +76,11 @@ flowchart TD
 | `/v1/wallets/:primaryWallet/linked` | `GET` | Public / API Key / Session | None / Optional |
 | `/v1/communities/:communityId/memberships/:wallet` | `GET` | Public / API Key / Session | None (Read-only query) |
 | `/v1/communities/:communityId/members/:wallet` | `GET` | Public / API Key / Session | None (Read-only query) |
-| `/v1/communities/:communityId/members/:wallet/roles` | `POST` | Admin / Server-to-Server | API Key (`x-api-key`) |
-| `/v1/communities/:communityId/members/:wallet/roles/:role` | `DELETE` | Admin / Server-to-Server | API Key (`x-api-key`) |
-| `/v1/communities/:communityId/overrides` | `POST` | Admin / Server-to-Server | API Key (`x-api-key`) |
-| `/v1/communities/:communityId/overrides/:wallet/:resource` | `DELETE` | Admin / Server-to-Server | API Key (`x-api-key`) |
-| `/v1/communities/:communityId/members` | `GET` | Admin / Server-to-Server | API Key (`x-api-key`) |
-| `/v1/communities/:communityId/dead-letter-events` | `GET` | Admin / Server-to-Server | API Key (`x-api-key`) |
-| `/v1/communities/:communityId/dead-letter-events/:id/retry` | `POST` | Admin / Server-to-Server | API Key (`x-api-key`) |
+| `/v1/communities/:communityId/members/:wallet/roles` | `POST` | Admin / Server-to-Server | API Key (`x-api-key`) + verified SIWE session (under `SIWE_ENFORCED`) |
+| `/v1/communities/:communityId/members/:wallet/roles/:role` | `DELETE` | Admin / Server-to-Server | API Key (`x-api-key`) + verified SIWE session (under `SIWE_ENFORCED`) |
+| `/v1/communities/:communityId/overrides` | `POST` | Admin / Server-to-Server | API Key (`x-api-key`) + verified SIWE session (under `SIWE_ENFORCED`) |
+| `/v1/communities/:communityId/overrides/:wallet/:resource` | `DELETE` | Admin / Server-to-Server | API Key (`x-api-key`) + verified SIWE session (under `SIWE_ENFORCED`) |
+| `/v1/communities/:communityId/members` | `GET` | Admin / Server-to-Server | API Key (`x-api-key`) + verified SIWE session (under `SIWE_ENFORCED`) |
+| `/v1/communities/:communityId/dead-letter-events` | `GET` | Admin / Server-to-Server | API Key (`x-api-key`) + verified SIWE session (under `SIWE_ENFORCED`) |
+| `/v1/communities/:communityId/dead-letter-events/:id/retry` | `POST` | Admin / Server-to-Server | API Key (`x-api-key`) + verified SIWE session (under `SIWE_ENFORCED`) |
 | `/v1/access/check` | `POST` | Public / API Key | None (Policy engine query) |

@@ -68,18 +68,26 @@ import {
 import {
   authenticateApiKey,
   authenticateSessionOrApiKey,
+  requireSiweSession,
   verifySiweSignature,
 } from "./lib/auth/auth";
+import { config } from "./config";
 import {
   createIdempotencyPreHandler,
   createIdempotencyOnSend,
 } from "./lib/idempotency";
 import crypto from "crypto";
-import { config } from "./config";
 
 function getRequesterWallet(request: FastifyRequest): string {
   if ((request as any).authenticatedWallet) {
     return (request as any).authenticatedWallet;
+  }
+  // Under SIWE enforcement the requester identity must come from a verified
+  // session (set above by requireSiweSession). Client-supplied identity headers
+  // and a raw Bearer value are never trusted here — returning "" makes any
+  // admin/ownership check fail closed rather than honour a spoofed wallet (#240).
+  if (config.siweEnforced) {
+    return "";
   }
   const header =
     request.headers["x-wallet"] ??
@@ -452,7 +460,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   );
 
   // POST /v1/communities/:communityId/members/:wallet/roles — assign a role to a member
-  app.post('/v1/communities/:communityId/members/:wallet/roles', { schema: assignMemberRoleSchema, preHandler: [authenticateApiKey, idempotencyPreHandler], onSend: [idempotencyOnSend] }, async (request: FastifyRequest, reply: FastifyReply) => {
+  app.post('/v1/communities/:communityId/members/:wallet/roles', { schema: assignMemberRoleSchema, preHandler: [authenticateApiKey, requireSiweSession, idempotencyPreHandler], onSend: [idempotencyOnSend] }, async (request: FastifyRequest, reply: FastifyReply) => {
     const { communityId, wallet } = request.params as { communityId: string; wallet: string };
     const body = request.body as { role?: string };
     const role = body?.role ?? '';
@@ -485,7 +493,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // DELETE /v1/communities/:communityId/members/:wallet/roles/:role — remove an assigned role
-  app.delete('/v1/communities/:communityId/members/:wallet/roles/:role', { schema: removeMemberRoleSchema, preHandler: [authenticateApiKey, idempotencyPreHandler], onSend: [idempotencyOnSend] }, async (request: FastifyRequest, reply: FastifyReply) => {
+  app.delete('/v1/communities/:communityId/members/:wallet/roles/:role', { schema: removeMemberRoleSchema, preHandler: [authenticateApiKey, requireSiweSession, idempotencyPreHandler], onSend: [idempotencyOnSend] }, async (request: FastifyRequest, reply: FastifyReply) => {
     const { communityId, wallet, role } = request.params as { communityId: string; wallet: string; role: string };
     const requesterWallet = getRequesterWallet(request);
 
@@ -520,7 +528,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     "/v1/communities/:communityId/members/:wallet/badges",
     {
       schema: assignBadgeSchema,
-      preHandler: [authenticateApiKey, idempotencyPreHandler],
+      preHandler: [authenticateApiKey, requireSiweSession, idempotencyPreHandler],
       onSend: [idempotencyOnSend],
     },
     async (request: FastifyRequest, reply: FastifyReply) => {
@@ -630,7 +638,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     "/v1/communities/:communityId/members/:wallet/badges/:badgeId",
     {
       schema: revokeBadgeSchema,
-      preHandler: [authenticateApiKey, idempotencyPreHandler],
+      preHandler: [authenticateApiKey, requireSiweSession, idempotencyPreHandler],
       onSend: [idempotencyOnSend],
     },
     async (request: FastifyRequest, reply: FastifyReply) => {
@@ -687,7 +695,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     "/v1/communities/:communityId/overrides",
     {
       schema: createAccessOverrideSchema,
-      preHandler: [authenticateApiKey, idempotencyPreHandler],
+      preHandler: [authenticateApiKey, requireSiweSession, idempotencyPreHandler],
       onSend: [idempotencyOnSend],
     },
     async (request: FastifyRequest, reply: FastifyReply) => {
@@ -729,7 +737,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   );
 
   // GET /v1/communities/:communityId/overrides — list access overrides for a community (admin)
-  app.get('/v1/communities/:communityId/overrides', { schema: listAccessOverridesSchema, preHandler: [authenticateApiKey] }, async (request: FastifyRequest, reply: FastifyReply) => {
+  app.get('/v1/communities/:communityId/overrides', { schema: listAccessOverridesSchema, preHandler: [authenticateApiKey, requireSiweSession] }, async (request: FastifyRequest, reply: FastifyReply) => {
     const { communityId } = request.params as { communityId: string };
     const requesterWallet = getRequesterWallet(request);
     try {
@@ -757,7 +765,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     "/v1/communities/:communityId/overrides/:wallet/:resource",
     {
       schema: revokeAccessOverrideSchema,
-      preHandler: [authenticateApiKey, idempotencyPreHandler],
+      preHandler: [authenticateApiKey, requireSiweSession, idempotencyPreHandler],
       onSend: [idempotencyOnSend],
     },
     async (request: FastifyRequest, reply: FastifyReply) => {
@@ -819,7 +827,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     '/v1/communities/:communityId/members',
     {
       schema: listCommunityMembersSchema,
-      preHandler: [authenticateApiKey],
+      preHandler: [authenticateApiKey, requireSiweSession],
       config: {
         rateLimit: {
           max: config.rateLimitExpensiveMax,
@@ -883,7 +891,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   // deliveries that exhausted the outbox's retry budget
   app.get(
     "/v1/communities/:communityId/dead-letter-events",
-    { schema: listDeadLetterEventsSchema, preHandler: [authenticateApiKey] },
+    { schema: listDeadLetterEventsSchema, preHandler: [authenticateApiKey, requireSiweSession] },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const { communityId } = request.params as { communityId: string };
       const { status } = request.query as {
@@ -918,7 +926,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   // a dead-lettered event as a fresh pending OutboxEvent
   app.post(
     "/v1/communities/:communityId/dead-letter-events/:id/retry",
-    { schema: retryDeadLetterEventSchema, preHandler: [authenticateApiKey] },
+    { schema: retryDeadLetterEventSchema, preHandler: [authenticateApiKey, requireSiweSession] },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const { communityId, id } = request.params as {
         communityId: string;
@@ -990,7 +998,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   // GET /v1/communities/:communityId/audit-events — filterable, paginated audit events for community admin
   app.get(
     "/v1/communities/:communityId/audit-events",
-    { schema: listAuditEventsSchema, preHandler: [authenticateApiKey] },
+    { schema: listAuditEventsSchema, preHandler: [authenticateApiKey, requireSiweSession] },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const { communityId } = request.params as { communityId: string };
       const { actorWallet, eventType, resource, from, to, page, limit } =
@@ -1059,7 +1067,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
   // --- Resource Routes ---
 
-  app.post('/v1/communities/:communityId/resources', { schema: createResourceSchema, preHandler: [authenticateApiKey, idempotencyPreHandler], onSend: [idempotencyOnSend] }, async (request: FastifyRequest, reply: FastifyReply) => {
+  app.post('/v1/communities/:communityId/resources', { schema: createResourceSchema, preHandler: [authenticateApiKey, requireSiweSession, idempotencyPreHandler], onSend: [idempotencyOnSend] }, async (request: FastifyRequest, reply: FastifyReply) => {
     const { communityId } = request.params as { communityId: string };
     const body = request.body as { resourceId: string; name: string; metadata?: any };
     const requesterWallet = getRequesterWallet(request);
@@ -1086,7 +1094,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 
-  app.patch('/v1/communities/:communityId/resources/:resourceId', { schema: updateResourceSchema, preHandler: [authenticateApiKey, idempotencyPreHandler], onSend: [idempotencyOnSend] }, async (request: FastifyRequest, reply: FastifyReply) => {
+  app.patch('/v1/communities/:communityId/resources/:resourceId', { schema: updateResourceSchema, preHandler: [authenticateApiKey, requireSiweSession, idempotencyPreHandler], onSend: [idempotencyOnSend] }, async (request: FastifyRequest, reply: FastifyReply) => {
     const { communityId, resourceId } = request.params as { communityId: string; resourceId: string };
     const body = request.body as { name?: string; metadata?: any };
     const requesterWallet = getRequesterWallet(request);
@@ -1113,7 +1121,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 
-  app.delete('/v1/communities/:communityId/resources/:resourceId', { schema: archiveResourceSchema, preHandler: [authenticateApiKey, idempotencyPreHandler], onSend: [idempotencyOnSend] }, async (request: FastifyRequest, reply: FastifyReply) => {
+  app.delete('/v1/communities/:communityId/resources/:resourceId', { schema: archiveResourceSchema, preHandler: [authenticateApiKey, requireSiweSession, idempotencyPreHandler], onSend: [idempotencyOnSend] }, async (request: FastifyRequest, reply: FastifyReply) => {
     const { communityId, resourceId } = request.params as { communityId: string; resourceId: string };
     const requesterWallet = getRequesterWallet(request);
     try {
@@ -1160,7 +1168,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   // --- Constitutional Rule Set Management Routes ---
 
   // POST /v1/communities/:communityId/constitutional-rulesets — Create a new versioned constitutional rule set
-  app.post('/v1/communities/:communityId/constitutional-rulesets', { preHandler: [authenticateApiKey] }, async (request: FastifyRequest, reply: FastifyReply) => {
+  app.post('/v1/communities/:communityId/constitutional-rulesets', { preHandler: [authenticateApiKey, requireSiweSession] }, async (request: FastifyRequest, reply: FastifyReply) => {
     const { communityId } = request.params as { communityId: string };
     const body = request.body as { rules?: any[]; description?: string };
     const requesterWallet = getRequesterWallet(request);

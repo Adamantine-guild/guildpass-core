@@ -163,6 +163,17 @@ const ConfigSchema = z.object({
   apiKey: z
     .string()
     .default("test-api-key"),
+
+  // When true, admin/mutation routes require a verified SIWE session (Bearer
+  // token backed by the Session table) and the requester wallet is resolved
+  // from that session only — client-supplied x-wallet* identity headers are no
+  // longer trusted. Default false preserves the legacy header behaviour so
+  // existing integrators migrate before enforcement is flipped (see #240).
+  siweEnforced: z
+    .string()
+    .optional()
+    .transform((v) => v === 'true')
+    .default('false'),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
@@ -199,6 +210,7 @@ function validateConfig(): Config {
     trustProxy: process.env.TRUST_PROXY,
     redisUrl: process.env.REDIS_URL,
     apiKey: process.env.API_KEY || "test-api-key",
+    siweEnforced: process.env.SIWE_ENFORCED,
   };
 
   const result = ConfigSchema.safeParse(envVars);
