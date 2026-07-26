@@ -977,13 +977,18 @@ export function getMemberService(
       const { requesterWallet, communityId, targetWallet, role } = input;
       const validRoles: Role[] = ["admin", "member", "contributor"];
       if (!validRoles.includes(role)) {
-        throw { statusCode: 400, message: "Invalid role" };
+        throw new MemberServiceError("Invalid role", 400);
       }
+
+      const community = await prismaClient.community.findUnique({
+        where: { id: communityId },
+      });
+      if (!community) throw new MemberServiceError("Community not found", 404);
 
       const requester = await prismaClient.wallet.findUnique({
         where: { address: normaliseWallet(requesterWallet) },
       });
-      if (!requester) throw { statusCode: 403, message: "Requester not found" };
+      if (!requester) throw new MemberServiceError("Requester not found", 403);
 
       const requesterMember = await prismaClient.member.findFirst({
         where: { walletId: requester.id, communityId },
@@ -992,20 +997,17 @@ export function getMemberService(
       const isRequesterAdmin = requesterMember?.roles.some(
         (r) => r.role === "admin" && r.active,
       );
-      if (!isRequesterAdmin)
-        throw { statusCode: 403, message: "Not authorized" };
+      if (!isRequesterAdmin) throw new MemberServiceError("Not authorized", 403);
 
       const target = await prismaClient.wallet.findUnique({
         where: { address: normaliseWallet(targetWallet) },
       });
-      if (!target)
-        throw { statusCode: 404, message: "Target wallet not found" };
+      if (!target) throw new MemberServiceError("Target wallet not found", 404);
 
       const targetMember = await prismaClient.member.findFirst({
         where: { walletId: target.id, communityId },
       });
-      if (!targetMember)
-        throw { statusCode: 404, message: "Target not a member" };
+      if (!targetMember) throw new MemberServiceError("Target not a member", 404);
 
       const existing = await prismaClient.roleAssignment.findFirst({
         where: { memberId: targetMember.id, role, active: true },
@@ -1278,11 +1280,20 @@ export function getMemberService(
 
     async removeMemberRole(input: RemoveRoleInput): Promise<RoleMutationResult> {
       const { requesterWallet, communityId, targetWallet, role } = input;
+      const validRoles: Role[] = ["admin", "member", "contributor"];
+      if (!validRoles.includes(role)) {
+        throw new MemberServiceError("Invalid role", 400);
+      }
+
+      const community = await prismaClient.community.findUnique({
+        where: { id: communityId },
+      });
+      if (!community) throw new MemberServiceError("Community not found", 404);
 
       const requester = await prismaClient.wallet.findUnique({
         where: { address: normaliseWallet(requesterWallet) },
       });
-      if (!requester) throw { statusCode: 403, message: "Requester not found" };
+      if (!requester) throw new MemberServiceError("Requester not found", 403);
 
       const requesterMember = await prismaClient.member.findFirst({
         where: { walletId: requester.id, communityId },
@@ -1291,20 +1302,17 @@ export function getMemberService(
       const isRequesterAdmin = requesterMember?.roles.some(
         (r) => r.role === "admin" && r.active,
       );
-      if (!isRequesterAdmin)
-        throw { statusCode: 403, message: "Not authorized" };
+      if (!isRequesterAdmin) throw new MemberServiceError("Not authorized", 403);
 
       const target = await prismaClient.wallet.findUnique({
         where: { address: normaliseWallet(targetWallet) },
       });
-      if (!target)
-        throw { statusCode: 404, message: "Target wallet not found" };
+      if (!target) throw new MemberServiceError("Target wallet not found", 404);
 
       const targetMember = await prismaClient.member.findFirst({
         where: { walletId: target.id, communityId },
       });
-      if (!targetMember)
-        throw { statusCode: 404, message: "Target not a member" };
+      if (!targetMember) throw new MemberServiceError("Target not a member", 404);
 
       await prismaClient.roleAssignment.updateMany({
         where: { memberId: targetMember.id, role, active: true },
