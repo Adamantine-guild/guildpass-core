@@ -54,6 +54,7 @@ export const API_CONTRACT = {
     pathTemplate: '/v1/communities/:communityId/members',
     samplePath: '/v1/communities/community-1/members',
     samplePathWithRole: '/v1/communities/community-1/members?role=admin',
+    samplePathWithPagination: '/v1/communities/community-1/members?limit=1&cursor=member-1',
     successStatus: 200,
     successResponse: {
       members: [
@@ -70,6 +71,11 @@ export const API_CONTRACT = {
           roles: ['member'],
         },
       ],
+      pagination: {
+        limit: 50,
+        hasMore: false,
+        nextCursor: null,
+      },
     },
     errorResponse: {
       404: { error: 'NOT_FOUND', code: 'NOT_FOUND', message: 'Community not found', statusCode: 404 },
