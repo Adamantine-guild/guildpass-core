@@ -91,16 +91,23 @@ export async function applyContractEvent(
 ): Promise<void> {
   validateEvent(event);
 
-  // Generate correlation ID to link all related events
-  const correlationId = `${event.transactionHash || 'unknown'}_${event.logIndex ?? 0}_${Date.now()}`;
+  if (event.chainId !== undefined && (!Number.isInteger(event.chainId) || event.chainId <= 0)) {
+    throw new Error('Invalid contract event: chainId must be a positive integer when provided');
+  }
+
+  // Generate correlation ID to link all related events. Include chainId so otherwise-identical
+  // logs from different chains do not collide in downstream correlation/audit systems.
+  const correlationId = `${event.chainId ?? 'unknown-chain'}_${event.transactionHash || 'unknown'}_${event.logIndex ?? 0}_${Date.now()}`;
 
   // Access-affecting writes must be atomic.
   await prisma.$transaction(async (tx) => {
-    // Idempotency check: If transactionHash and logIndex are provided, check if already processed.
-    if (event.transactionHash && event.logIndex !== undefined) {
+    // Idempotency check: a log identity is only globally unique with chainId included.
+    // This prevents a transaction/log proof from chain A from replaying as processed on chain B.
+    if (event.chainId !== undefined && event.transactionHash && event.logIndex !== undefined) {
       const alreadyProcessed = await tx.processedEvent.findUnique({
         where: {
-          transactionHash_logIndex: {
+          chainId_transactionHash_logIndex: {
+            chainId: event.chainId,
             transactionHash: event.transactionHash,
             logIndex: event.logIndex,
           },
@@ -161,6 +168,7 @@ export async function applyContractEvent(
         where: { memberId: member.id },
         update: {
           tokenId: event.tokenId,
+          chainId: event.chainId ?? null,
           state: 'active',
           expiresAt,
           renewedAt: new Date(),
@@ -168,6 +176,7 @@ export async function applyContractEvent(
         create: {
           memberId: member.id,
           tokenId: event.tokenId,
+          chainId: event.chainId ?? null,
           state: 'active',
           expiresAt,
         },
@@ -191,6 +200,7 @@ export async function applyContractEvent(
           } : null,
           afterState: {
             tokenId: updatedMembership.tokenId,
+            chainId: updatedMembership.chainId,
             state: updatedMembership.state,
             expiresAt: updatedMembership.expiresAt?.toISOString(),
           },
@@ -223,6 +233,7 @@ export async function applyContractEvent(
       const membership = await tx.membership.findFirst({
         where: {
           tokenId: event.tokenId,
+          chainId: event.chainId ?? null,
         },
         include: {
           member: {
@@ -241,6 +252,7 @@ export async function applyContractEvent(
 
       const beforeState = {
         tokenId: membership.tokenId,
+        chainId: membership.chainId,
         state: membership.state,
         expiresAt: membership.expiresAt?.toISOString(),
         renewedAt: membership.renewedAt?.toISOString(),
@@ -269,6 +281,7 @@ export async function applyContractEvent(
           beforeState,
           afterState: {
             tokenId: updatedMembership.tokenId,
+            chainId: updatedMembership.chainId,
             state: updatedMembership.state,
             expiresAt: updatedMembership.expiresAt?.toISOString(),
             renewedAt: updatedMembership.renewedAt?.toISOString(),
@@ -302,6 +315,7 @@ export async function applyContractEvent(
       const membership = await tx.membership.findFirst({
         where: {
           tokenId: event.tokenId,
+          chainId: event.chainId ?? null,
         },
         include: { member: { include: { wallet: true } } },
       });
@@ -314,6 +328,7 @@ export async function applyContractEvent(
 
       const beforeState = {
         tokenId: membership.tokenId,
+        chainId: membership.chainId,
         state: membership.state,
         expiresAt: membership.expiresAt?.toISOString(),
       };
@@ -339,6 +354,7 @@ export async function applyContractEvent(
           beforeState,
           afterState: {
             tokenId: updatedMembership.tokenId,
+            chainId: updatedMembership.chainId,
             state: updatedMembership.state,
             expiresAt: updatedMembership.expiresAt?.toISOString(),
           },
@@ -371,6 +387,7 @@ export async function applyContractEvent(
 
     // Record the event as processed for reorg safety and idempotency.
     if (
+      event.chainId !== undefined &&
       event.transactionHash &&
       event.logIndex !== undefined &&
       event.blockHash &&
@@ -378,6 +395,7 @@ export async function applyContractEvent(
     ) {
       await tx.processedEvent.create({
         data: {
+          chainId: event.chainId,
           transactionHash: event.transactionHash,
           logIndex: event.logIndex,
           blockHash: event.blockHash,

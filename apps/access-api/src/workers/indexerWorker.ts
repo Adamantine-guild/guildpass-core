@@ -8,10 +8,25 @@ export interface BlockInfo {
   parentHash: string;
 }
 
+export interface ChainAdapterConfig {
+  chainId: number;
+  rpcUrl?: string;
+  membershipNftAddress: string;
+  name?: string;
+}
+
 export interface ChainProvider {
   getLatestBlockNumber(): Promise<number>;
   getBlock(blockNumber: number): Promise<BlockInfo>;
   getLogs(fromBlock: number, toBlock: number): Promise<DecodedContractEvent[]>;
+}
+
+function normalizeAddress(address: string): string {
+  return address.toLowerCase();
+}
+
+export function indexerStateId(config: ChainAdapterConfig): string {
+  return `${config.chainId}:${normalizeAddress(config.membershipNftAddress)}`;
 }
 
 export class IndexerWorker {
@@ -23,12 +38,18 @@ export class IndexerWorker {
     private readonly provider: ChainProvider,
     private readonly intervalMs: number = 5000,
     private readonly finalityWindow: number = 12,
+    private readonly chainConfig: ChainAdapterConfig = {
+      chainId: Number(process.env.CHAIN_ID || '31337'),
+      membershipNftAddress: process.env.MEMBERSHIP_NFT_ADDRESS || '0x0000000000000000000000000000000000000000',
+    },
   ) {}
 
   start() {
     if (this.timer) return;
     this.timer = setInterval(() => this.runPass(), this.intervalMs);
-    console.info(`IndexerWorker started (interval: ${this.intervalMs}ms, finalityWindow: ${this.finalityWindow})`);
+    console.info(
+      `IndexerWorker started for chain ${this.chainConfig.chainId} contract ${this.chainConfig.membershipNftAddress} (interval: ${this.intervalMs}ms, finalityWindow: ${this.finalityWindow})`,
+    );
   }
 
   stop() {
@@ -36,7 +57,7 @@ export class IndexerWorker {
       clearInterval(this.timer);
       this.timer = null;
     }
-    console.info('IndexerWorker stopped');
+    console.info(`IndexerWorker stopped for chain ${this.chainConfig.chainId}`);
   }
 
   async runPass() {
@@ -46,7 +67,7 @@ export class IndexerWorker {
     try {
       await this.processBlocks();
     } catch (error) {
-      console.error('IndexerWorker error in runPass:', error);
+      console.error(`IndexerWorker error in runPass for chain ${this.chainConfig.chainId}:`, error);
     } finally {
       this.isRunning = false;
     }
@@ -55,35 +76,34 @@ export class IndexerWorker {
   private async processBlocks() {
     const latestBlockNumber = await this.provider.getLatestBlockNumber();
     const safeBlockNumber = latestBlockNumber - this.finalityWindow;
+    const stateId = indexerStateId(this.chainConfig);
 
     const state = await this.prisma.indexerState.findUnique({
-      where: { id: 'singleton' },
+      where: { id: stateId },
     });
 
     let currentBlock = state ? state.lastBlockNumber + 1 : safeBlockNumber;
 
-    // If we are already beyond safe block, wait.
     if (currentBlock > safeBlockNumber) {
       return;
     }
 
-    // Reorg Detection
     if (state) {
       const lastProcessedBlock = await this.provider.getBlock(state.lastBlockNumber);
       if (lastProcessedBlock.hash !== state.lastBlockHash) {
-        console.warn(`REORG DETECTED at block ${state.lastBlockNumber}. Expected ${state.lastBlockHash}, got ${lastProcessedBlock.hash}`);
+        console.warn(
+          `REORG DETECTED on chain ${this.chainConfig.chainId} at block ${state.lastBlockNumber}. Expected ${state.lastBlockHash}, got ${lastProcessedBlock.hash}`,
+        );
         await this.handleReorg(state.lastBlockNumber);
         return;
       }
     }
 
-    // Process blocks in batches
     const toBlock = Math.min(currentBlock + 100, safeBlockNumber);
-    console.info(`Indexer scanning blocks ${currentBlock} to ${toBlock}`);
+    console.info(`Indexer scanning chain ${this.chainConfig.chainId} blocks ${currentBlock} to ${toBlock}`);
 
     const logs = await this.provider.getLogs(currentBlock, toBlock);
 
-    // Sort logs by block number and log index to ensure ordered application
     const sortedLogs = [...logs].sort((a, b) => {
       if (a.blockNumber !== b.blockNumber) {
         return (a.blockNumber || 0) - (b.blockNumber || 0);
@@ -92,19 +112,25 @@ export class IndexerWorker {
     });
 
     for (const log of sortedLogs) {
-      await applyContractEvent(this.prisma, log);
+      await applyContractEvent(this.prisma, {
+        ...log,
+        chainId: this.chainConfig.chainId,
+      });
     }
 
-    // Update checkpoint
     const lastBlock = await this.provider.getBlock(toBlock);
     await this.prisma.indexerState.upsert({
-      where: { id: 'singleton' },
+      where: { id: stateId },
       update: {
+        chainId: this.chainConfig.chainId,
+        contractAddress: normalizeAddress(this.chainConfig.membershipNftAddress),
         lastBlockNumber: toBlock,
         lastBlockHash: lastBlock.hash,
       },
       create: {
-        id: 'singleton',
+        id: stateId,
+        chainId: this.chainConfig.chainId,
+        contractAddress: normalizeAddress(this.chainConfig.membershipNftAddress),
         lastBlockNumber: toBlock,
         lastBlockHash: lastBlock.hash,
       },
@@ -112,33 +138,28 @@ export class IndexerWorker {
   }
 
   private async handleReorg(lastProcessedBlockNumber: number) {
-    // Simple reorg handling: Rewind checkpoint by a safe amount or to last known good block.
-    // In a real implementation, we might want to find the common ancestor.
-    // For now, we rewind by the finality window to re-process and let idempotency handle it.
     const rewindTo = Math.max(0, lastProcessedBlockNumber - this.finalityWindow * 2);
     const block = await this.provider.getBlock(rewindTo);
+    const stateId = indexerStateId(this.chainConfig);
 
     await this.prisma.$transaction(async (tx) => {
       await tx.indexerState.update({
-        where: { id: 'singleton' },
+        where: { id: stateId },
         data: {
           lastBlockNumber: rewindTo,
           lastBlockHash: block.hash,
         },
       });
 
-      // Optional: Delete processed events after the reorg point to allow re-processing
-      // Note: applyContractEvent uses transactionHash_logIndex for idempotency,
-      // but in a reorg, these might be in different blocks or even different hashes.
-      // If we want to fully re-process, we should remove them from ProcessedEvent.
       await tx.processedEvent.deleteMany({
         where: {
+          chainId: this.chainConfig.chainId,
           blockNumber: { gt: rewindTo },
         },
       });
     });
 
-    console.info(`Rewound indexer to block ${rewindTo} due to reorg`);
+    console.info(`Rewound indexer for chain ${this.chainConfig.chainId} to block ${rewindTo} due to reorg`);
   }
 }
 
@@ -147,6 +168,30 @@ export function createIndexerWorker(
   intervalMs?: number,
   finalityWindow?: number,
   prisma?: PrismaClient,
+  chainConfig?: ChainAdapterConfig,
 ) {
-  return new IndexerWorker(prisma, provider, intervalMs, finalityWindow);
+  return new IndexerWorker(prisma, provider, intervalMs, finalityWindow, chainConfig);
+}
+
+export class MultiChainIndexerWorker {
+  constructor(private readonly workers: IndexerWorker[]) {}
+
+  start() {
+    this.workers.forEach((worker) => worker.start());
+  }
+
+  stop() {
+    this.workers.forEach((worker) => worker.stop());
+  }
+}
+
+export function createMultiChainIndexerWorker(
+  chainWorkers: Array<{ provider: ChainProvider; chainConfig: ChainAdapterConfig }>,
+  intervalMs?: number,
+  finalityWindow?: number,
+  prisma?: PrismaClient,
+) {
+  return new MultiChainIndexerWorker(
+    chainWorkers.map(({ provider, chainConfig }) => new IndexerWorker(prisma, provider, intervalMs, finalityWindow, chainConfig)),
+  );
 }

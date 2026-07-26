@@ -73,6 +73,25 @@ const ConfigSchema = z.object({
     .int()
     .nonnegative()
     .default(12), // e.g., 12 blocks for Ethereum mainnet-like safety
+  membershipChainConfigs: z
+    .string()
+    .optional()
+    .transform((raw) => {
+      if (!raw?.trim()) return undefined;
+      const parsed = JSON.parse(raw) as Array<{ chainId: number; rpcUrl: string; membershipNftAddress: string; name?: string }>;
+      parsed.forEach((entry, index) => {
+        if (!Number.isInteger(Number(entry.chainId)) || Number(entry.chainId) <= 0) {
+          throw new Error(`MEMBERSHIP_CHAIN_CONFIGS[${index}].chainId must be a positive integer`);
+        }
+        if (!entry.rpcUrl) {
+          throw new Error(`MEMBERSHIP_CHAIN_CONFIGS[${index}].rpcUrl is required`);
+        }
+        if (!/^0x[0-9a-fA-F]{40}$/.test(entry.membershipNftAddress)) {
+          throw new Error(`MEMBERSHIP_CHAIN_CONFIGS[${index}].membershipNftAddress must be an EVM address`);
+        }
+      });
+      return parsed;
+    }),
 
   // Rate limiting
   rateLimitEnabled: z
@@ -113,6 +132,7 @@ function validateConfig(): Config {
     outboxWorkerBatchSize: process.env.OUTBOX_WORKER_BATCH_SIZE,
     indexerIntervalMs: process.env.INDEXER_INTERVAL_MS,
     indexerFinalityWindow: process.env.INDEXER_FINALITY_WINDOW,
+    membershipChainConfigs: process.env.MEMBERSHIP_CHAIN_CONFIGS,
     rateLimitEnabled: process.env.RATE_LIMIT_ENABLED,
     rateLimitWindowMs: process.env.RATE_LIMIT_WINDOW_MS,
     rateLimitDefaultMax: process.env.RATE_LIMIT_DEFAULT_MAX,

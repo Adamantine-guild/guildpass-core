@@ -4,13 +4,17 @@ datasource db {
 }
 
 model Community {
-  id          String            @id
-  name        String
-  members     Member[]
+  id            String            @id
+  name          String
+  chainConfigId String?
+  chainConfig   ChainConfig?      @relation(fields: [chainConfigId], references: [id])
+  members       Member[]
   policies    AccessPolicy[]
   resources   Resource[]
   overrides   AccessOverride[]
-  createdAt   DateTime          @default(now())
+  createdAt     DateTime          @default(now())
+
+  @@index([chainConfigId])
 }
 
 model Wallet {
@@ -52,7 +56,8 @@ enum MembershipState {
 model Membership {
   id        String          @id @default(cuid())
   memberId  String          @unique
-  tokenId   Int?            @unique
+  tokenId   Int?
+  chainId   Int?
   state     MembershipState
   expiresAt DateTime?
   renewedAt DateTime?
@@ -60,7 +65,9 @@ model Membership {
   member    Member          @relation(fields: [memberId], references: [id])
 
   @@index([state, expiresAt])
+  @@unique([chainId, tokenId])
   @@index([tokenId])
+  @@index([chainId])
 }
 
 enum Role {
@@ -209,6 +216,10 @@ model OutboxEvent {
   entityId      String? // ID of the entity that changed (memberId, resourceId, etc.)
   entityType    String? // e.g. "Member", "RoleAssignment", "Resource", "AccessPolicy"
   communityId   String? // community context
+  chainId       Int?
+  txHash        String?
+  blockNumber   Int?
+  logIndex      Int?
   // Groups outbox events emitted by the same originating request/mutation so
   // consumers can correlate related events (e.g. a role change plus its
   // downstream access re-evaluation). Nullable additive column — see the
@@ -233,10 +244,30 @@ model OutboxEvent {
   @@index([correlationId])
 }
 
+// --- Multi-chain Membership Indexing ---
+
+model ChainConfig {
+  id                   String   @id @default(cuid())
+  chainId              Int
+  name                 String?
+  rpcUrl               String
+  membershipNftAddress String
+  enabled              Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  communities Community[]
+
+  @@unique([chainId, membershipNftAddress])
+  @@index([chainId])
+  @@index([enabled])
+}
+
 // --- Chain Indexer Reorg Safety & Idempotency ---
 
 model ProcessedEvent {
   id              String   @id @default(uuid())
+  chainId         Int
   transactionHash String
   logIndex        Int
   blockHash       String
@@ -244,16 +275,22 @@ model ProcessedEvent {
   eventType       String
   processedAt     DateTime @default(now())
 
-  @@unique([transactionHash, logIndex])
+  @@unique([chainId, transactionHash, logIndex])
+  @@index([chainId, blockNumber])
   @@index([blockHash])
   @@index([blockNumber])
 }
 
 model IndexerState {
-  id               String   @id @default("singleton")
+  id               String   @id
+  chainId          Int
+  contractAddress  String
   lastBlockNumber  Int
   lastBlockHash    String
   updatedAt        DateTime @updatedAt
+
+  @@unique([chainId, contractAddress])
+  @@index([chainId])
 }
 
 // --- Webhook Delivery (outbox handler) ---

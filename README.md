@@ -79,7 +79,7 @@ npm run contracts:test    # runs: forge test
 npm run contracts:deploy  # runs: forge script contracts/script/Deploy.s.sol --broadcast
 ```
 
-After deploying, set `MEMBERSHIP_NFT_ADDRESS` and `CHAIN_ID` in `.env`.
+After deploying, set `MEMBERSHIP_NFT_ADDRESS`, `CHAIN_ID`, and `RPC_URL` in `.env` for a backward-compatible single-chain deployment. For multi-chain deployments, set `MEMBERSHIP_CHAIN_CONFIGS` to a JSON array of `{ name, chainId, rpcUrl, membershipNftAddress }` objects and associate each community with the matching `ChainConfig` row. The multi-chain indexing design and migration notes are documented in [`docs/multi-chain-membership-indexing.md`](docs/multi-chain-membership-indexing.md).
 
 ---
 
@@ -342,6 +342,7 @@ See [`.env.example`](./.env.example) for all required variables.
 - Full event attendance ingestion
 - Multi-chain support (current: EVM only)
 - Advanced indexing pipeline
+- Multi-chain membership indexing with per-community `(chainId, contractAddress)` routing
 
 Clear interfaces and TODOs are left where appropriate.
 
