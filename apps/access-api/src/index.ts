@@ -13,6 +13,8 @@ import { createOutboxWorker } from './workers/outboxWorker';
 import { createIndexerWorker, ChainProvider } from './workers/indexerWorker';
 import { createOnChainReconciliationWorker, OnChainViewProvider } from './workers/onChainReconciliationWorker';
 import { createContributionScoreHandler } from './handlers/contributionScoreHandler';
+import { createWebhookHandler } from './handlers/webhookHandler';
+import type { OutboxEventHandler } from './workers/outboxWorker';
 
 async function main() {
   const app = await buildApp();
@@ -21,9 +23,22 @@ async function main() {
   worker.start();
 
   const contributionHandler = createContributionScoreHandler();
+  // Opt-in webhook delivery (#243). When enabled, both handlers run for each
+  // event: contribution scoring first, then HMAC-signed webhook fan-out.
+  // Webhook failures throw and drive the existing outbox retry/backoff.
+  const webhookHandler = config.outboxWebhookEnabled
+    ? createWebhookHandler()
+    : null;
+  const outboxHandler: OutboxEventHandler = webhookHandler
+    ? async (event) => {
+        await contributionHandler(event);
+        await webhookHandler(event);
+      }
+    : contributionHandler;
+
   const outboxWorker = createOutboxWorker({
     intervalMs: config.outboxWorkerIntervalMs,
-    handler: contributionHandler,
+    handler: outboxHandler,
     db: undefined, // Use default Prisma client
     maxBatchSize: config.outboxWorkerBatchSize,
     minBatchSize: config.outboxWorkerMinBatchSize,
