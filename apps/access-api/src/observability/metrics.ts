@@ -54,18 +54,10 @@ const httpRequestsTotal = new Counter({
 // Access Policy Decision Metrics
 // --------------------------------------------------------------------------
 
-/**
- * Tracks every allow/deny decision emitted by the policy engine.
- *
- * Labels:
- *   outcome     – "ALLOW" | "DENY"
- *   rule_id     – the policy rule id (e.g. "MEMBERS_ONLY")
- *   reason_code – the first reason code from AccessDecision.reasons
- */
 const accessDecisionsTotal = new Counter({
-  name: 'access_policy_decisions_total',
-  help: 'Total access policy decisions by outcome, rule, and reason',
-  labelNames: ['outcome', 'rule_id', 'reason_code'] as const,
+  name: 'access_decisions_total',
+  help: 'Total access policy decisions',
+  labelNames: ['decision'] as const,
   registers: [registry],
 });
 
@@ -166,6 +158,27 @@ const indexerLag = new Gauge({
   registers: [registry],
 });
 
+/**
+ * Tracks the total number of reorgs detected per chain.
+ */
+const indexerReorgsDetectedTotal = new Counter({
+  name: 'indexer_reorgs_detected_total',
+  help: 'Total number of blockchain reorganizations detected',
+  labelNames: ['chain_id'] as const,
+  registers: [registry],
+});
+
+/**
+ * Tracks the duration of indexer reorg state reconciliation in seconds.
+ */
+const indexerReconciliationDuration = new Histogram({
+  name: 'indexer_reconciliation_duration_seconds',
+  help: 'Duration of indexer reorg reconciliation in seconds',
+  labelNames: ['chain_id'] as const,
+  buckets: [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5],
+  registers: [registry],
+});
+
 export const metrics = {
   httpRequestDuration,
   httpRequestsTotal,
@@ -178,4 +191,6 @@ export const metrics = {
   outboxWorkerBatchSize,
   auditChainWriteDuration,
   indexerLag,
+  indexerReorgsDetectedTotal,
+  indexerReconciliationDuration,
 };

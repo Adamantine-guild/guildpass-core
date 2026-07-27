@@ -1,52 +1,76 @@
 export const API_CONTRACT = {
   membershipsByWallet: {
-    method: 'GET',
-    pathTemplate: '/v1/communities/:communityId/memberships/:wallet',
-    samplePath: '/v1/communities/community-1/memberships/0x1234567890abcdef1234567890abcdef12345678',
+    method: "GET",
+    pathTemplate: "/v1/communities/:communityId/memberships/:wallet",
+    samplePath:
+      "/v1/communities/community-1/memberships/0x1234567890abcdef1234567890abcdef12345678",
     successStatus: 200,
     successResponse: {
-      wallet: '0x1234567890abcdef1234567890abcdef12345678',
+      wallet: "0x1234567890abcdef1234567890abcdef12345678",
       communities: [
-        { communityId: 'community-1', state: 'active', expiresAt: null },
+        { communityId: "community-1", state: "active", expiresAt: null },
       ],
     },
     errorResponse: {
-      404: { error: 'NOT_FOUND', code: 'NOT_FOUND', message: 'Wallet not found', statusCode: 404 },
+      404: {
+        error: {
+          code: "NOT_FOUND",
+          message: "Wallet not found",
+        },
+      },
     },
   },
   memberProfileByWallet: {
-    method: 'GET',
-    pathTemplate: '/v1/communities/:communityId/members/:wallet',
-    samplePath: '/v1/communities/community-1/members/0x1234567890abcdef1234567890abcdef12345678',
+    method: "GET",
+    pathTemplate: "/v1/communities/:communityId/members/:wallet",
+    samplePath:
+      "/v1/communities/community-1/members/0x1234567890abcdef1234567890abcdef12345678",
     successStatus: 200,
     successResponse: {
-      communityId: 'community-1',
-      profile: { id: 'p1', displayName: 'Alice', bio: 'Hello' },
-      membership: { state: 'active', expiresAt: null },
-      roles: ['admin'],
+      communityId: "community-1",
+      profile: { id: "p1", displayName: "Alice", bio: "Hello" },
+      membership: { state: "active", expiresAt: null },
+      roles: ["admin"],
     },
     errorResponse: {
-      400: { error: 'VALIDATION_ERROR', code: 'VALIDATION_ERROR', message: 'Validation failed', statusCode: 400, details: 'wallet query parameter is required' },
-      404: { error: 'NOT_FOUND', code: 'NOT_FOUND', message: 'Member not found', statusCode: 404 },
+      400: {
+        error: {
+          code: "VALIDATION_ERROR",
+          message: "Validation failed",
+          details: "wallet query parameter is required",
+        },
+      },
+      404: {
+        error: {
+          code: "NOT_FOUND",
+          message: "Member not found",
+        },
+      },
     },
   },
   accessCheck: {
-    method: 'POST',
-    pathTemplate: '/v1/access/check',
-    samplePath: '/v1/access/check',
+    method: "POST",
+    pathTemplate: "/v1/access/check",
+    samplePath: "/v1/access/check",
     requestBody: {
-      wallet: '0x1234567890abcdef1234567890abcdef12345678',
-      communityId: 'community-1',
-      resource: 'resource-1',
+      wallet: "0x1234567890abcdef1234567890abcdef12345678",
+      communityId: "community-1",
+      resource: "resource-1",
     },
     successStatus: 200,
     successResponse: {
       allowed: true,
-      code: 'ALLOW',
-      membershipState: 'active',
+      code: "ALLOW",
+      membershipState: "active",
     },
     errorResponse: {
-      400: { error: 'VALIDATION_ERROR', code: 'VALIDATION_ERROR', message: 'Validation failed', statusCode: 400, details: 'Missing required fields: wallet' },
+      400: {
+        error: {
+          code: "VALIDATION_ERROR",
+          message: "Validation failed",
+          details: "Missing required fields: wallet",
+        },
+      },
     },
   },
   communityMembers: {
@@ -54,54 +78,68 @@ export const API_CONTRACT = {
     pathTemplate: '/v1/communities/:communityId/members',
     samplePath: '/v1/communities/community-1/members',
     samplePathWithRole: '/v1/communities/community-1/members?role=admin',
+    samplePathWithPagination: '/v1/communities/community-1/members?limit=1&cursor=member-1',
     successStatus: 200,
     successResponse: {
+      communityId: "community-1",
       members: [
         {
-          wallet: '0x1111111111111111111111111111111111111111',
-          displayName: 'Alice',
-          state: 'active',
-          roles: ['admin'],
+          wallet: "0x1111111111111111111111111111111111111111",
+          displayName: "Alice",
+          state: "active",
+          roles: ["admin"],
         },
         {
-          wallet: '0x2222222222222222222222222222222222222222',
-          displayName: 'Bob',
-          state: 'active',
-          roles: ['member'],
+          wallet: "0x2222222222222222222222222222222222222222",
+          displayName: "Bob",
+          state: "active",
+          roles: ["member"],
         },
       ],
+      pagination: {
+        limit: 50,
+        hasMore: false,
+        nextCursor: null,
+      },
     },
     errorResponse: {
-      404: { error: 'NOT_FOUND', code: 'NOT_FOUND', message: 'Community not found', statusCode: 404 },
+      404: {
+        error: {
+          code: "NOT_FOUND",
+          message: "Community not found",
+        },
+      },
     },
   },
   assignMemberRole: {
-    method: 'POST',
-    pathTemplate: '/v1/communities/:communityId/members/:wallet/roles',
-    samplePath: '/v1/communities/community-1/members/0x1234567890abcdef1234567890abcdef12345678/roles',
-    requestBody: { role: 'admin' },
+    method: "POST",
+    pathTemplate: "/v1/communities/:communityId/members/:wallet/roles",
+    samplePath:
+      "/v1/communities/community-1/members/0x1234567890abcdef1234567890abcdef12345678/roles",
+    requestBody: { role: "admin" },
     successStatus: 200,
     successResponse: {
-      communityId: 'community-1',
-      wallet: '0x1234567890abcdef1234567890abcdef12345678',
-      role: 'admin',
+      communityId: "community-1",
+      wallet: "0x1234567890abcdef1234567890abcdef12345678",
+      role: "admin",
       assigned: true,
       removed: false,
-      message: 'Role assigned',
+      message: "Role assigned",
     },
   },
   removeMemberRole: {
-    method: 'DELETE',
-    pathTemplate: '/v1/communities/:communityId/members/:wallet/roles/:role',
-    samplePath: '/v1/communities/community-1/members/0x1234567890abcdef1234567890abcdef12345678/roles/admin',
+    method: "DELETE",
+    pathTemplate: "/v1/communities/:communityId/members/:wallet/roles/:role",
+    samplePath:
+      "/v1/communities/community-1/members/0x1234567890abcdef1234567890abcdef12345678/roles/admin",
     successStatus: 200,
     successResponse: {
-      communityId: 'community-1',
-      wallet: '0x1234567890abcdef1234567890abcdef12345678',
-      role: 'admin',
+      communityId: "community-1",
+      wallet: "0x1234567890abcdef1234567890abcdef12345678",
+      role: "admin",
       assigned: false,
       removed: true,
-      message: 'Role removed',
+      message: "Role removed",
     },
   },
   communityRoles: {
@@ -129,12 +167,29 @@ export const API_CONTRACT = {
       ],
     },
     errorResponse: {
-      404: { error: 'NOT_FOUND', code: 'NOT_FOUND', message: 'Community not found', statusCode: 404 },
+      404: {
+        error: {
+          code: 'NOT_FOUND',
+          message: 'Community not found',
+        }
+      },
     },
   },
 } as const;
 
 export type ApiContract = typeof API_CONTRACT;
+
+export type ApiErrorCode =
+  | 'VALIDATION_ERROR'
+  | 'UNAUTHORIZED'
+  | 'FORBIDDEN'
+  | 'NOT_FOUND'
+  | 'CONFLICT'
+  | 'EXPIRED'
+  | 'RATE_LIMITED'
+  | 'INTERNAL_ERROR'
+  | 'SERVICE_UNAVAILABLE'
+  | string; // Keep string for any dynamic errors but provide autocomplete for standard ones
 
 /**
  * Standardised error envelope returned by every access-api endpoint.
@@ -143,14 +198,35 @@ export type ApiContract = typeof API_CONTRACT;
  * API consumers: check `error`/`code` for machine-readable error classification.
  */
 export interface ApiErrorResponse {
-  /** Machine-readable error identifier (e.g. `NOT_FOUND`, `VALIDATION_ERROR`). */
-  error: string;
-  /** HTTP status phrase (e.g. `NOT_FOUND`). Mirrors `error` for backward compatibility. */
-  code: string;
-  /** Human-readable description suitable for developer logs or UI hints. */
-  message: string;
-  /** HTTP status code (e.g. 404). */
-  statusCode: number;
-  /** Optional machine- or human-readable detail payload. */
-  details?: string | Record<string, unknown>;
+  error: {
+    /** Machine-readable error identifier (e.g. `NOT_FOUND`, `VALIDATION_ERROR`). */
+    code: ApiErrorCode;
+    /** Human-readable description suitable for developer logs or UI hints. */
+    message: string;
+    /** Optional machine- or human-readable detail payload. */
+    details?: string | Record<string, unknown>;
+  };
 }
+
+app.setErrorHandler((error, request, reply) => {
+  const statusCode = error.statusCode || 500;
+
+  // Map Fastify and HTTP errors to your strict ApiErrorCode literal types
+  let apiCode = 'INTERNAL_ERROR';
+  if (error.code && typeof error.code === 'string') apiCode = error.code;
+  if (statusCode === 429) apiCode = 'RATE_LIMITED';
+  if (statusCode === 400 || error.validation) apiCode = 'VALIDATION_ERROR';
+  if (statusCode === 404) apiCode = 'NOT_FOUND';
+  if (statusCode === 401) apiCode = 'UNAUTHORIZED';
+  if (statusCode === 403) apiCode = 'FORBIDDEN';
+  if (statusCode === 409) apiCode = 'CONFLICT';
+
+  // Return the strictly nested ApiErrorResponse shape
+  return reply.status(statusCode).send({
+    error: {
+      code: apiCode,
+      message: error.message,
+      details: error.validation || undefined
+    }
+  });
+});

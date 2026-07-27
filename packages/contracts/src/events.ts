@@ -44,6 +44,7 @@ export interface AbiEvent {
 /** On-chain metadata attached to every decoded event. */
 export interface EventMetadata {
   readonly chainId?: number;
+  readonly contractAddress?: string;
   readonly blockNumber?: number;
   readonly blockHash?: string;
   readonly transactionHash?: string;

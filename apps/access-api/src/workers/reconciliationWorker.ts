@@ -16,6 +16,7 @@ import { PrismaClient } from "@prisma/client";
 import { getPrisma } from "../services/prisma";
 import { logEvent } from "../services/auditService";
 import { logOutboxEventTx } from "../services/outboxService";
+import { invalidateMembershipsCache } from "../services/memberService";
 
 export interface ReconciliationResult {
   updatedCount: number;
@@ -66,6 +67,22 @@ export async function reconcileMemberships(
           },
         });
       });
+
+      // Clear the cached membership read so a repeat lookup reflects the
+      // expiry. Best-effort: never let a cache failure abort reconciliation.
+      try {
+        const w = await prisma.wallet.findUnique({
+          where: { id: token.member.walletId },
+        });
+        if (w) {
+          await invalidateMembershipsCache(token.member.communityId, w.address);
+        }
+      } catch (err) {
+        console.warn(
+          `Membership cache invalidation failed for tokenId ${token.tokenId}:`,
+          err,
+        );
+      }
 
       // Audit log outside the transaction (best-effort, non-blocking)
       await logEvent({

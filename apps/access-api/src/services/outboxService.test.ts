@@ -16,6 +16,8 @@
  * test/outboxWorker.concurrency.test.ts against a real Postgres instance.
  */
 
+import { runWithRequestContext } from "./requestContext";
+
 import {
   logOutboxEventTx,
   markOutboxDelivered,
@@ -46,6 +48,7 @@ function makeDb(overrides: any = {}) {
           entityId: args.data.entityId ?? null,
           entityType: args.data.entityType ?? null,
           communityId: args.data.communityId ?? null,
+          correlationId: args.data.correlationId ?? null,
           payload: args.data.payload ?? {},
           status: args.data.status ?? "pending",
           retryCount: args.data.retryCount ?? 0,
@@ -165,6 +168,7 @@ describe("logOutboxEventTx", () => {
         entityId: "res-1",
         entityType: "Resource",
         communityId: "community-1",
+        correlationId: expect.any(String),
         payload: { name: "Test Resource" },
         status: "pending",
         retryCount: 0,
@@ -175,6 +179,37 @@ describe("logOutboxEventTx", () => {
 
     expect(created[0].status).toBe("pending");
     expect(created[0].retryCount).toBe(0);
+    expect(created[0].correlationId).toEqual(expect.any(String));
+  });
+
+  test("uses request context correlation ID when event does not provide one", async () => {
+    const { db, created } = makeDb();
+
+    await runWithRequestContext({ correlationId: "req-issue-96" }, () =>
+      logOutboxEventTx(db, {
+        eventType: "ROLE_REMOVED",
+        communityId: "community-1",
+      }),
+    );
+
+    expect(created[0].correlationId).toBe("req-issue-96");
+    expect(db.outboxEvent.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ correlationId: "req-issue-96" }),
+    });
+  });
+
+  test("prefers explicit event correlation ID over request context", async () => {
+    const { db, created } = makeDb();
+
+    await runWithRequestContext({ correlationId: "request-context-id" }, () =>
+      logOutboxEventTx(db, {
+        eventType: "ROLE_ASSIGNED",
+        communityId: "community-1",
+        correlationId: "explicit-event-id",
+      }),
+    );
+
+    expect(created[0].correlationId).toBe("explicit-event-id");
   });
 
   test("sets eligible nextRetryAt to now for immediate processing", async () => {

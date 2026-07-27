@@ -1,5 +1,6 @@
 import { PrismaClient, AppealStatus } from '@prisma/client';
 import { logEventTx } from '../auditService';
+import { validateAndEvaluateMutation } from '../constitutionalService';
 
 export class ModerationError extends Error {
   statusCode: number;
@@ -115,6 +116,16 @@ export function getModerationService(prisma: PrismaClient) {
         throw new ModerationError(`Invalid transition from ${fromStatus} to ${toStatus}`, 400);
       }
 
+      if (adminWallet) {
+        await validateAndEvaluateMutation(tx, {
+          action: toStatus === 'reinstated' ? 'ROLE_ASSIGNMENT' : 'ROLE_REVOCATION',
+          communityId: appeal.member.communityId,
+          actorWallet: adminWallet,
+          targetWallet: appeal.member.wallet.address,
+          proposedData: { toStatus, appealId },
+        });
+      }
+
       // Update appeal
       const updatedAppeal = await tx.appeal.update({
         where: { id: appealId },
@@ -139,7 +150,7 @@ export function getModerationService(prisma: PrismaClient) {
       if (toStatus === 'reinstated') {
         if (appeal.member.membership?.activeTokenId) {
           await tx.membershipToken.update({
-            where: { tokenId: appeal.member.membership.activeTokenId },
+            where: { id: appeal.member.membership.activeTokenId },
             data: { state: 'active' },
           });
         }

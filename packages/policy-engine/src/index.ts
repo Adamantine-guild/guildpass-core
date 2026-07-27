@@ -49,9 +49,20 @@ export {
 export {
   ValidationProvider,
   StaticPolicyProvider,
+  ComposablePolicyProvider,
   FallbackProvider,
   RegistryRuleProvider,
 } from "./providers";
+export {
+  validateRuleTree,
+  PUBLIC_RULE_TEMPLATE,
+  MEMBERS_ONLY_RULE_TEMPLATE,
+  ADMINS_ONLY_RULE_TEMPLATE,
+  CONTRIBUTORS_OR_ADMINS_RULE_TEMPLATE,
+  getLegacyRuleTemplate,
+} from "./ruleGrammar";
+export type { ValidationOptions, ValidationResult } from "./ruleGrammar";
+export { evaluateRuleTree } from "./ruleEvaluator";
 
 /**
  * Create a default plugin registry with all built-in rules registered

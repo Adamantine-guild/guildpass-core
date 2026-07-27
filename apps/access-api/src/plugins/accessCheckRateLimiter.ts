@@ -3,6 +3,7 @@ import { FastifyPluginAsync, FastifyRequest, FastifyReply } from 'fastify';
 import { RateLimiterRedis, RateLimiterMemory, RateLimiterRes } from 'rate-limiter-flexible';
 import { createClient } from 'redis';
 import { config } from '../config';
+import { rateLimited, serviceUnavailable } from '../errors';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -64,16 +65,18 @@ export const accessCheckRateLimiter: FastifyPluginAsync = async (app) => {
   const accessCheckRateLimitHook = async (request: FastifyRequest, reply: FastifyReply) => {
     const body = request.body as { wallet?: string };
     const wallet = body?.wallet?.toLowerCase() ?? 'unknown-wallet';
-    
-    const forwarded = request.headers['x-forwarded-for'];
-    const ip = Array.isArray(forwarded)
-      ? forwarded[0]
-      : forwarded?.split(',')[0]?.trim();
-    const finalIp = ip ?? request.ip;
+
+    // Key on the caller's API key when present so integrators behind a shared
+    // egress do not share a bucket; otherwise fall back to request.ip. Fastify
+    // resolves request.ip under the configured trustProxy policy, so an
+    // untrusted X-Forwarded-For can no longer mint a fresh bucket per request.
+    const apiKeyHeader = request.headers['x-api-key'];
+    const apiKey = Array.isArray(apiKeyHeader) ? apiKeyHeader[0] : apiKeyHeader;
+    const callerKey = apiKey ? `key:${apiKey}` : `ip:${request.ip}`;
 
     try {
       const results = await Promise.all([
-        rateLimiterIp.consume(finalIp),
+        rateLimiterIp.consume(callerKey),
         rateLimiterWallet.consume(wallet)
       ]);
 
@@ -90,10 +93,10 @@ export const accessCheckRateLimiter: FastifyPluginAsync = async (app) => {
         reply.header('retry-after', retryAfter);
         reply.header('x-ratelimit-reset', retryAfter);
         
-        return reply.status(429).send({
-          error: 'Too Many Requests',
-          message: `Rate limit exceeded. Retry after ${retryAfter} seconds.`
-        });
+        return reply.status(429).send(rateLimited(
+          `Rate limit exceeded. Retry after ${retryAfter} seconds.`,
+          { retryAfter }
+        ));
       }
 
       // Otherwise it's a Redis connection error or similar
@@ -105,7 +108,7 @@ export const accessCheckRateLimiter: FastifyPluginAsync = async (app) => {
         app.log.warn('Access check rate limiter failed open');
         return;
       } else {
-        return reply.status(503).send({ error: 'Service Unavailable', message: 'Rate limiter unavailable' });
+        return reply.status(503).send(serviceUnavailable('Rate limiter unavailable'));
       }
     }
   };

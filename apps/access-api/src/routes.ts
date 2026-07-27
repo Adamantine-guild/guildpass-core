@@ -1,74 +1,64 @@
-import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { getMemberService, MemberServiceError } from './services/memberService';
-import { getIdentityService, IdentityServiceError } from './services/identityService';
-import { getGovernanceService } from './services/governanceService';
-import { registerGovernanceRoutes } from './routes/governanceRoutes';
-import { getModerationService, ModerationError } from './services/moderation/moderationService';
-import { queryAuditEvents } from './services/auditService';
-import { getPrisma } from './services/prisma';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { getMemberService, MemberServiceError } from "./services/memberService";
+import {
+  getIdentityService,
+  IdentityServiceError,
+} from "./services/identityService";
+import { getGovernanceService } from "./services/governanceService";
+import { registerGovernanceRoutes } from "./routes/governanceRoutes";
+import {
+  getModerationService,
+  ModerationError,
+} from "./services/moderation/moderationService";
+import { queryAuditEvents } from "./services/auditService";
+import { getPrisma } from "./services/prisma";
 import {
   getAuditTraceByCorrelationId,
   getAuditTracesByTxHash,
   getAuditTracesByWallet,
-} from './services/auditTraceService';
-import { notFound, validationError, validationErrorWithReason } from './errors';
+} from "./services/auditTraceService";
+import {
+    notFound,
+    validationError,
+    validationErrorWithReason,
+    internalError,
+    forbidden,
+    conflict,
+    unauthorized,
+    createApiError
+} from "./errors";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { z } from 'zod';
+import { getMemberService, MemberServiceError } from './services/memberService';
+import { getPrisma } from './services/prisma';
+import { notFound, validationError } from './errors';
+
 import {
   listDeadLetterEvents,
   retryDeadLetterEvent,
   DeadLetterNotFoundError,
   DeadLetterAlreadyResolvedError,
 } from './services/deadLetterService';
-import { Challenge, LinkWalletInput, WalletAddress, VALID_ROLES, Role } from '@guildpass/shared-types';
-import { getResourceService, ResourceServiceError } from './services/resourceService';
-import { Challenge, LinkWalletInput, WalletAddress } from '@guildpass/shared-types';
-import {
-  getCommunityRolesSchema,
-  getMembershipsSchema,
-  getMemberProfileSchema,
-  assignMemberRoleSchema,
-  removeMemberRoleSchema,
-  assignBadgeSchema,
-  listBadgesSchema,
-  revokeBadgeSchema,
-  createAccessOverrideSchema,
-  revokeAccessOverrideSchema,
-  listAccessOverridesSchema,
-  accessCheckSchema,
-  listCommunityMembersSchema,
-  listDeadLetterEventsSchema,
-  retryDeadLetterEventSchema,
-  listAuditEventsSchema,
-  createResourceSchema,
-  updateResourceSchema,
-  archiveResourceSchema,
-  listResourcesSchema,
-} from './schemas';
-import { authenticateApiKey, authenticateSessionOrApiKey, verifySiweSignature } from './lib/auth/auth';
-import crypto from 'crypto';
+import { resolveRequesterWallet } from './utils/requesterIdentity';
 
-function getRequesterWallet(request: FastifyRequest): string {
-  if ((request as any).authenticatedWallet) {
-    return (request as any).authenticatedWallet;
-  }
-  const header = request.headers['x-wallet'] ?? request.headers['x-user-wallet'] ?? request.headers['x-requester-wallet'];
-  if (Array.isArray(header)) {
-    return header[0] ?? '';
-  }
-  if (header) {
-    return header;
-  }
-  const authorization = request.headers.authorization;
-  if (typeof authorization === 'string' && authorization.startsWith('Bearer ')) {
-    return authorization.slice(7).trim();
-  }
-  return '';
-}
+
+const memberListQuerySchema = z.object({
+  role: z.enum(['admin', 'member', 'contributor']).optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  cursor: z.string().min(1).optional(),
+});
 
 function sendRoleMutationError(reply: FastifyReply, error: unknown) {
   if (error instanceof MemberServiceError) {
-    return reply.status(error.statusCode).send({ error: error.message });
+    return reply.status(error.statusCode).send(
+            createApiError({
+              statusCode: error.statusCode,
+              code: error.statusCode === 404 ? 'NOT_FOUND' : error.statusCode === 400 ? 'VALIDATION_ERROR' : error.statusCode === 409 ? 'CONFLICT' : error.statusCode === 403 ? 'FORBIDDEN' : 'INTERNAL_ERROR',
+              message: error.message
+            })
+          );
   }
-  return reply.status(500).send({ error: 'Internal server error' });
+  return reply.status(500).send(internalError("Internal server error"));
 }
 
 /**
@@ -82,178 +72,256 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   const moderationService = getModerationService(prisma);
   const resourceService = getResourceService(prisma);
 
+  // Idempotency-Key support for mutating routes (issue #184). Opt-in per
+  // request via the `Idempotency-Key` header; applied to role assignment,
+  // policy (access override), and resource mutation routes below.
+  const idempotencyPreHandler = createIdempotencyPreHandler(prisma);
+  const idempotencyOnSend = createIdempotencyOnSend(prisma);
+
   // --- SIWE Authentication Routes ---
 
   // Generate a SIWE nonce
-  app.post('/v1/auth/nonce', async (request: FastifyRequest, reply: FastifyReply) => {
-    const nonce = crypto.randomBytes(16).toString('hex');
-    const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes expiry
-    await prisma.siweNonce.create({
-      data: {
-        nonce,
-        expiresAt,
-      },
-    });
-    return reply.send({ nonce });
-  });
-
-  // Verify SIWE signature and issue session token
-  app.post('/v1/auth/verify', async (request: FastifyRequest, reply: FastifyReply) => {
-    const { message, signature } = request.body as { message: string; signature: string };
-    if (!message || !signature) {
-      return reply.status(400).send({ error: 'Missing message or signature' });
-    }
-
-    let parsedMessage;
-    try {
-      const { parseSiweMessage } = require('./lib/auth/auth');
-      parsedMessage = parseSiweMessage(message);
-    } catch (err) {
-      return reply.status(400).send({ error: 'Invalid SIWE message format' });
-    }
-
-    const storedNonce = await prisma.siweNonce.findUnique({
-      where: { nonce: parsedMessage.nonce },
-    });
-
-    if (!storedNonce) {
-      return reply.status(400).send({ error: 'Invalid nonce' });
-    }
-
-    if (new Date(storedNonce.expiresAt) < new Date()) {
-      return reply.status(400).send({ error: 'Nonce has expired' });
-    }
-
-    await prisma.siweNonce.delete({ where: { id: storedNonce.id } });
-
-    try {
-      const walletAddress = verifySiweSignature(message, signature, parsedMessage.nonce);
-      const token = crypto.randomBytes(32).toString('hex');
-      const sessionExpiry = new Date(Date.now() + 2 * 60 * 60 * 1000); // 2 hours
-      
-      const session = await prisma.session.create({
+  app.post(
+    "/v1/auth/nonce",
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const nonce = crypto.randomBytes(16).toString("hex");
+      const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes expiry
+      await prisma.siweNonce.create({
         data: {
-          walletAddress: walletAddress.toLowerCase(),
-          token,
-          expiresAt: sessionExpiry,
+          nonce,
+          expiresAt,
         },
       });
+      return reply.send({ nonce });
+    },
+  );
 
-      return reply.send({
-        token: session.token,
-        expiresAt: session.expiresAt.toISOString(),
-        walletAddress: session.walletAddress,
+  // Verify SIWE signature and issue session token
+  app.post(
+    "/v1/auth/verify",
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { message, signature } = request.body as {
+        message: string;
+        signature: string;
+      };
+      if (!message || !signature) {
+        return reply
+          .status(400)
+          .send({ error: "Missing message or signature" });
+      }
+
+      let parsedMessage;
+      try {
+        const { parseSiweMessage } = require("./lib/auth/auth");
+        parsedMessage = parseSiweMessage(message);
+      } catch (err) {
+        return reply.status(400).send(validationError("Invalid SIWE message format"));
+      }
+
+      const storedNonce = await prisma.siweNonce.findUnique({
+        where: { nonce: parsedMessage.nonce },
       });
-    } catch (err) {
-      return reply.status(400).send({ error: err instanceof Error ? err.message : 'Signature verification failed' });
-    }
-  });
+
+      if (!storedNonce) {
+        return reply.status(400).send(validationError("Invalid nonce"));
+      }
+
+      if (new Date(storedNonce.expiresAt) < new Date()) {
+        return reply.status(400).send(validationError("Nonce has expired"));
+      }
+
+      await prisma.siweNonce.delete({ where: { id: storedNonce.id } });
+
+      try {
+        const walletAddress = verifySiweSignature(
+          message,
+          signature,
+          parsedMessage.nonce,
+        );
+        const token = crypto.randomBytes(32).toString("hex");
+        const sessionExpiry = new Date(Date.now() + 2 * 60 * 60 * 1000); // 2 hours
+
+        const session = await prisma.session.create({
+          data: {
+            walletAddress: walletAddress.toLowerCase(),
+            token,
+            expiresAt: sessionExpiry,
+          },
+        });
+
+        return reply.send({
+          token: session.token,
+          expiresAt: session.expiresAt.toISOString(),
+          walletAddress: session.walletAddress,
+        });
+      } catch (err) {
+        return reply
+          .status(400)
+          .send({
+            error:
+              err instanceof Error
+                ? err.message
+                : "Signature verification failed",
+          });
+      }
+    },
+  );
 
   // --- Wallet Linking Routes ---
 
   // Generate a challenge
   app.post(
-    '/v1/wallets/:primaryWallet/challenges',
+    "/v1/wallets/:primaryWallet/challenges",
     async (request: FastifyRequest, reply: FastifyReply) => {
       const { primaryWallet } = request.params as { primaryWallet: string };
       const { secondaryWallet } = request.body as { secondaryWallet: string };
       try {
         const challenge = await identityService.generateChallenge(
-          primaryWallet as WalletAddress, secondaryWallet as WalletAddress);
+          primaryWallet as WalletAddress,
+          secondaryWallet as WalletAddress,
+        );
         return reply.send(challenge);
       } catch (error) {
         if (error instanceof IdentityServiceError) {
-          return reply.status(error.statusCode).send({ error: error.message });
+          return reply.status(error.statusCode).send(
+            createApiError({
+              statusCode: error.statusCode,
+              code: error.statusCode === 404 ? 'NOT_FOUND' : error.statusCode === 400 ? 'VALIDATION_ERROR' : error.statusCode === 409 ? 'CONFLICT' : error.statusCode === 403 ? 'FORBIDDEN' : 'INTERNAL_ERROR',
+              message: error.message
+            })
+          );
         }
         throw error;
       }
-    }
+    },
   );
 
   // Link a wallet using a challenge and signature
   app.post(
-    '/v1/wallets/:primaryWallet/link',
+    "/v1/wallets/:primaryWallet/link",
     async (request: FastifyRequest, reply: FastifyReply) => {
       const { primaryWallet } = request.params as { primaryWallet: string };
       const { challenge, signature } = request.body as {
-        challenge: Challenge,
-        signature: string
+        challenge: Challenge;
+        signature: string;
       };
       try {
         const linkResult = await identityService.linkWallet({
           challenge,
-          signature
+          signature,
         });
         return reply.send(linkResult);
       } catch (error) {
         if (error instanceof IdentityServiceError) {
-          return reply.status(error.statusCode).send({ error: error.message });
+          return reply.status(error.statusCode).send(
+            createApiError({
+              statusCode: error.statusCode,
+              code: error.statusCode === 404 ? 'NOT_FOUND' : error.statusCode === 400 ? 'VALIDATION_ERROR' : error.statusCode === 409 ? 'CONFLICT' : error.statusCode === 403 ? 'FORBIDDEN' : 'INTERNAL_ERROR',
+              message: error.message
+            })
+          );
         }
         throw error;
       }
-    }
+    },
   );
 
   // Get linked wallets for a primary wallet
   app.get(
-    '/v1/wallets/:primaryWallet/linked',
+    "/v1/wallets/:primaryWallet/linked",
     async (request: FastifyRequest, reply: FastifyReply) => {
       const { primaryWallet } = request.params as { primaryWallet: string };
       try {
-        const linkedWallets = await identityService.getLinkedWallets(primaryWallet as WalletAddress);
+        const linkedWallets = await identityService.getLinkedWallets(
+          primaryWallet as WalletAddress,
+        );
         return reply.send({ primaryWallet, linkedWallets });
       } catch (error) {
         if (error instanceof IdentityServiceError) {
-          return reply.status(error.statusCode).send({ error: error.message });
+          return reply.status(error.statusCode).send(
+            createApiError({
+              statusCode: error.statusCode,
+              code: error.statusCode === 404 ? 'NOT_FOUND' : error.statusCode === 400 ? 'VALIDATION_ERROR' : error.statusCode === 409 ? 'CONFLICT' : error.statusCode === 403 ? 'FORBIDDEN' : 'INTERNAL_ERROR',
+              message: error.message
+            })
+          );
         }
         throw error;
       }
-    }
+    },
   );
 
   // --- Appeals and Moderation Routes ---
 
   // File an appeal for a suspended member
   app.post(
-    '/v1/memberships/:wallet/appeals',
+    "/v1/memberships/:wallet/appeals",
     async (request: FastifyRequest, reply: FastifyReply) => {
       const { wallet } = request.params as { wallet: string };
-      const { communityId, reason } = request.body as { communityId: string; reason: string };
+      const { communityId, reason } = request.body as {
+        communityId: string;
+        reason: string;
+      };
       if (!communityId || !reason) {
-        return reply.status(400).send({ error: 'Missing communityId or reason' });
+        return reply
+          .status(400)
+          .send({ error: "Missing communityId or reason" });
       }
       try {
-        const result = await moderationService.fileAppeal(wallet, communityId, reason);
+        const result = await moderationService.fileAppeal(
+          wallet,
+          communityId,
+          reason,
+        );
         return reply.send(result);
       } catch (error) {
         if (error instanceof ModerationError) {
-          return reply.status(error.statusCode).send({ error: error.message });
+          return reply.status(error.statusCode).send(
+            createApiError({
+              statusCode: error.statusCode,
+              code: error.statusCode === 404 ? 'NOT_FOUND' : error.statusCode === 400 ? 'VALIDATION_ERROR' : error.statusCode === 409 ? 'CONFLICT' : error.statusCode === 403 ? 'FORBIDDEN' : 'INTERNAL_ERROR',
+              message: error.message
+            })
+          );
         }
         throw error;
       }
-    }
+    },
   );
 
   // Transition an appeal status (Admin only)
   app.post(
-    '/v1/appeals/:appealId/transition',
+    "/v1/appeals/:appealId/transition",
     { preHandler: [authenticateApiKey] },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const { appealId } = request.params as { appealId: string };
-      const { status, adminComment } = request.body as { status: string; adminComment?: string };
+      const { status, adminComment } = request.body as {
+        status: string;
+        adminComment?: string;
+      };
       if (!status) {
-        return reply.status(400).send({ error: 'Missing status' });
+        return reply.status(400).send(validationError("Missing status"));
       }
       try {
-        const result = await moderationService.transitionAppeal(appealId, status as any, adminComment);
+        const result = await moderationService.transitionAppeal(
+          appealId,
+          status as any,
+          adminComment,
+        );
         return reply.send(result);
       } catch (error) {
         if (error instanceof ModerationError) {
-          return reply.status(error.statusCode).send({ error: error.message });
+          return reply.status(error.statusCode).send(
+            createApiError({
+              statusCode: error.statusCode,
+              code: error.statusCode === 404 ? 'NOT_FOUND' : error.statusCode === 400 ? 'VALIDATION_ERROR' : error.statusCode === 409 ? 'CONFLICT' : error.statusCode === 403 ? 'FORBIDDEN' : 'INTERNAL_ERROR',
+              message: error.message
+            })
+          );
         }
         throw error;
       }
-    }
+    },
   );
 
   // GET /v1/communities/:communityId/roles — list valid roles and hierarchy for a community
@@ -286,28 +354,47 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // GET /v1/communities/:communityId/memberships/:wallet — list membership communities for a wallet
-  app.get('/v1/communities/:communityId/memberships/:wallet', { schema: getMembershipsSchema }, async (request: FastifyRequest, reply: FastifyReply) => {
-    const { communityId, wallet } = request.params as { communityId: string; wallet: string };
-    const result = await memberService.getMembershipsByWallet(wallet, communityId);
-    return result;
-  });
+  app.get(
+    "/v1/communities/:communityId/memberships/:wallet",
+    { schema: getMembershipsSchema },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { communityId, wallet } = request.params as {
+        communityId: string;
+        wallet: string;
+      };
+      const result = await memberService.getMembershipsByWallet(
+        wallet,
+        communityId,
+      );
+      return result;
+    },
+  );
 
   // GET /v1/communities/:communityId/members/:wallet — get member profile
-  app.get('/v1/communities/:communityId/members/:wallet', { schema: getMemberProfileSchema }, async (request: FastifyRequest, reply: FastifyReply) => {
-    const { communityId, wallet } = request.params as { communityId: string; wallet: string };
-    const result = await memberService.getProfileByWallet(wallet, communityId);
-    if (!result) {
-      return reply.status(404).send(notFound('Member not found'));
-    }
-    return result;
-  });
+  app.get(
+    "/v1/communities/:communityId/members/:wallet",
+    { schema: getMemberProfileSchema },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { communityId, wallet } = request.params as {
+        communityId: string;
+        wallet: string;
+      };
+      const result = await memberService.getProfileByWallet(
+        wallet,
+        communityId,
+      );
+      if (!result) {
+        return reply.status(404).send(notFound("Member not found"));
+      }
+      return result;
+    },
+  );
 
   // POST /v1/communities/:communityId/members/:wallet/roles — assign a role to a member
-  app.post('/v1/communities/:communityId/members/:wallet/roles', { schema: assignMemberRoleSchema, preHandler: [authenticateApiKey] }, async (request: FastifyRequest, reply: FastifyReply) => {
+  app.post('/v1/communities/:communityId/members/:wallet/roles', { schema: assignMemberRoleSchema, preHandler: [authenticateApiKey, requireSiweSession, idempotencyPreHandler], onSend: [idempotencyOnSend] }, async (request: FastifyRequest, reply: FastifyReply) => {
     const { communityId, wallet } = request.params as { communityId: string; wallet: string };
     const body = request.body as { role?: string };
-    const role = body?.role ?? '';
-    const requesterWallet = getRequesterWallet(request);
+    const requesterWallet = resolveRequesterWallet(request);
 
     if (!wallet || !/^0x[0-9a-fA-F]{40}$/.test(wallet)) {
       return reply.status(400).send(validationErrorWithReason('INVALID_WALLET', 'Invalid wallet format'));
@@ -336,9 +423,9 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // DELETE /v1/communities/:communityId/members/:wallet/roles/:role — remove an assigned role
-  app.delete('/v1/communities/:communityId/members/:wallet/roles/:role', { schema: removeMemberRoleSchema, preHandler: [authenticateApiKey] }, async (request: FastifyRequest, reply: FastifyReply) => {
+  app.delete('/v1/communities/:communityId/members/:wallet/roles/:role', { schema: removeMemberRoleSchema, preHandler: [authenticateApiKey, requireSiweSession, idempotencyPreHandler], onSend: [idempotencyOnSend] }, async (request: FastifyRequest, reply: FastifyReply) => {
     const { communityId, wallet, role } = request.params as { communityId: string; wallet: string; role: string };
-    const requesterWallet = getRequesterWallet(request);
+    const requesterWallet = resolveRequesterWallet(request);
 
     if (!wallet || !/^0x[0-9a-fA-F]{40}$/.test(wallet)) {
       return reply.status(400).send(validationErrorWithReason('INVALID_WALLET', 'Invalid wallet format'));
@@ -367,87 +454,220 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // POST /v1/communities/:communityId/members/:wallet/badges — assign a badge to a member
-  app.post('/v1/communities/:communityId/members/:wallet/badges', { schema: assignBadgeSchema, preHandler: [authenticateApiKey] }, async (request: FastifyRequest, reply: FastifyReply) => {
-    const { communityId, wallet } = request.params as { communityId: string; wallet: string };
-    const body = request.body as { label?: string };
-    const label = body?.label ?? '';
-    const requesterWallet = getRequesterWallet(request);
+  app.post(
+    "/v1/communities/:communityId/members/:wallet/badges",
+    {
+      schema: assignBadgeSchema,
+      preHandler: [authenticateApiKey, requireSiweSession, idempotencyPreHandler],
+      onSend: [idempotencyOnSend],
+    },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { communityId, wallet } = request.params as {
+        communityId: string;
+        wallet: string;
+      };
+      const body = request.body as { label?: string };
+      const label = body?.label ?? "";
+      const requesterWallet = getRequesterWallet(request);
 
-    if (!wallet || !/^0x[0-9a-fA-F]{40}$/.test(wallet)) {
-      return reply.status(400).send(validationErrorWithReason('INVALID_WALLET', 'Invalid wallet format'));
-    }
+      if (!wallet || !/^0x[0-9a-fA-F]{40}$/.test(wallet)) {
+        return reply
+          .status(400)
+          .send(
+            validationErrorWithReason(
+              "INVALID_WALLET",
+              "Invalid wallet format",
+            ),
+          );
+      }
 
-    const community = await prisma.community.findUnique({ where: { id: communityId } });
-    if (!community) {
-      return reply.status(400).send(validationErrorWithReason('UNKNOWN_COMMUNITY', 'Unknown communityId'));
-    }
-
-    if (!label.trim()) {
-      return reply.status(400).send(validationError('Missing required field: label'));
-    }
-
-    try {
-      const result = await memberService.assignBadge({
-        requesterWallet: requesterWallet as import('@guildpass/shared-types').WalletAddress,
-        communityId,
-        targetWallet: wallet as import('@guildpass/shared-types').WalletAddress,
-        label,
+      const community = await prisma.community.findUnique({
+        where: { id: communityId },
       });
-      return reply.status(200).send(result);
-    } catch (error) {
-      return sendRoleMutationError(reply, error);
-    }
-  });
+      if (!community) {
+        return reply
+          .status(400)
+          .send(
+            validationErrorWithReason(
+              "UNKNOWN_COMMUNITY",
+              "Unknown communityId",
+            ),
+          );
+      }
+
+      if (!label.trim()) {
+        return reply
+          .status(400)
+          .send(validationError("Missing required field: label"));
+      }
+
+      try {
+        const result = await memberService.assignBadge({
+          requesterWallet:
+            requesterWallet as import("@guildpass/shared-types").WalletAddress,
+          communityId,
+          targetWallet:
+            wallet as import("@guildpass/shared-types").WalletAddress,
+          label,
+        });
+        return reply.status(200).send(result);
+      } catch (error) {
+        return sendRoleMutationError(reply, error);
+      }
+    },
+  );
 
   // GET /v1/communities/:communityId/members/:wallet/badges — list badges for a member
-  app.get('/v1/communities/:communityId/members/:wallet/badges', { schema: listBadgesSchema }, async (request: FastifyRequest, reply: FastifyReply) => {
-    const { communityId, wallet } = request.params as { communityId: string; wallet: string };
+  app.get(
+    "/v1/communities/:communityId/members/:wallet/badges",
+    { schema: listBadgesSchema },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { communityId, wallet } = request.params as {
+        communityId: string;
+        wallet: string;
+      };
 
-    if (!wallet || !/^0x[0-9a-fA-F]{40}$/.test(wallet)) {
-      return reply.status(400).send(validationErrorWithReason('INVALID_WALLET', 'Invalid wallet format'));
-    }
+      if (!wallet || !/^0x[0-9a-fA-F]{40}$/.test(wallet)) {
+        return reply
+          .status(400)
+          .send(
+            validationErrorWithReason(
+              "INVALID_WALLET",
+              "Invalid wallet format",
+            ),
+          );
+      }
 
-    const community = await prisma.community.findUnique({ where: { id: communityId } });
-    if (!community) {
-      return reply.status(400).send(validationErrorWithReason('UNKNOWN_COMMUNITY', 'Unknown communityId'));
-    }
+      const community = await prisma.community.findUnique({
+        where: { id: communityId },
+      });
+      if (!community) {
+        return reply
+          .status(400)
+          .send(
+            validationErrorWithReason(
+              "UNKNOWN_COMMUNITY",
+              "Unknown communityId",
+            ),
+          );
+      }
 
-    const result = await memberService.listBadgesForMember(communityId, wallet);
-    if (!result) {
-      return reply.status(404).send(notFound('Member not found'));
-    }
-    return reply.status(200).send(result);
-  });
+      const result = await memberService.listBadgesForMember(
+        communityId,
+        wallet,
+      );
+      if (!result) {
+        return reply.status(404).send(notFound("Member not found"));
+      }
+      return reply.status(200).send(result);
+    },
+  );
 
   // DELETE /v1/communities/:communityId/members/:wallet/badges/:badgeId — revoke a badge
-  app.delete('/v1/communities/:communityId/members/:wallet/badges/:badgeId', { schema: revokeBadgeSchema, preHandler: [authenticateApiKey] }, async (request: FastifyRequest, reply: FastifyReply) => {
-    const { communityId, wallet, badgeId } = request.params as { communityId: string; wallet: string; badgeId: string };
-    const requesterWallet = getRequesterWallet(request);
+  app.delete(
+    "/v1/communities/:communityId/members/:wallet/badges/:badgeId",
+    {
+      schema: revokeBadgeSchema,
+      preHandler: [authenticateApiKey, requireSiweSession, idempotencyPreHandler],
+      onSend: [idempotencyOnSend],
+    },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { communityId, wallet, badgeId } = request.params as {
+        communityId: string;
+        wallet: string;
+        badgeId: string;
+      };
+      const requesterWallet = getRequesterWallet(request);
 
-    if (!wallet || !/^0x[0-9a-fA-F]{40}$/.test(wallet)) {
-      return reply.status(400).send(validationErrorWithReason('INVALID_WALLET', 'Invalid wallet format'));
-    }
+      if (!wallet || !/^0x[0-9a-fA-F]{40}$/.test(wallet)) {
+        return reply
+          .status(400)
+          .send(
+            validationErrorWithReason(
+              "INVALID_WALLET",
+              "Invalid wallet format",
+            ),
+          );
+      }
 
-    const community = await prisma.community.findUnique({ where: { id: communityId } });
-    if (!community) {
-      return reply.status(400).send(validationErrorWithReason('UNKNOWN_COMMUNITY', 'Unknown communityId'));
-    }
-
-    try {
-      const result = await memberService.revokeBadge({
-        requesterWallet: requesterWallet as import('@guildpass/shared-types').WalletAddress,
-        communityId,
-        targetWallet: wallet as import('@guildpass/shared-types').WalletAddress,
-        badgeId,
+      const community = await prisma.community.findUnique({
+        where: { id: communityId },
       });
-      return reply.status(200).send(result);
-    } catch (error) {
-      return sendRoleMutationError(reply, error);
-    }
-  });
+      if (!community) {
+        return reply
+          .status(400)
+          .send(
+            validationErrorWithReason(
+              "UNKNOWN_COMMUNITY",
+              "Unknown communityId",
+            ),
+          );
+      }
+
+      try {
+        const result = await memberService.revokeBadge({
+          requesterWallet:
+            requesterWallet as import("@guildpass/shared-types").WalletAddress,
+          communityId,
+          targetWallet:
+            wallet as import("@guildpass/shared-types").WalletAddress,
+          badgeId,
+        });
+        return reply.status(200).send(result);
+      } catch (error) {
+        return sendRoleMutationError(reply, error);
+      }
+    },
+  );
 
   // POST /v1/communities/:communityId/overrides — create or update an access override for a wallet/resource
-  app.post('/v1/communities/:communityId/overrides', { schema: createAccessOverrideSchema, preHandler: [authenticateApiKey] }, async (request: FastifyRequest, reply: FastifyReply) => {
+  app.post(
+    "/v1/communities/:communityId/overrides",
+    {
+      schema: createAccessOverrideSchema,
+      preHandler: [authenticateApiKey, requireSiweSession, idempotencyPreHandler],
+      onSend: [idempotencyOnSend],
+    },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { communityId } = request.params as { communityId: string };
+      const body = request.body as {
+        wallet?: string;
+        resource?: string;
+        effect?: string;
+        reason?: string;
+        expiresAt?: string | null;
+      };
+      if (!body?.wallet || !body?.resource || !body?.effect) {
+        return reply
+          .status(400)
+          .send(
+            validationError(
+              "Missing required fields: wallet, resource, effect",
+            ),
+          );
+      }
+      const requesterWallet = getRequesterWallet(request);
+      try {
+        const result = await memberService.createAccessOverride({
+          requesterWallet:
+            requesterWallet as import("@guildpass/shared-types").WalletAddress,
+          communityId,
+          wallet:
+            body.wallet as import("@guildpass/shared-types").WalletAddress,
+          resource: body.resource,
+          effect: body.effect as "ALLOW" | "DENY",
+          reason: body.reason,
+          expiresAt: body.expiresAt ?? null,
+        });
+        return reply.status(200).send(result);
+      } catch (error) {
+        return sendRoleMutationError(reply, error);
+      }
+    },
+  );
+
+  // GET /v1/communities/:communityId/overrides — list access overrides for a community (admin)
+  app.get('/v1/communities/:communityId/overrides', { schema: listAccessOverridesSchema, preHandler: [authenticateApiKey, requireSiweSession] }, async (request: FastifyRequest, reply: FastifyReply) => {
     const { communityId } = request.params as { communityId: string };
     const body = request.body as {
       wallet?: string;
@@ -461,45 +681,31 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
         validationError('Missing required fields: wallet, resource, effect'),
       );
     }
-    const requesterWallet = getRequesterWallet(request);
-    try {
-      const result = await memberService.createAccessOverride({
-        requesterWallet: requesterWallet as import('@guildpass/shared-types').WalletAddress,
-        communityId,
-        wallet: body.wallet as import('@guildpass/shared-types').WalletAddress,
-        resource: body.resource,
-        effect: body.effect as 'ALLOW' | 'DENY',
-        reason: body.reason,
-        expiresAt: body.expiresAt ?? null,
-      });
-      return reply.status(200).send(result);
-    } catch (error) {
-      return sendRoleMutationError(reply, error);
-    }
-  });
-
-  // GET /v1/communities/:communityId/overrides — list access overrides for a community (admin)
-  app.get('/v1/communities/:communityId/overrides', { schema: listAccessOverridesSchema, preHandler: [authenticateApiKey] }, async (request: FastifyRequest, reply: FastifyReply) => {
-    const { communityId } = request.params as { communityId: string };
-    const requesterWallet = getRequesterWallet(request);
+    const requesterWallet = resolveRequesterWallet(request);
     try {
       if (!(await requireCommunityAdmin(communityId, requesterWallet))) {
-        return reply.status(403).send({ error: 'Forbidden' });
+        return reply.status(403).send(forbidden('Forbidden'));
       }
       const result = await memberService.listAccessOverrides(communityId, requesterWallet);
       return reply.status(200).send(result);
     } catch (error) {
       if (error instanceof MemberServiceError) {
-        return reply.status(error.statusCode).send({ error: error.message });
+        return reply.status(error.statusCode).send(
+            createApiError({
+              statusCode: error.statusCode,
+              code: error.statusCode === 404 ? 'NOT_FOUND' : error.statusCode === 400 ? 'VALIDATION_ERROR' : error.statusCode === 409 ? 'CONFLICT' : error.statusCode === 403 ? 'FORBIDDEN' : 'INTERNAL_ERROR',
+              message: error.message
+            })
+          );
       }
-      return reply.status(500).send({ error: 'Internal server error' });
+      return reply.status(500).send(internalError('Internal server error'));
     }
   });
 
   // DELETE /v1/communities/:communityId/overrides/:wallet/:resource — revoke an access override
-  app.delete('/v1/communities/:communityId/overrides/:wallet/:resource', { schema: revokeAccessOverrideSchema, preHandler: [authenticateApiKey] }, async (request: FastifyRequest, reply: FastifyReply) => {
+  app.delete('/v1/communities/:communityId/overrides/:wallet/:resource', async (request: FastifyRequest, reply: FastifyReply) => {
     const { communityId, wallet, resource } = request.params as { communityId: string; wallet: string; resource: string };
-    const requesterWallet = getRequesterWallet(request);
+    const requesterWallet = resolveRequesterWallet(request);
     try {
       const result = await memberService.revokeAccessOverride({
         requesterWallet: requesterWallet as import('@guildpass/shared-types').WalletAddress,
@@ -514,53 +720,91 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 
-  // POST /v1/access/check — check access for wallet/resource
-  app.post('/v1/access/check', { 
-    schema: accessCheckSchema,
-    preHandler: app.accessCheckRateLimitHook ? [app.accessCheckRateLimitHook] : undefined,
-  }, async (request: FastifyRequest, reply: FastifyReply) => {
-    const body = request.body as {
-      wallet: `0x${string}`;
+      // POST /v1/access/check — check access for wallet/resource
+    interface AccessCheckBody {
+      wallet: string;
       communityId: string;
       resource: string;
-    };
-    if (!body?.wallet || !body?.communityId || !body?.resource) {
-      return reply.status(400).send(
-        validationError('Missing required fields: wallet, communityId, resource'),
-      );
     }
-    const result = await memberService.checkAccess(body as import('@guildpass/shared-types').AccessCheckInput);
-    return result;
-  });
+
+    app.post<{ Body: AccessCheckBody }>(
+      "/v1/access/check",
+      {
+        schema: accessCheckSchema,
+        preHandler: app.accessCheckRateLimitHook
+          ? [app.accessCheckRateLimitHook]
+          : undefined,
+      },
+      async (request: FastifyRequest<{ Body: AccessCheckBody }>, reply: FastifyReply) => {
+        const { wallet, communityId, resource } = request.body;
+
+        // Normalize wallet address
+        const normalizedWallet = wallet.toLowerCase() as `0x${string}`;
+
+        const result = await memberService.checkAccess({
+          wallet: normalizedWallet,
+          communityId,
+          resource,
+        } as import("@guildpass/shared-types").AccessCheckInput);
+
+        return result;
+      },
+    );
 
   // GET /v1/communities/:communityId/members — list members for admin
-  app.get('/v1/communities/:communityId/members', { schema: listCommunityMembersSchema, preHandler: [authenticateApiKey] }, async (request: FastifyRequest, reply: FastifyReply) => {
+  app.get('/v1/communities/:communityId/members', {
+    schema: {
+      summary: 'List community members for admins',
+      tags: ['Members'],
+      querystring: {
+        type: 'object',
+        properties: {
+          role: { type: 'string', enum: ['admin', 'member', 'contributor'] },
+          limit: { type: 'integer', minimum: 1, maximum: 200, default: 50 },
+          cursor: { type: 'string' },
+        },
+      },
+    },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
     const { communityId } = request.params as { communityId: string };
-    const role = (request.query as { role?: string })?.role;
+    const parsedQuery = memberListQuerySchema.safeParse(request.query ?? {});
+    if (!parsedQuery.success) {
+      return reply.status(400).send(validationError('Invalid query parameters', parsedQuery.error.flatten()));
+    }
+    const { role, limit, cursor } = parsedQuery.data;
     // Ensure caller is an authenticated community admin by reusing mutation auth check.
-    const requesterWallet = getRequesterWallet(request);
+    const requesterWallet = resolveRequesterWallet(request);
     try {
       // Reuse a minimal auth check by verifying requester has admin role in the community.
       // We do this by calling listMembersForAdmin only after requester is validated.
       const requesterMembers = await memberService.listMembersForAdmin(
         communityId,
-        role as Role | undefined,
+        role,
+        { limit, cursor },
       );
       // listMembersForAdmin is not requester-scoped; enforce admin authorization in a lightweight way:
       // If requester is missing from admin-filtered listing, deny.
       if (role === 'admin') {
-        // If caller requested admin-only view, still require requester to be admin.
-        const isAdmin = requesterMembers.members.some(
+        const isAdmin = result.members.some(
           (m: any) => m.wallet?.toLowerCase?.() === requesterWallet.toLowerCase(),
         );
-        if (!isAdmin) return reply.status(403).send({ error: 'Forbidden' });
+        if (!isAdmin) {
+          return reply.status(403).send(forbidden("Forbidden"));
+        }
       }
-      return requesterMembers;
+
+      return reply.status(200).send(result);
     } catch (error) {
       if (error instanceof MemberServiceError) {
-        return reply.status(error.statusCode).send({ error: error.message });
+        return reply.status(error.statusCode).send(
+            createApiError({
+              statusCode: error.statusCode,
+              code: error.statusCode === 404 ? 'NOT_FOUND' : error.statusCode === 400 ? 'VALIDATION_ERROR' : error.statusCode === 409 ? 'CONFLICT' : error.statusCode === 403 ? 'FORBIDDEN' : 'INTERNAL_ERROR',
+              message: error.message
+            })
+          );
       }
-      return reply.status(500).send({ error: 'Internal server error' });
+      return reply.status(500).send(internalError("Internal server error"));
     }
   });
 
@@ -568,56 +812,81 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     communityId: string,
     requesterWallet: string,
   ): Promise<boolean> {
-    const admins = await memberService.listMembersForAdmin(communityId, 'admin');
-    return admins.members.some(
-      (m: any) => m.wallet?.toLowerCase?.() === requesterWallet.toLowerCase(),
-    );
+    return memberService.isCommunityAdmin(communityId, requesterWallet);
   }
 
   // GET /v1/communities/:communityId/dead-letter-events — inspect webhook
   // deliveries that exhausted the outbox's retry budget
-  app.get('/v1/communities/:communityId/dead-letter-events', { schema: listDeadLetterEventsSchema, preHandler: [authenticateApiKey] }, async (request: FastifyRequest, reply: FastifyReply) => {
-    const { communityId } = request.params as { communityId: string };
-    const { status } = request.query as { status?: 'pending' | 'retried' | 'resolved' };
-    const requesterWallet = getRequesterWallet(request);
-    try {
-      if (!(await requireCommunityAdmin(communityId, requesterWallet))) {
-        return reply.status(403).send({ error: 'Forbidden' });
+  app.get(
+    "/v1/communities/:communityId/dead-letter-events",
+    { schema: listDeadLetterEventsSchema, preHandler: [authenticateApiKey, requireSiweSession] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { communityId } = request.params as { communityId: string };
+      const { status } = request.query as {
+        status?: "pending" | "retried" | "resolved";
+      };
+      const requesterWallet = getRequesterWallet(request);
+      try {
+        if (!(await requireCommunityAdmin(communityId, requesterWallet))) {
+          return reply.status(403).send(forbidden("Forbidden"));
+        }
+        const events = await listDeadLetterEvents(getPrisma(), {
+          communityId,
+          status,
+        });
+        return { events };
+      } catch (error) {
+        if (error instanceof MemberServiceError) {
+          return reply.status(error.statusCode).send(
+            createApiError({
+              statusCode: error.statusCode,
+              code: error.statusCode === 404 ? 'NOT_FOUND' : error.statusCode === 400 ? 'VALIDATION_ERROR' : error.statusCode === 409 ? 'CONFLICT' : error.statusCode === 403 ? 'FORBIDDEN' : 'INTERNAL_ERROR',
+              message: error.message
+            })
+          );
+        }
+        return reply.status(500).send(internalError("Internal server error"));
       }
-      const events = await listDeadLetterEvents(getPrisma(), { communityId, status });
-      return { events };
-    } catch (error) {
-      if (error instanceof MemberServiceError) {
-        return reply.status(error.statusCode).send({ error: error.message });
-      }
-      return reply.status(500).send({ error: 'Internal server error' });
-    }
-  });
+    },
+  );
 
   // POST /v1/communities/:communityId/dead-letter-events/:id/retry — re-enqueue
   // a dead-lettered event as a fresh pending OutboxEvent
-  app.post('/v1/communities/:communityId/dead-letter-events/:id/retry', { schema: retryDeadLetterEventSchema, preHandler: [authenticateApiKey] }, async (request: FastifyRequest, reply: FastifyReply) => {
-    const { communityId, id } = request.params as { communityId: string; id: string };
-    const requesterWallet = getRequesterWallet(request);
-    try {
-      if (!(await requireCommunityAdmin(communityId, requesterWallet))) {
-        return reply.status(403).send({ error: 'Forbidden' });
+  app.post(
+    "/v1/communities/:communityId/dead-letter-events/:id/retry",
+    { schema: retryDeadLetterEventSchema, preHandler: [authenticateApiKey, requireSiweSession] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { communityId, id } = request.params as {
+        communityId: string;
+        id: string;
+      };
+      const requesterWallet = getRequesterWallet(request);
+      try {
+        if (!(await requireCommunityAdmin(communityId, requesterWallet))) {
+          return reply.status(403).send(forbidden("Forbidden"));
+        }
+        const result = await retryDeadLetterEvent(getPrisma(), id);
+        return reply.status(200).send(result);
+      } catch (error) {
+        if (error instanceof DeadLetterNotFoundError) {
+          return reply.status(404).send(notFound(error.message));
+        }
+        if (error instanceof DeadLetterAlreadyResolvedError) {
+          return reply.status(409).send(conflict(error.message));
+        }
+        if (error instanceof MemberServiceError) {
+          return reply.status(error.statusCode).send(
+            createApiError({
+              statusCode: error.statusCode,
+              code: error.statusCode === 404 ? 'NOT_FOUND' : error.statusCode === 400 ? 'VALIDATION_ERROR' : error.statusCode === 409 ? 'CONFLICT' : error.statusCode === 403 ? 'FORBIDDEN' : 'INTERNAL_ERROR',
+              message: error.message
+            })
+          );
+        }
+        return reply.status(500).send(internalError("Internal server error"));
       }
-      const result = await retryDeadLetterEvent(getPrisma(), id);
-      return reply.status(200).send(result);
-    } catch (error) {
-      if (error instanceof DeadLetterNotFoundError) {
-        return reply.status(404).send(notFound(error.message));
-      }
-      if (error instanceof DeadLetterAlreadyResolvedError) {
-        return reply.status(409).send({ error: error.message });
-      }
-      if (error instanceof MemberServiceError) {
-        return reply.status(error.statusCode).send({ error: error.message });
-      }
-      return reply.status(500).send({ error: 'Internal server error' });
-    }
-  });
+    },
+  );
 
   // --- Admin Audit Trace Routes ---
 
@@ -635,7 +904,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       const wallet = wildcard.substring(7);
       const { communityId } = request.query as { communityId?: string };
       if (!communityId) {
-        return reply.status(400).send({ error: 'communityId query parameter is required' });
+        return reply.status(400).send(validationError('communityId query parameter is required'));
       }
       const result = await getAuditTracesByWallet(wallet, communityId, 50, prisma);
       return {
@@ -649,72 +918,87 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     const correlationId = wildcard;
     const result = await getAuditTraceByCorrelationId(correlationId, prisma);
     if (!result) {
-      return reply.status(404).send({ error: 'Audit trace not found' });
+      return reply.status(404).send(notFound('Audit trace not found'));
     }
     return result;
   });
 
   // GET /v1/communities/:communityId/audit-events — filterable, paginated audit events for community admin
-  app.get('/v1/communities/:communityId/audit-events', { schema: listAuditEventsSchema, preHandler: [authenticateApiKey] }, async (request: FastifyRequest, reply: FastifyReply) => {
-    const { communityId } = request.params as { communityId: string };
-    const { actorWallet, eventType, resource, from, to, page, limit } = request.query as {
-      actorWallet?: string;
-      eventType?: string;
-      resource?: string;
-      from?: string;
-      to?: string;
-      page?: number;
-      limit?: number;
-    };
-    const requesterWallet = getRequesterWallet(request);
-    try {
-      if (!(await requireCommunityAdmin(communityId, requesterWallet))) {
-        return reply.status(403).send({ error: 'Forbidden' });
-      }
-
-      let parsedFrom: Date | undefined = undefined;
-      let parsedTo: Date | undefined = undefined;
-
-      if (from) {
-        parsedFrom = new Date(from);
-        if (isNaN(parsedFrom.getTime())) {
-          return reply.status(400).send(validationError('Invalid from date format'));
+  app.get(
+    "/v1/communities/:communityId/audit-events",
+    { schema: listAuditEventsSchema, preHandler: [authenticateApiKey, requireSiweSession] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { communityId } = request.params as { communityId: string };
+      const { actorWallet, eventType, resource, from, to, page, limit } =
+        request.query as {
+          actorWallet?: string;
+          eventType?: string;
+          resource?: string;
+          from?: string;
+          to?: string;
+          page?: number;
+          limit?: number;
+        };
+      const requesterWallet = getRequesterWallet(request);
+      try {
+        if (!(await requireCommunityAdmin(communityId, requesterWallet))) {
+          return reply.status(403).send(forbidden("Forbidden"));
         }
-      }
 
-      if (to) {
-        parsedTo = new Date(to);
-        if (isNaN(parsedTo.getTime())) {
-          return reply.status(400).send(validationError('Invalid to date format'));
+        let parsedFrom: Date | undefined = undefined;
+        let parsedTo: Date | undefined = undefined;
+
+        if (from) {
+          parsedFrom = new Date(from);
+          if (isNaN(parsedFrom.getTime())) {
+            return reply
+              .status(400)
+              .send(validationError("Invalid from date format"));
+          }
         }
-      }
 
-      const result = await queryAuditEvents(getPrisma(), {
-        communityId,
-        actorWallet,
-        eventType,
-        resource,
-        from: parsedFrom,
-        to: parsedTo,
-        page: page ? Number(page) : undefined,
-        limit: limit ? Number(limit) : undefined,
-      });
+        if (to) {
+          parsedTo = new Date(to);
+          if (isNaN(parsedTo.getTime())) {
+            return reply
+              .status(400)
+              .send(validationError("Invalid to date format"));
+          }
+        }
 
-      return result;
-    } catch (error) {
-      if (error instanceof MemberServiceError) {
-        return reply.status(error.statusCode).send({ error: error.message });
+        const result = await queryAuditEvents(getPrisma(), {
+          communityId,
+          actorWallet,
+          eventType,
+          resource,
+          from: parsedFrom,
+          to: parsedTo,
+          page: page ? Number(page) : undefined,
+          limit: limit ? Number(limit) : undefined,
+        });
+
+        return result;
+      } catch (error) {
+        if (error instanceof MemberServiceError) {
+          return reply.status(error.statusCode).send(
+            createApiError({
+              statusCode: error.statusCode,
+              code: error.statusCode === 404 ? 'NOT_FOUND' : error.statusCode === 400 ? 'VALIDATION_ERROR' : error.statusCode === 409 ? 'CONFLICT' : error.statusCode === 403 ? 'FORBIDDEN' : 'INTERNAL_ERROR',
+              message: error.message
+            })
+          );
+        }
+        return reply.status(500).send(internalError("Internal server error"));
       }
-      return reply.status(500).send({ error: 'Internal server error' });
-    }
-  });
+    },
+  );
 
   // --- Resource Routes ---
 
-  app.post('/v1/communities/:communityId/resources', { schema: createResourceSchema, preHandler: [authenticateApiKey] }, async (request: FastifyRequest, reply: FastifyReply) => {
+  app.post('/v1/communities/:communityId/resources', { schema: createResourceSchema, preHandler: [authenticateApiKey, requireSiweSession, idempotencyPreHandler], onSend: [idempotencyOnSend] }, async (request: FastifyRequest, reply: FastifyReply) => {
     const { communityId } = request.params as { communityId: string };
-    const body = request.body as { resourceId: string; name: string; metadata?: any };
-    const requesterWallet = getRequesterWallet(request);
+    const { status } = request.query as { status?: 'pending' | 'retried' | 'resolved' };
+    const requesterWallet = resolveRequesterWallet(request);
     try {
       const result = await resourceService.upsertResource({
         requesterWallet,
@@ -726,16 +1010,23 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       return reply.status(200).send(result);
     } catch (error) {
       if (error instanceof ResourceServiceError) {
-        return reply.status(error.statusCode).send({ error: error.message });
+        return reply.status(error.statusCode).send(
+            createApiError({
+              statusCode: error.statusCode,
+              code: error.statusCode === 404 ? 'NOT_FOUND' : error.statusCode === 400 ? 'VALIDATION_ERROR' : error.statusCode === 409 ? 'CONFLICT' : error.statusCode === 403 ? 'FORBIDDEN' : 'INTERNAL_ERROR',
+              message: error.message
+            })
+          );
       }
-      return reply.status(500).send({ error: 'Internal server error' });
+      return reply.status(500).send(internalError('Internal server error'));
     }
   });
 
-  app.patch('/v1/communities/:communityId/resources/:resourceId', { schema: updateResourceSchema, preHandler: [authenticateApiKey] }, async (request: FastifyRequest, reply: FastifyReply) => {
-    const { communityId, resourceId } = request.params as { communityId: string; resourceId: string };
-    const body = request.body as { name?: string; metadata?: any };
-    const requesterWallet = getRequesterWallet(request);
+  // POST /v1/communities/:communityId/dead-letter-events/:id/retry — re-enqueue
+  // a dead-lettered event as a fresh pending OutboxEvent
+  app.post('/v1/communities/:communityId/dead-letter-events/:id/retry', async (request: FastifyRequest, reply: FastifyReply) => {
+    const { communityId, id } = request.params as { communityId: string; id: string };
+    const requesterWallet = resolveRequesterWallet(request);
     try {
       const result = await resourceService.updateResource({
         requesterWallet,
@@ -747,13 +1038,19 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       return reply.status(200).send(result);
     } catch (error) {
       if (error instanceof ResourceServiceError) {
-        return reply.status(error.statusCode).send({ error: error.message });
+        return reply.status(error.statusCode).send(
+            createApiError({
+              statusCode: error.statusCode,
+              code: error.statusCode === 404 ? 'NOT_FOUND' : error.statusCode === 400 ? 'VALIDATION_ERROR' : error.statusCode === 409 ? 'CONFLICT' : error.statusCode === 403 ? 'FORBIDDEN' : 'INTERNAL_ERROR',
+              message: error.message
+            })
+          );
       }
-      return reply.status(500).send({ error: 'Internal server error' });
+      return reply.status(500).send(internalError('Internal server error'));
     }
   });
 
-  app.delete('/v1/communities/:communityId/resources/:resourceId', { schema: archiveResourceSchema, preHandler: [authenticateApiKey] }, async (request: FastifyRequest, reply: FastifyReply) => {
+  app.delete('/v1/communities/:communityId/resources/:resourceId', { schema: archiveResourceSchema, preHandler: [authenticateApiKey, requireSiweSession, idempotencyPreHandler], onSend: [idempotencyOnSend] }, async (request: FastifyRequest, reply: FastifyReply) => {
     const { communityId, resourceId } = request.params as { communityId: string; resourceId: string };
     const requesterWallet = getRequesterWallet(request);
     try {
@@ -765,9 +1062,15 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       return reply.status(200).send(result);
     } catch (error) {
       if (error instanceof ResourceServiceError) {
-        return reply.status(error.statusCode).send({ error: error.message });
+        return reply.status(error.statusCode).send(
+            createApiError({
+              statusCode: error.statusCode,
+              code: error.statusCode === 404 ? 'NOT_FOUND' : error.statusCode === 400 ? 'VALIDATION_ERROR' : error.statusCode === 409 ? 'CONFLICT' : error.statusCode === 403 ? 'FORBIDDEN' : 'INTERNAL_ERROR',
+              message: error.message
+            })
+          );
       }
-      return reply.status(500).send({ error: 'Internal server error' });
+      return reply.status(500).send(internalError('Internal server error'));
     }
   });
 
@@ -779,10 +1082,88 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       return reply.status(200).send(result);
     } catch (error) {
       if (error instanceof ResourceServiceError) {
-        return reply.status(error.statusCode).send({ error: error.message });
+        return reply.status(error.statusCode).send(
+            createApiError({
+              statusCode: error.statusCode,
+              code: error.statusCode === 404 ? 'NOT_FOUND' : error.statusCode === 400 ? 'VALIDATION_ERROR' : error.statusCode === 409 ? 'CONFLICT' : error.statusCode === 403 ? 'FORBIDDEN' : 'INTERNAL_ERROR',
+              message: error.message
+            })
+          );
       }
-      return reply.status(500).send({ error: 'Internal server error' });
+      return reply.status(500).send(internalError('Internal server error'));
     }
   });
 
+  // --- Constitutional Rule Set Management Routes ---
+
+  // POST /v1/communities/:communityId/constitutional-rulesets — Create a new versioned constitutional rule set
+  app.post('/v1/communities/:communityId/constitutional-rulesets', { preHandler: [authenticateApiKey, requireSiweSession] }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const { communityId } = request.params as { communityId: string };
+    const body = request.body as { rules?: any[]; description?: string };
+    const requesterWallet = getRequesterWallet(request);
+
+    if (!body?.rules || !Array.isArray(body.rules)) {
+      return reply.status(400).send(validationError('Missing required field: rules array'));
+    }
+
+    try {
+      const result = await createConstitutionalRuleSet(prisma, {
+        communityId,
+        rules: body.rules,
+        createdBy: requesterWallet,
+        description: body.description,
+      });
+      return reply.status(201).send(result);
+    } catch (error) {
+      return reply.status(400).send(validationError(error instanceof Error ? error.message : 'Invalid rule set'));
+    }
+  });
+
+  // GET /v1/communities/:communityId/constitutional-rulesets — List all rule set versions
+  app.get('/v1/communities/:communityId/constitutional-rulesets', { preHandler: [authenticateApiKey] }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const { communityId } = request.params as { communityId: string };
+    const result = await getConstitutionalRuleSetVersions(prisma, communityId);
+    return { communityId, versions: result };
+  });
+
+  // GET /v1/communities/:communityId/constitutional-rulesets/active — Get current active rule set
+  app.get('/v1/communities/:communityId/constitutional-rulesets/active', async (request: FastifyRequest, reply: FastifyReply) => {
+    const { communityId } = request.params as { communityId: string };
+    const active = await getActiveConstitutionalRuleSet(prisma, communityId);
+    if (!active) {
+      return reply.status(404).send(notFound('No active constitutional rule set found for this community'));
+    }
+    return active;
+  });
+
+  // PUT /v1/communities/:communityId/resources/:resource/policy — Create or update custom rule tree policy
+  app.put(
+    '/v1/communities/:communityId/resources/:resource/policy',
+    { schema: updateCustomPolicySchema, preHandler: [authenticateApiKey] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { communityId, resource } = request.params as { communityId: string; resource: string };
+      const body = request.body as { ruleTree: any };
+
+      if (!body || !body.ruleTree) {
+        return reply.status(400).send(validationError('Missing required field: ruleTree'));
+      }
+
+      const validation = validateRuleTree(body.ruleTree);
+      if (!validation.valid) {
+        return reply.status(400).send(validationErrorWithReason('Invalid rule tree AST', validation.errors.join('; ')));
+      }
+
+      try {
+        const policy = await memberService.upsertAccessPolicy(
+          communityId,
+          resource,
+          'COMPOSABLE',
+          { ruleTree: body.ruleTree }
+        );
+        return reply.status(200).send({ success: true, policy });
+      } catch (error) {
+        return reply.status(500).send(internalError(error instanceof Error ? error.message : 'Failed to update policy'));
+      }
+    }
+  );
 }

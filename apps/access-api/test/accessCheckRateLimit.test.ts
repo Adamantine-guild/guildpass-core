@@ -3,6 +3,11 @@ process.env.ACCESS_CHECK_RATE_LIMIT_IP_MAX = '5';
 process.env.ACCESS_CHECK_RATE_LIMIT_WALLET_MAX = '3';
 process.env.ACCESS_CHECK_RATE_LIMIT_WINDOW_MS = '60000';
 process.env.RATE_LIMIT_ENABLED = 'true';
+// These cases simulate distinct clients via X-Forwarded-For, which Fastify only
+// honours when the proxy is trusted. Without this the header is ignored (the
+// secure default) and every injected request shares one client IP, so the
+// per-IP and per-wallet budgets could not be exercised independently.
+process.env.TRUST_PROXY = 'true';
 delete process.env.REDIS_URL;
 
 import { buildApp } from '../src/app';
@@ -76,8 +81,8 @@ describe('POST /v1/access/check Rate Limiting', () => {
     expect(lastResponse.headers['retry-after']).toBeDefined();
     
     const body = JSON.parse(lastResponse.payload);
-    expect(body.error).toBe('Too Many Requests');
-    expect(body.message).toMatch(/Rate limit exceeded\. Retry after \d+ seconds\./);
+    expect(body.error.code).toBe('RATE_LIMITED');
+    expect(body.error.message).toMatch(/Rate limit exceeded\. Retry after \d+ seconds\./);
   });
 
   it('enforces Wallet-based rate limiting (max 3)', async () => {

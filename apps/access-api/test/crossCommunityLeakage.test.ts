@@ -131,7 +131,13 @@ describe('Cross-community leakage safeguards', () => {
       await mintMembership(communityA, 101);
       await mintMembership(communityB, 202);
       await prisma.membershipToken.update({
-        where: { tokenId: 202 },
+        where: {
+          chainId_contractAddress_tokenId: {
+            chainId: 31337,
+            contractAddress: '0x0000000000000000000000000000000000000000',
+            tokenId: 202,
+          },
+        },
         data: { state: 'suspended' },
       });
       await prisma.accessPolicy.createMany({

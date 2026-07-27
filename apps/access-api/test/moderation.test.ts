@@ -70,7 +70,7 @@ describe('Moderation appeals & Reinstatement integration', () => {
       });
 
       expect(response.statusCode).toBe(404);
-      expect(JSON.parse(response.body).error).toContain('Member not found');
+      expect(JSON.parse(response.body).error.message).toContain('Member not found');
     });
 
     test('should reject appeal if membership is not suspended', async () => {
@@ -91,7 +91,7 @@ describe('Moderation appeals & Reinstatement integration', () => {
       });
 
       expect(response.statusCode).toBe(400);
-      expect(JSON.parse(response.body).error).toContain('Membership is not suspended');
+      expect(JSON.parse(response.body).error.message).toContain('Membership is not suspended');
     });
 
     test('should reject appeal if an active appeal already exists', async () => {
@@ -117,7 +117,7 @@ describe('Moderation appeals & Reinstatement integration', () => {
       });
 
       expect(response.statusCode).toBe(409);
-      expect(JSON.parse(response.body).error).toContain('An active appeal already exists');
+      expect(JSON.parse(response.body).error.message).toContain('An active appeal already exists');
     });
 
     test('should successfully file an appeal if suspended and no active appeal exists', async () => {
@@ -179,7 +179,7 @@ describe('Moderation appeals & Reinstatement integration', () => {
       });
 
       expect(response.statusCode).toBe(400);
-      expect(JSON.parse(response.body).error).toContain('Invalid transition from filed to reinstated');
+      expect(JSON.parse(response.body).error.message).toContain('Invalid transition from filed to reinstated');
     });
 
     test('should allow transition to under_review, and then to reinstated', async () => {
@@ -246,7 +246,7 @@ describe('Moderation appeals & Reinstatement integration', () => {
       
       // Verification of side-effects
       expect(mockPrisma.membershipToken.update).toHaveBeenCalledWith({
-        where: { tokenId: 999 },
+        where: { id: 999 },
         data: { state: 'active' },
       });
       expect(mockPrisma.outboxEvent.create).toHaveBeenCalled();

@@ -85,7 +85,8 @@ function createMockPrisma() {
   };
 
   const membershipToken = {
-    upsert: jest.fn(async ({ where: { tokenId }, create, update }) => {
+    upsert: jest.fn(async ({ where, create, update }) => {
+      const tokenId = where.chainId_contractAddress_tokenId ? where.chainId_contractAddress_tokenId.tokenId : where.tokenId;
       if (membershipTokensByTokenId.has(tokenId)) {
         const existing = membershipTokensByTokenId.get(tokenId);
         const updated = { ...existing, state: update.state, expiresAt: update.expiresAt };

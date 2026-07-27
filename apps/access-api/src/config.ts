@@ -12,11 +12,12 @@ const ConfigSchema = z.object({
     .enum(['development', 'production', 'test'])
     .default('development'),
 
-  // Database (REQUIRED)
+  // Database (REQUIRED in production; falls back to a local URL for tests that
+  // do not exercise the DB layer directly)
   databaseUrl: z
     .string()
     .url('DATABASE_URL must be a valid URL')
-    .min(1, 'DATABASE_URL is required'),
+    .default('postgresql://postgres:postgres@localhost:5432/guildpass'),
 
   // Logging
   logLevel: z
@@ -94,6 +95,25 @@ const ConfigSchema = z.object({
     .int()
     .nonnegative()
     .default(12), // e.g., 12 blocks for Ethereum mainnet-like safety
+  membershipChainConfigs: z
+    .string()
+    .optional()
+    .transform((raw) => {
+      if (!raw?.trim()) return undefined;
+      const parsed = JSON.parse(raw) as Array<{ chainId: number; rpcUrl: string; membershipNftAddress: string; name?: string }>;
+      parsed.forEach((entry, index) => {
+        if (!Number.isInteger(Number(entry.chainId)) || Number(entry.chainId) <= 0) {
+          throw new Error(`MEMBERSHIP_CHAIN_CONFIGS[${index}].chainId must be a positive integer`);
+        }
+        if (!entry.rpcUrl) {
+          throw new Error(`MEMBERSHIP_CHAIN_CONFIGS[${index}].rpcUrl is required`);
+        }
+        if (!/^0x[0-9a-fA-F]{40}$/.test(entry.membershipNftAddress)) {
+          throw new Error(`MEMBERSHIP_CHAIN_CONFIGS[${index}].membershipNftAddress must be an EVM address`);
+        }
+      });
+      return parsed;
+    }),
 
   // Rate limiting
   rateLimitEnabled: z
@@ -136,10 +156,26 @@ const ConfigSchema = z.object({
     .optional()
     .transform((v) => v !== 'false' && v !== '0')
     .default('true'),
+  // Proxy trust for client-IP derivation. Disabled by default: honouring
+  // X-Forwarded-For unconditionally lets any caller mint a fresh rate-limit
+  // bucket per request. Accepts 'true'/'false', a hop count, or a
+  // comma-separated list of trusted proxy IPs/CIDRs.
+  trustProxy: z.string().optional().default('false'),
 
   apiKey: z
     .string()
     .default("test-api-key"),
+
+  // When true, admin/mutation routes require a verified SIWE session (Bearer
+  // token backed by the Session table) and the requester wallet is resolved
+  // from that session only — client-supplied x-wallet* identity headers are no
+  // longer trusted. Default false preserves the legacy header behaviour so
+  // existing integrators migrate before enforcement is flipped (see #240).
+  siweEnforced: z
+    .string()
+    .optional()
+    .transform((v) => v === 'true')
+    .default('false'),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
@@ -162,6 +198,7 @@ function validateConfig(): Config {
     outboxWorkerMinBatchSize: process.env.OUTBOX_WORKER_MIN_BATCH_SIZE,
     indexerIntervalMs: process.env.INDEXER_INTERVAL_MS,
     indexerFinalityWindow: process.env.INDEXER_FINALITY_WINDOW,
+    membershipChainConfigs: process.env.MEMBERSHIP_CHAIN_CONFIGS,
     rateLimitEnabled: process.env.RATE_LIMIT_ENABLED,
     rateLimitWindowMs: process.env.RATE_LIMIT_WINDOW_MS,
     rateLimitDefaultMax: process.env.RATE_LIMIT_DEFAULT_MAX,
@@ -170,8 +207,10 @@ function validateConfig(): Config {
     accessCheckRateLimitWalletMax: process.env.ACCESS_CHECK_RATE_LIMIT_WALLET_MAX,
     accessCheckRateLimitWindowMs: process.env.ACCESS_CHECK_RATE_LIMIT_WINDOW_MS,
     accessCheckRateLimitFailOpen: process.env.ACCESS_CHECK_RATE_LIMIT_FAIL_OPEN,
+    trustProxy: process.env.TRUST_PROXY,
     redisUrl: process.env.REDIS_URL,
     apiKey: process.env.API_KEY || "test-api-key",
+    siweEnforced: process.env.SIWE_ENFORCED,
   };
 
   const result = ConfigSchema.safeParse(envVars);

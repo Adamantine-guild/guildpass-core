@@ -18,6 +18,7 @@ import {
   type DecodedMembershipRenewedEvent,
   type DecodedMembershipSuspendedEvent,
 } from './services/contractEventHelpers';
+import { createIndexerWorker, type ChainProvider, type BlockInfo } from './workers/indexerWorker';
 
 /**
  * Test Fixtures - Contract events that would be emitted by MembershipNFT
@@ -137,7 +138,7 @@ describe('Membership Integration: Contract Events → API Access', () => {
       await applyContractEvent(prisma, event);
 
       // Verify membership was created
-      const membership = await prisma.membershipToken.findUnique({
+      const membership = await prisma.membershipToken.findFirst({
         where: { tokenId: event.tokenId },
         include: { member: { include: { wallet: true } } },
       });
@@ -212,7 +213,7 @@ describe('Membership Integration: Contract Events → API Access', () => {
       const event = testFixtures.expiredMembership.event;
       await applyContractEvent(prisma, event);
 
-      const membership = await prisma.membershipToken.findUnique({
+      const membership = await prisma.membershipToken.findFirst({
         where: { tokenId: event.tokenId },
       });
 
@@ -284,7 +285,7 @@ describe('Membership Integration: Contract Events → API Access', () => {
       await applyContractEvent(prisma, event);
       await applyContractEvent(prisma, suspendedEvent);
 
-      const membership = await prisma.membershipToken.findUnique({
+      const membership = await prisma.membershipToken.findFirst({
         where: { tokenId: event.tokenId },
       });
 
@@ -401,10 +402,10 @@ describe('Membership Integration: Contract Events → API Access', () => {
       await applyContractEvent(prisma, suspend1);
 
       // Verify records on disk
-      const token101 = await prisma.membershipToken.findUnique({
+      const token101 = await prisma.membershipToken.findFirst({
         where: { tokenId: 101 },
       });
-      const token102 = await prisma.membershipToken.findUnique({
+      const token102 = await prisma.membershipToken.findFirst({
         where: { tokenId: 102 },
       });
 
@@ -416,7 +417,7 @@ describe('Membership Integration: Contract Events → API Access', () => {
         include: { activeToken: true },
       });
       // The active token is 102 and active
-      expect(membership?.activeTokenId).toBe(102);
+      expect(membership?.activeToken?.tokenId).toBe(102);
       expect(membership?.activeToken?.state).toBe('active');
 
       // Verify overall access decision via service / API is ALLOW
@@ -489,10 +490,10 @@ describe('Membership Integration: Contract Events → API Access', () => {
       await applyContractEvent(prisma, mint2);
 
       // Verify records on disk
-      const token101 = await prisma.membershipToken.findUnique({
+      const token101 = await prisma.membershipToken.findFirst({
         where: { tokenId: 101 },
       });
-      const token102 = await prisma.membershipToken.findUnique({
+      const token102 = await prisma.membershipToken.findFirst({
         where: { tokenId: 102 },
       });
 
@@ -503,7 +504,7 @@ describe('Membership Integration: Contract Events → API Access', () => {
         where: { member: { wallet: { address: wallet } } },
         include: { activeToken: true },
       });
-      expect(membership?.activeTokenId).toBe(102);
+      expect(membership?.activeToken?.tokenId).toBe(102);
       expect(membership?.activeToken?.state).toBe('active');
 
       // Verify overall access decision via service / API is ALLOW
@@ -550,7 +551,7 @@ describe('Membership Integration: Contract Events → API Access', () => {
       // Apply initial mint
       await applyContractEvent(prisma, initialEvent);
 
-      const beforeRenewal = await prisma.membershipToken.findUnique({
+      const beforeRenewal = await prisma.membershipToken.findFirst({
         where: { tokenId: initialEvent.tokenId },
       });
 
@@ -560,7 +561,7 @@ describe('Membership Integration: Contract Events → API Access', () => {
       // Apply renewal
       await applyContractEvent(prisma, renewalEvent);
 
-      const afterRenewal = await prisma.membershipToken.findUnique({
+      const afterRenewal = await prisma.membershipToken.findFirst({
         where: { tokenId: initialEvent.tokenId },
       });
 
@@ -752,6 +753,99 @@ describe('Membership Integration: Contract Events → API Access', () => {
 
       expect(response.statusCode).toBe(404);
     });
+
+    test('GET /v1/communities/:communityId/members/:wallet edge cases: unknown wallet returns 404 with reason', async () => {
+      const response = await app.inject({
+        method: 'GET',
+        url: `/v1/communities/community-dev/members/0x9999999999999999999999999999999999999999`,
+      });
+
+      expect(response.statusCode).toBe(404);
+      const body = JSON.parse(response.body);
+      expect(body.error).toBe('NOT_FOUND');
+      expect(body.code).toBe('NOT_FOUND');
+      expect(body.message).toBe('Member not found');
+    });
+
+    test('GET /v1/communities/:communityId/members/:wallet edge cases: mixed-case wallet address resolves canonically', async () => {
+      const event = testFixtures.activeMembership.event;
+      await applyContractEvent(prisma, event);
+
+      // Convert canonical lowercase to mixed-case
+      const mixedCaseWallet = event.to.replace(/[a-f]/g, (c) => c.toUpperCase());
+
+      const response = await app.inject({
+        method: 'GET',
+        url: `/v1/communities/${event.communityId}/members/${mixedCaseWallet}`,
+      });
+
+      expect(response.statusCode).toBe(200);
+      const result = JSON.parse(response.body);
+      expect(result.wallet).toBe(event.to.toLowerCase());
+      expect(result.communityId).toBe(event.communityId);
+      expect(result.membership.state).toBe('active');
+    });
+
+    test('GET /v1/communities/:communityId/members/:wallet edge cases: multi-community scoping prevents cross-community leakage', async () => {
+      // Seed wallet/membership in community-dev
+      const eventA = testFixtures.activeMembership.event; // communityId is 'community-dev', wallet is eventA.to
+      await applyContractEvent(prisma, eventA);
+
+      // Seed a different community with the same wallet
+      const otherCommunityId = 'community-prod';
+      const eventB = {
+        ...eventA,
+        tokenId: 999,
+        communityId: otherCommunityId,
+      };
+      await applyContractEvent(prisma, eventB);
+
+      // 1. Query for community-dev
+      const responseA = await app.inject({
+        method: 'GET',
+        url: `/v1/communities/${eventA.communityId}/members/${eventA.to}`,
+      });
+      expect(responseA.statusCode).toBe(200);
+      const resultA = JSON.parse(responseA.body);
+      expect(resultA.communityId).toBe(eventA.communityId);
+
+      // 2. Query for community-prod
+      const responseB = await app.inject({
+        method: 'GET',
+        url: `/v1/communities/${otherCommunityId}/members/${eventA.to}`,
+      });
+      expect(responseB.statusCode).toBe(200);
+      const resultB = JSON.parse(responseB.body);
+      expect(resultB.communityId).toBe(otherCommunityId);
+
+      // 3. Query for a third community where this member doesn't exist
+      const responseC = await app.inject({
+        method: 'GET',
+        url: `/v1/communities/community-unknown/members/${eventA.to}`,
+      });
+      expect(responseC.statusCode).toBe(404);
+
+      // 4. Query memberships scoped endpoint for community-dev
+      const membershipsA = await app.inject({
+        method: 'GET',
+        url: `/v1/communities/${eventA.communityId}/memberships/${eventA.to}`,
+      });
+      expect(membershipsA.statusCode).toBe(200);
+      const mResultA = JSON.parse(membershipsA.body);
+      // It should only have 1 community in the list
+      expect(mResultA.communities.length).toBe(1);
+      expect(mResultA.communities[0].communityId).toBe(eventA.communityId);
+
+      // 5. Query memberships scoped endpoint for community-prod
+      const membershipsB = await app.inject({
+        method: 'GET',
+        url: `/v1/communities/${otherCommunityId}/memberships/${eventA.to}`,
+      });
+      expect(membershipsB.statusCode).toBe(200);
+      const mResultB = JSON.parse(membershipsB.body);
+      expect(mResultB.communities.length).toBe(1);
+      expect(mResultB.communities[0].communityId).toBe(otherCommunityId);
+    });
   });
 
   describe('Audit Chain of Custody Integration', () => {
@@ -788,7 +882,7 @@ describe('Membership Integration: Contract Events → API Access', () => {
       await applyContractEvent(prisma, mintEvent);
 
       // 3. Verify the indexing worker successfully persisted state changes with correct metadata
-      const membership = await prisma.membershipToken.findUnique({
+      const membership = await prisma.membershipToken.findFirst({
         where: { tokenId: mintEvent.tokenId },
         include: { member: { include: { wallet: true } } },
       });
@@ -1102,6 +1196,173 @@ describe('Membership Integration: Contract Events → API Access', () => {
       expect(memberRole).toBeDefined();
       expect(memberRole.description).toBe('Standard member with basic permissions');
       expect(memberRole.implies).toHaveLength(0);
+    });
+  });
+
+  describe('Resilient Indexing Pipeline: Checkpoints, Reorgs, & Idempotency', () => {
+    const chainId = 31337;
+    const contractAddress = '0x1111111111111111111111111111111111111111';
+
+    beforeEach(async () => {
+      await prisma.processedEvent.deleteMany({});
+      await prisma.blockHeader.deleteMany({});
+      await prisma.indexerCheckpoint.deleteMany({});
+      await prisma.auditEvent.deleteMany({});
+      await prisma.deadLetterEvent.deleteMany({});
+      await prisma.outboxEvent.deleteMany({});
+      await prisma.roleAssignment.deleteMany({});
+      await prisma.badge.deleteMany({});
+      await prisma.accessPolicy.deleteMany({});
+      await prisma.governanceRule.deleteMany({});
+      await prisma.approval.deleteMany({});
+      await prisma.approvalRequest.deleteMany({});
+      await prisma.webhookSubscription.deleteMany({});
+      await prisma.appeal.deleteMany({});
+      await prisma.membershipToken.deleteMany({});
+      await prisma.membership.deleteMany({});
+      await prisma.profile.deleteMany({});
+      await prisma.member.deleteMany({});
+      await prisma.community.deleteMany({});
+      await prisma.wallet.deleteMany({});
+    });
+
+    test('should persist checkpoint and resume safely across worker restarts', async () => {
+      const blocks: Record<number, BlockInfo> = {
+        100: { number: 100, hash: '0xblock100', parentHash: '0xblock99' },
+        101: { number: 101, hash: '0xblock101', parentHash: '0xblock100' },
+        102: { number: 102, hash: '0xblock102', parentHash: '0xblock101' },
+      };
+
+      const mockProvider: ChainProvider = {
+        getLatestBlockNumber: async () => 102,
+        getBlock: async (n) => blocks[n] || { number: n, hash: `0xblock${n}`, parentHash: `0xblock${n - 1}` },
+        getLogs: async () => [],
+      };
+
+      const worker1 = createIndexerWorker(mockProvider, 5000, 0, prisma, chainId, 10, contractAddress);
+      await worker1.runPass();
+
+      const checkpoint = await prisma.indexerCheckpoint.findUnique({
+        where: { chainId_contractAddress: { chainId, contractAddress } },
+      });
+      expect(checkpoint).toBeDefined();
+      expect(checkpoint?.lastProcessedBlockNumber).toBe(102);
+      expect(checkpoint?.lastProcessedBlockHash).toBe('0xblock102');
+
+      // Simulate new block added
+      blocks[103] = { number: 103, hash: '0xblock103', parentHash: '0xblock102' };
+      const mockProvider2: ChainProvider = {
+        getLatestBlockNumber: async () => 103,
+        getBlock: async (n) => blocks[n],
+        getLogs: async () => [],
+      };
+
+      const worker2 = createIndexerWorker(mockProvider2, 5000, 0, prisma, chainId, 10, contractAddress);
+      await worker2.runPass();
+
+      const resumedCheckpoint = await prisma.indexerCheckpoint.findUnique({
+        where: { chainId_contractAddress: { chainId, contractAddress } },
+      });
+      expect(resumedCheckpoint?.lastProcessedBlockNumber).toBe(103);
+      expect(resumedCheckpoint?.lastProcessedBlockHash).toBe('0xblock103');
+    });
+
+    test('should detect reorg via block-hash comparison and reconcile state', async () => {
+      const canonicalBlocks: Record<number, BlockInfo> = {
+        10: { number: 10, hash: '0xhash10', parentHash: '0xhash9' },
+        11: { number: 11, hash: '0xhash11-canonical', parentHash: '0xhash10' },
+      };
+
+      const logsBlock10 = [
+        {
+          type: 'MembershipMinted',
+          to: '0x9999999999999999999999999999999999999999',
+          tokenId: 99,
+          communityId: 'reorg-community',
+          expiresAt: Math.floor(Date.now() / 1000) + 86400,
+          chainId,
+          contractAddress,
+          transactionHash: '0xtx10',
+          blockHash: '0xhash10',
+          logIndex: 0,
+          blockNumber: 10,
+        },
+      ];
+
+      const logsBlock11Orphaned = [
+        {
+          type: 'MembershipSuspended',
+          tokenId: 99,
+          isSuspended: true,
+          chainId,
+          contractAddress,
+          transactionHash: '0xtx11-orphaned',
+          blockHash: '0xhash11-orphaned',
+          logIndex: 0,
+          blockNumber: 11,
+        },
+      ];
+
+      let currentLogs: Record<number, any[]> = {
+        10: logsBlock10,
+        11: logsBlock11Orphaned,
+      };
+      let currentBlocks: Record<number, BlockInfo> = {
+        10: { number: 10, hash: '0xhash10', parentHash: '0xhash9' },
+        11: { number: 11, hash: '0xhash11-orphaned', parentHash: '0xhash10' },
+      };
+
+      const provider: ChainProvider = {
+        getLatestBlockNumber: async () => 11,
+        getBlock: async (n) => currentBlocks[n] || { number: n, hash: `0xhash${n}`, parentHash: `0xhash${n - 1}` },
+        getLogs: async (from, to) => {
+          let res: any[] = [];
+          for (let b = from; b <= to; b++) {
+            if (currentLogs[b]) res.push(...currentLogs[b]);
+          }
+          return res;
+        },
+      };
+
+      const worker = createIndexerWorker(provider, 5000, 0, prisma, chainId, 10, contractAddress);
+
+      // Seed initial checkpoint at block 9 so the indexer scans from block 10
+      await prisma.indexerCheckpoint.create({
+        data: {
+          chainId,
+          contractAddress,
+          lastProcessedBlockNumber: 9,
+          lastProcessedBlock: 9,
+          lastProcessedBlockHash: '0xhash9',
+        },
+      });
+
+      // Initial pass: processes 10 & 11
+      await worker.runPass();
+
+      // Verify token 99 is suspended
+      let token = await prisma.membershipToken.findFirst({ where: { tokenId: 99 } });
+      expect(token?.state).toBe('suspended');
+
+      // NOW REORG OCCURS: block 11 has hash '0xhash11-canonical' and no suspend event!
+      currentBlocks[11] = canonicalBlocks[11];
+      currentLogs[11] = [];
+
+      // Second pass detects reorg at block 11 (stored hash 0xhash11-orphaned != current 0xhash11-canonical)
+      await worker.runPass();
+
+      // The indexer rewinds to LCA (block 10), rolls back token 99 state to active, and updates checkpoint
+      token = await prisma.membershipToken.findFirst({ where: { tokenId: 99 } });
+      expect(token?.state).toBe('active');
+
+      // Third pass re-processes the rewound block range (block 11) using the canonical chain
+      await worker.runPass();
+
+      const updatedCheckpoint = await prisma.indexerCheckpoint.findUnique({
+        where: { chainId_contractAddress: { chainId, contractAddress } },
+      });
+      expect(updatedCheckpoint?.lastProcessedBlockNumber).toBe(11);
+      expect(updatedCheckpoint?.lastProcessedBlockHash).toBe('0xhash11-canonical');
     });
   });
 });

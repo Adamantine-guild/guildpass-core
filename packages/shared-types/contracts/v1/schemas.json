@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "snapshotDate": "2026-07-20",
+  "snapshotDate": "2026-07-25",
   "description": "Versioned contract snapshot for GuildPass Access API v1. This file is the source of truth for backward-compatibility checks.",
   "sharedComponents": {
     "WalletAddress": {
@@ -17,14 +17,16 @@
     },
     "ErrorResponse": {
       "type": "object",
-      "required": ["error", "code", "message", "statusCode"],
+      "required": ["error"],
       "properties": {
-        "error": { "type": "string" },
-        "code": { "type": "string" },
-        "message": { "type": "string" },
-        "statusCode": { "type": "integer" },
-        "details": {
-          "oneOf": [{ "type": "string" }, { "type": "object" }]
+        "error": {
+          "type": "object",
+          "required": ["code", "message"],
+          "properties": {
+            "code": { "type": "string" },
+            "message": { "type": "string" },
+            "details": {}
+          }
         }
       }
     },
@@ -109,6 +111,7 @@
         "required": ["communityId", "profile", "membership", "roles"],
         "properties": {
           "communityId": { "type": "string" },
+          "wallet": { "$ref": "#/sharedComponents/WalletAddress" },
           "profile": {
             "type": "object",
             "required": ["id", "displayName"],
@@ -223,8 +226,9 @@
       "path": "/v1/communities/{communityId}/members",
       "successResponse": {
         "type": "object",
-        "required": ["members"],
+        "required": ["communityId", "members", "pagination"],
         "properties": {
+          "communityId": { "type": "string" },
           "members": {
             "type": "array",
             "items": {
@@ -236,6 +240,41 @@
                 "roles": {
                   "type": "array",
                   "items": { "$ref": "#/sharedComponents/Role" }
+                }
+              }
+            }
+          },
+          "pagination": {
+            "type": "object",
+            "required": ["page", "limit", "total", "totalPages"],
+            "properties": {
+              "page": { "type": "integer" },
+              "limit": { "type": "integer" },
+              "total": { "type": "integer" },
+              "totalPages": { "type": "integer" }
+            }
+          }
+        }
+      }
+    },
+    "GET /v1/communities/:communityId/roles": {
+      "method": "GET",
+      "path": "/v1/communities/{communityId}/roles",
+      "successResponse": {
+        "type": "object",
+        "required": ["roles"],
+        "properties": {
+          "roles": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["name", "description", "implies"],
+              "properties": {
+                "name": { "type": "string", "enum": ["admin", "member", "contributor"] },
+                "description": { "type": "string" },
+                "implies": {
+                  "type": "array",
+                  "items": { "type": "string", "enum": ["admin", "member", "contributor"] }
                 }
               }
             }

@@ -30,6 +30,7 @@ export interface AuditChainRecord {
   afterState: any;
   correlationId: string | null;
   chainId: number | null;
+  contractAddress: string | null;
   txHash: string | null;
   blockNumber: number | null;
   logIndex: number | null;
@@ -139,6 +140,7 @@ export function extractContentFields(record: {
   afterState?: any;
   correlationId?: string | null;
   chainId?: number | null;
+  contractAddress?: string | null;
   txHash?: string | null;
   blockNumber?: number | null;
   logIndex?: number | null;
@@ -157,6 +159,7 @@ export function extractContentFields(record: {
   if (record.afterState != null) fields.afterState = record.afterState;
   if (record.correlationId != null) fields.correlationId = record.correlationId;
   if (record.chainId != null) fields.chainId = record.chainId;
+  if (record.contractAddress != null) fields.contractAddress = record.contractAddress;
   if (record.txHash != null) fields.txHash = record.txHash;
   if (record.blockNumber != null) fields.blockNumber = record.blockNumber;
   if (record.logIndex != null) fields.logIndex = record.logIndex;
@@ -238,6 +241,7 @@ export async function writeChainedAuditEvent(
     afterState?: any;
     correlationId?: string | null;
     chainId?: number | null;
+    contractAddress?: string | null;
     txHash?: string | null;
     blockNumber?: number | null;
     logIndex?: number | null;
@@ -268,6 +272,7 @@ export async function writeChainedAuditEvent(
       afterState: data.afterState ?? null,
       correlationId: data.correlationId ?? null,
       chainId: data.chainId ?? null,
+      contractAddress: data.contractAddress ?? null,
       txHash: data.txHash ?? null,
       blockNumber: data.blockNumber ?? null,
       logIndex: data.logIndex ?? null,
