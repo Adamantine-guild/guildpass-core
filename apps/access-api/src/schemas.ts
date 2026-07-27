@@ -640,7 +640,7 @@ export const accessCheckSchema = {
       },
       communityId: {
         type: "string",
-        format: "uuid",
+        minLength: 1,
         description: "Community identifier",
       },
       resource: {
@@ -689,9 +689,46 @@ export const accessCheckSchema = {
             code: { type: "string" },
             message: { type: "string" },
             details: {
-              type: "array",
-              items: { type: "object", additionalProperties: true },
-              nullable: true,
+              description: "Optional detail payload (validation array or message)",
+              oneOf: [
+                { type: "string" },
+                { type: "object", additionalProperties: true },
+                { type: "array", items: { type: "object", additionalProperties: true } },
+              ],
+            },
+          },
+        },
+      },
+    },
+    429: {
+      description:
+        "Rate limit exceeded for this IP/API key or wallet. Clients must honour the Retry-After header (RFC 9110 delta-seconds) before retrying.",
+      headers: {
+        "Retry-After": {
+          schema: { type: "integer", minimum: 1 },
+          description:
+            "Seconds until the client may retry (RFC 9110 delta-seconds, not milliseconds)",
+        },
+        "X-RateLimit-Reset": {
+          schema: { type: "integer", minimum: 1 },
+          description: "Same value as Retry-After, for clients that prefer this header name",
+        },
+      },
+      type: "object",
+      required: ["error"],
+      properties: {
+        error: {
+          type: "object",
+          required: ["code", "message"],
+          properties: {
+            code: { type: "string", enum: ["RATE_LIMITED"] },
+            message: { type: "string" },
+            details: {
+              description: "Includes retryAfter in seconds when present",
+              oneOf: [
+                { type: "string" },
+                { type: "object", additionalProperties: true },
+              ],
             },
           },
         },
@@ -708,6 +745,12 @@ export const accessCheckSchema = {
           properties: {
             code: { type: "string" },
             message: { type: "string" },
+            details: {
+              oneOf: [
+                { type: "string" },
+                { type: "object", additionalProperties: true },
+              ],
+            },
           },
         },
       },
