@@ -1,11 +1,13 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { getMemberService, MemberServiceError } from "./services/memberService";
+import { getResourceService } from "./services/resourceService";
 import {
   getIdentityService,
   IdentityServiceError,
 } from "./services/identityService";
 import { getGovernanceService } from "./services/governanceService";
 import { registerGovernanceRoutes } from "./routes/governanceRoutes";
+import { registerSuspensionAppealRoutes } from "./routes/suspensionAppealRoutes";
 import {
   getModerationService,
   ModerationError,
@@ -71,6 +73,8 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   const identityService = getIdentityService(prisma);
   const moderationService = getModerationService(prisma);
   const resourceService = getResourceService(prisma);
+
+  registerSuspensionAppealRoutes(app);
 
   // Idempotency-Key support for mutating routes (issue #184). Opt-in per
   // request via the `Idempotency-Key` header; applied to role assignment,

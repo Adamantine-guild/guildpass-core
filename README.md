@@ -142,6 +142,9 @@ Prisma schema includes: `communities`, `wallets`, `members`, `memberships`, `rol
 
 For an entity-relationship diagram and a per-table explanation of how these models connect (e.g. how `memberships` ties to `wallets` and `communities`, or how `access policies` reference roles), see [`docs/data-model.md`](docs/data-model.md).
 
+- [Suspension Appeals](./docs/suspension-appeals.md) — Appeal submission, admin review, and authorized on-chain unsuspend outbox flow
+
+
 ---
 
 ## Integration Event Outbox
@@ -153,7 +156,7 @@ The API uses the **transactional outbox pattern** to emit reliable integration e
 | Concept | Description |
 | ------- | ----------- |
 | **Event creation** | Events are written atomically with the domain mutation inside a Prisma `$transaction`. If the mutation fails, no event is created. If the event write fails, the entire transaction rolls back. |
-| **Event types** | `MEMBERSHIP_CREATED`, `MEMBERSHIP_UPDATED`, `MEMBERSHIP_DELETED`, `ROLE_ASSIGNED`, `ROLE_REMOVED`, `RESOURCE_CREATED`, `RESOURCE_UPDATED`, `RESOURCE_ARCHIVED`, `POLICY_CREATED`\*, `POLICY_UPDATED`\*, `POLICY_DELETED`\*, `ACCESS_DECISION`, `ACCESS_OVERRIDE_CREATED`, `ACCESS_OVERRIDE_UPDATED`, `ACCESS_OVERRIDE_REVOKED`, `MEMBER_ATTENDED`, `BADGE_ASSIGNED`, `BADGE_REVOKED` |
+| **Event types** | `MEMBERSHIP_CREATED`, `MEMBERSHIP_UPDATED`, `MEMBERSHIP_DELETED`, `MEMBERSHIP_SUSPENDED`, `MEMBERSHIP_UNSUSPENDED`, `MEMBERSHIP_REINSTATED`, `MEMBERSHIP_UNSUSPEND_REQUESTED`, `ROLE_ASSIGNED`, `ROLE_REMOVED`, `RESOURCE_CREATED`, `RESOURCE_UPDATED`, `RESOURCE_ARCHIVED`, `POLICY_CREATED`\*, `POLICY_UPDATED`\*, `POLICY_DELETED`\*, `ACCESS_DECISION`, `ACCESS_OVERRIDE_CREATED`, `ACCESS_OVERRIDE_UPDATED`, `ACCESS_OVERRIDE_REVOKED`, `MEMBER_ATTENDED`, `BADGE_ASSIGNED`, `BADGE_REVOKED` |
 | **Statuses** | `pending` (awaiting delivery), `delivered` (successfully processed), `failed` (permanently failed after max retries) |
 | **Retry strategy** | Exponential backoff: `nextRetryAt = now + 10 × 2^retryCount` seconds. Default max 5 retries. |
 | **Delivery worker** | `outboxWorker` polls for pending events every `OUTBOX_WORKER_INTERVAL_MS` (default 10s) and delegates to a pluggable handler. The default handler is a no-op logger. |
@@ -472,7 +475,6 @@ GuildPass supports deploying and indexing `MembershipNFT` contracts across multi
 ## Deferred Areas (Intentionally Not Implemented)
 
 - Advanced governance permissions
-- Complex moderation workflows / appeals / reinstatement
 - Rich reward distribution and advanced streak logic
 - Full event attendance ingestion
 - Multi-chain support (implemented: EVM multi-chain enabled per community)
