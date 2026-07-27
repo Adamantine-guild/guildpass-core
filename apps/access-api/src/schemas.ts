@@ -1638,3 +1638,136 @@ export const listResourcesSchema = {
     },
   },
 } as const;
+
+// ---------------------------------------------------------------------------
+// Suspension appeals (#249)
+// ---------------------------------------------------------------------------
+
+const suspensionAppealItemSchema = {
+  type: "object",
+  properties: {
+    id: { type: "string" },
+    membershipId: { type: "string" },
+    memberId: { type: "string" },
+    wallet: walletAddressSchema,
+    communityId: { type: "string" },
+    memberStatement: { type: "string" },
+    status: { type: "string", enum: ["pending", "approved", "denied"] },
+    submittedAt: { type: "string", format: "date-time" },
+    reviewerId: { type: "string", nullable: true },
+    reviewedAt: { type: "string", format: "date-time", nullable: true },
+    reviewerRationale: { type: "string", nullable: true },
+  },
+} as const;
+
+export const submitSuspensionAppealSchema = {
+  summary: "Submit a suspension appeal",
+  tags: ["Appeals"],
+  params: {
+    type: "object",
+    required: ["communityId", "wallet"],
+    properties: {
+      communityId: { type: "string" },
+      wallet: walletAddressSchema,
+    },
+  },
+  body: {
+    type: "object",
+    required: ["memberStatement"],
+    properties: {
+      memberStatement: {
+        type: "string",
+        minLength: 1,
+        description: "Member's supporting statement for the appeal",
+      },
+    },
+  },
+  response: {
+    201: {
+      description: "Appeal created",
+      ...suspensionAppealItemSchema,
+    },
+    400: { description: "Validation error / not suspended", ...errorSchema },
+    401: { description: "Unauthorized", ...errorSchema },
+    403: { description: "Forbidden — not the member's wallet", ...errorSchema },
+    404: { description: "Member not found", ...errorSchema },
+    409: { description: "Pending appeal already exists", ...errorSchema },
+  },
+} as const;
+
+export const listSuspensionAppealsSchema = {
+  summary: "List suspension appeals (admin review queue)",
+  tags: ["Appeals"],
+  params: {
+    type: "object",
+    required: ["communityId"],
+    properties: {
+      communityId: { type: "string" },
+    },
+  },
+  querystring: {
+    type: "object",
+    properties: {
+      status: { type: "string", enum: ["pending", "approved", "denied"] },
+      page: { type: "integer", minimum: 1, default: 1 },
+      limit: { type: "integer", minimum: 1, maximum: 100, default: 20 },
+    },
+  },
+  response: {
+    200: {
+      description: "Paginated appeals queue",
+      type: "object",
+      required: ["appeals", "pagination"],
+      properties: {
+        appeals: { type: "array", items: suspensionAppealItemSchema },
+        pagination: {
+          type: "object",
+          required: ["page", "limit", "total", "totalPages"],
+          properties: {
+            page: { type: "integer" },
+            limit: { type: "integer" },
+            total: { type: "integer" },
+            totalPages: { type: "integer" },
+          },
+        },
+      },
+    },
+    401: { description: "Unauthorized", ...errorSchema },
+    403: { description: "Forbidden — not a community admin", ...errorSchema },
+  },
+} as const;
+
+export const decideSuspensionAppealSchema = {
+  summary: "Approve or deny a suspension appeal",
+  tags: ["Appeals"],
+  params: {
+    type: "object",
+    required: ["communityId", "appealId"],
+    properties: {
+      communityId: { type: "string" },
+      appealId: { type: "string" },
+    },
+  },
+  body: {
+    type: "object",
+    required: ["decision", "rationale"],
+    properties: {
+      decision: { type: "string", enum: ["approved", "denied"] },
+      rationale: {
+        type: "string",
+        minLength: 1,
+        description: "Required reviewer rationale recorded in audit_events",
+      },
+    },
+  },
+  response: {
+    200: {
+      description: "Updated appeal",
+      ...suspensionAppealItemSchema,
+    },
+    400: { description: "Invalid transition / missing rationale", ...errorSchema },
+    401: { description: "Unauthorized", ...errorSchema },
+    403: { description: "Forbidden — not a community admin", ...errorSchema },
+    404: { description: "Appeal not found", ...errorSchema },
+  },
+} as const;
