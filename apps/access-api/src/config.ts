@@ -83,6 +83,14 @@ const ConfigSchema = z.object({
     .int()
     .positive()
     .default(5),
+  // Stable identity for this process in claim leases (`claimedBy`) and
+  // Prometheus `worker_id` labels. Defaults to a random UUID per process
+  // start when unset — set explicitly in multi-instance fleets so metrics
+  // and DB claims are attributable to a known pod/hostname.
+  outboxWorkerId: z.preprocess(
+    (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+    z.string().min(1).optional(),
+  ),
 
   // Indexer worker
   indexerIntervalMs: z.coerce
@@ -196,6 +204,7 @@ function validateConfig(): Config {
     outboxWorkerClaimLeaseMs: process.env.OUTBOX_WORKER_CLAIM_LEASE_MS,
     outboxWorkerCount: process.env.OUTBOX_WORKER_COUNT,
     outboxWorkerMinBatchSize: process.env.OUTBOX_WORKER_MIN_BATCH_SIZE,
+    outboxWorkerId: process.env.OUTBOX_WORKER_ID,
     indexerIntervalMs: process.env.INDEXER_INTERVAL_MS,
     indexerFinalityWindow: process.env.INDEXER_FINALITY_WINDOW,
     membershipChainConfigs: process.env.MEMBERSHIP_CHAIN_CONFIGS,

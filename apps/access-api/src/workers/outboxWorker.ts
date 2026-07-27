@@ -271,7 +271,10 @@ export async function processOutboxBatch(
 
       await markOutboxDelivered(db as any, event.id);
       delivered++;
-      metrics.outboxEventsDeliveredTotal.inc({ event_type: eventType });
+      metrics.outboxEventsDeliveredTotal.inc({
+        event_type: eventType,
+        worker_id: workerId,
+      });
     } catch (err: any) {
       const errorMessage =
         err?.message ?? "Unknown delivery error";
@@ -287,7 +290,10 @@ export async function processOutboxBatch(
         failed++;
 
         if (permanentlyFailed) {
-          metrics.outboxEventsFailedTotal.inc({ event_type: eventType });
+          metrics.outboxEventsFailedTotal.inc({
+            event_type: eventType,
+            worker_id: workerId,
+          });
           try {
             await recordDeadLetter(db as any, {
               id: event.id,
@@ -362,7 +368,10 @@ function createShard(
 
       adaptiveBatch.recordIteration(result.delivered);
 
-      metrics.outboxWorkerBatchSize.set({ shard: String(id) }, adaptiveBatch.size);
+      metrics.outboxWorkerBatchSize.set(
+        { shard: String(id), worker_id: workerId },
+        adaptiveBatch.size,
+      );
 
       if (result.processed > 0) {
         // eslint-disable-next-line no-console

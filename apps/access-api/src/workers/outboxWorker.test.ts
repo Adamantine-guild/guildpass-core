@@ -30,6 +30,17 @@ jest.mock("../services/prisma", () => ({
   })),
 }));
 
+jest.mock("../observability/metrics", () => ({
+  metrics: {
+    outboxEventsDeliveredTotal: { inc: jest.fn() },
+    outboxEventsFailedTotal: { inc: jest.fn() },
+    outboxWorkerBatchSize: { set: jest.fn() },
+    outboxBacklogDepth: { set: jest.fn() },
+  },
+}));
+
+import { metrics } from "../observability/metrics";
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -125,6 +136,10 @@ function makePrismaWithEvents(pendingEvents: any[] = []) {
 // ---------------------------------------------------------------------------
 
 describe("processOutboxBatch", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
   test("processes pending events and marks them delivered", async () => {
     const now = new Date();
     const past = new Date(now.getTime() - 1000);
@@ -180,6 +195,34 @@ describe("processOutboxBatch", () => {
     updateCalls.forEach((call: any) => {
       expect(call.data.deliveredAt).toBeDefined();
       expect(call.data.nextRetryAt).toBeNull();
+    });
+  });
+
+  test("labels delivery metrics with the claiming worker_id", async () => {
+    const past = new Date(Date.now() - 1000);
+    const prisma = makePrismaWithEvents([
+      {
+        id: "evt-metrics",
+        eventType: "RESOURCE_CREATED",
+        entityId: "res-1",
+        entityType: "Resource",
+        communityId: "c1",
+        payload: {},
+        status: "pending",
+        retryCount: 0,
+        maxRetries: 5,
+        lastError: null,
+        createdAt: past,
+        deliveredAt: null,
+        nextRetryAt: past,
+      },
+    ]);
+
+    await processOutboxBatch(prisma, async () => {}, 50, "worker-metrics-1");
+
+    expect(metrics.outboxEventsDeliveredTotal.inc).toHaveBeenCalledWith({
+      event_type: "RESOURCE_CREATED",
+      worker_id: "worker-metrics-1",
     });
   });
 

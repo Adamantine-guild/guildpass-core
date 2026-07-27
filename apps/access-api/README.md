@@ -14,10 +14,13 @@ The outbox worker (`src/workers/outboxWorker.ts`) polls the `OutboxEvent` table 
 
 **Ordering caveat:** a single worker with no concurrent competitor still delivers events in strict `createdAt` order, same as before this change. **Under concurrency, that ordering guarantee no longer holds across workers** — `SKIP LOCKED` lets two instances grab non-adjacent rows in the same instant, so events can be delivered out of creation order when more than one instance is running. If your handler depends on strict ordering, run a single instance.
 
-**Running more than one instance:** just start additional processes pointed at the same `DATABASE_URL` — each `createOutboxWorker()` call generates its own `workerId` (a UUID) unless you pass one explicitly, so instances never collide on identity.
+**Running more than one instance:** just start additional processes pointed at the same `DATABASE_URL` — each `createOutboxWorker()` call generates its own `workerId` (a UUID) unless you pass one explicitly (or set `OUTBOX_WORKER_ID`), so instances never collide on identity. Delivery and failure counters are labeled with that `worker_id` for multi-instance observability.
+
+**Why not a Redis leader lock?** Redis is already provisioned for other features, but a single-leader `SET NX PX` lock would serialize the entire outbox drain through one instance and make outbox correctness depend on Redis availability. Per-row `SKIP LOCKED` + claim leases keep coordination inside Postgres (the same store as the outbox), allow concurrent workers to drain disjoint batches, and still fail over when a lease expires after a crash. Prefer a single instance only if your handler requires strict global `createdAt` ordering.
 
 **New config:**
 - `OUTBOX_WORKER_CLAIM_LEASE_MS` (optional, default `60000`) — see crash recovery above.
+- `OUTBOX_WORKER_ID` (optional) — stable claim / metrics identity; defaults to a random UUID per process start.
 
 **Signed webhook delivery:**
 - For production webhook delivery, use `createWebhookHandler` from `src/handlers/webhookHandler.ts` to fan out HMAC-signed webhooks to all active `WebhookSubscription` rows per community. Each request carries `x-guildpass-signature`, `x-guildpass-timestamp`, and `x-guildpass-nonce` headers with anti-replay protection.
