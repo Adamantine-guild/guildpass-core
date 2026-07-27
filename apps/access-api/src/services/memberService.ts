@@ -304,7 +304,7 @@ export function getMemberService(prismaClient: PrismaClient) {
     });
 
     const cached = await cacheService.getJSON<any>(cacheKey);
-    if (cached) return cached as unknown as AccessDecision;
+    if (cached) return cached.value as unknown as AccessDecision;
 
     // Aggregate state from ALL linked wallets (primary + secondaries)
     // 1. Get all wallets
@@ -522,7 +522,21 @@ export function getMemberService(prismaClient: PrismaClient) {
         membershipState: auditMembershipSnapshot,
         roleState: allAssignments,
       });
-      await cacheService.setJSON(cacheKey, decision, decisionTtlSeconds);
+
+      // optimistic version re-check before cache write, skip write on any mismatch, no snapshot isolation attempted
+      // This is chosen because the system already treats cache failures as non-fatal.
+      const currentVersions = await getVersionedKeyParts(communityId);
+      const isConsistent =
+        versions.membershipVersion === currentVersions.membershipVersion &&
+        versions.roleVersion === currentVersions.roleVersion &&
+        versions.policyVersion === currentVersions.policyVersion &&
+        versions.resourceVersion === currentVersions.resourceVersion &&
+        versions.overrideVersion === currentVersions.overrideVersion &&
+        versions.delegationVersion === currentVersions.delegationVersion;
+
+      if (isConsistent) {
+        await cacheService.setJSON(cacheKey, decision, decisionTtlSeconds);
+      }
       return decision;
     }
 
@@ -575,7 +589,20 @@ export function getMemberService(prismaClient: PrismaClient) {
       roleState: allAssignments,
     });
 
-    await cacheService.setJSON(cacheKey, decision, decisionTtlSeconds);
+    // optimistic version re-check before cache write, skip write on any mismatch, no snapshot isolation attempted
+    // This is chosen because the system already treats cache failures as non-fatal.
+    const currentVersions = await getVersionedKeyParts(communityId);
+    const isConsistent =
+      versions.membershipVersion === currentVersions.membershipVersion &&
+      versions.roleVersion === currentVersions.roleVersion &&
+      versions.policyVersion === currentVersions.policyVersion &&
+      versions.resourceVersion === currentVersions.resourceVersion &&
+      versions.overrideVersion === currentVersions.overrideVersion &&
+      versions.delegationVersion === currentVersions.delegationVersion;
+
+    if (isConsistent) {
+      await cacheService.setJSON(cacheKey, decision, decisionTtlSeconds);
+    }
 
     return decision;
   }
