@@ -92,6 +92,17 @@ const ConfigSchema = z.object({
     z.string().min(1).optional(),
   ),
 
+  // When true, the process outbox worker also runs createWebhookHandler
+  // (HMAC-signed HTTP delivery to WebhookSubscription rows) after the
+  // contribution-score handler. Default false keeps the historical
+  // contribution-only wiring; enable explicitly in environments that have
+  // registered webhook subscriptions (issue #243).
+  outboxWebhookEnabled: z
+    .string()
+    .optional()
+    .transform((v) => v === 'true')
+    .default('false'),
+
   // Indexer worker
   indexerIntervalMs: z.coerce
     .number()
@@ -205,6 +216,7 @@ function validateConfig(): Config {
     outboxWorkerCount: process.env.OUTBOX_WORKER_COUNT,
     outboxWorkerMinBatchSize: process.env.OUTBOX_WORKER_MIN_BATCH_SIZE,
     outboxWorkerId: process.env.OUTBOX_WORKER_ID,
+    outboxWebhookEnabled: process.env.OUTBOX_WEBHOOK_ENABLED,
     indexerIntervalMs: process.env.INDEXER_INTERVAL_MS,
     indexerFinalityWindow: process.env.INDEXER_FINALITY_WINDOW,
     membershipChainConfigs: process.env.MEMBERSHIP_CHAIN_CONFIGS,

@@ -40,6 +40,27 @@ function makeDbWithSubscriptions(subscriptions: any[]) {
 }
 
 describe("signWebhookPayload / verifyWebhookSignature", () => {
+  /**
+   * Frozen known-answer test vector for consumers validating their own HMAC
+   * implementation (issue #243). Inputs and expected hex must not change.
+   */
+  test("matches the documented signature test vector", () => {
+    const secret = "whsec_test_vector_secret";
+    const timestamp = "1700000000000";
+    const nonce = "00000000-0000-4000-8000-000000000001";
+    const body = '{"id":"evt_test","eventType":"MEMBERSHIP_CREATED"}';
+    const expected =
+      "36690eab7cf93e708847344e62f285e74c20bb5679e0b829d95967e0f68bdaef";
+
+    expect(signWebhookPayload(secret, timestamp, nonce, body)).toBe(expected);
+    expect(
+      verifyWebhookSignature(secret, timestamp, nonce, body, expected, {
+        now: () => 1_700_000_000_000,
+        toleranceSeconds: 300,
+      }),
+    ).toBe(true);
+  });
+
   test("a receiver can independently recompute and verify a valid signature", () => {
     const secret = "shared-secret";
     const timestamp = String(Date.now());
