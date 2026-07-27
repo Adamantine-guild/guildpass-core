@@ -170,6 +170,19 @@ The outbox mechanism guarantees **at-least-once** delivery.
 - Every outbox event payload explicitly includes a stable, unique `id` and a `createdAt` timestamp. Consumers should use `id` (e.g., checking it against a cache or database table of processed IDs) to de-duplicate incoming events.
 - See `@guildpass/sdk-lite` for an `IdempotentWebhookConsumer` helper demonstrating this pattern.
 
+### Horizontal scaling (multi-instance)
+
+It is safe to run multiple `access-api` processes (or `OUTBOX_WORKER_COUNT` shards within one process) against the same database. Coordination uses **Postgres row-level locking**, not a Redis leader lock:
+
+| Approach | How it works | Trade-off |
+| -------- | ------------ | --------- |
+| **Chosen: `SELECT … FOR UPDATE SKIP LOCKED` + claim lease** | Each poll atomically claims a disjoint batch (`claimPendingOutboxEvents`), stamping `claimedBy` / `claimExpiresAt`. Concurrent workers skip locked rows and process different events in parallel. If a worker dies mid-batch, the lease expires and another worker reclaims the rows. | Throughput scales with worker count. Cross-worker delivery order is no longer strictly `createdAt`-ascending under contention. |
+| **Alternative: Redis distributed lock / leader election** | One leader holds `SET key NX PX <ttl>` (with renewal) and is the only process allowed to poll. | Simpler mental model (single active drain), but serializes all delivery through one instance — no parallel drain — and adds a Redis dependency for correctness of the outbox path. Redis is already used elsewhere; we still prefer Postgres locking so outbox delivery stays correct even if Redis is down. |
+
+Lock TTL for crash recovery is `OUTBOX_WORKER_CLAIM_LEASE_MS` (the claim lease). There is no separate Redis lock renewal interval because leadership is not used.
+
+Prometheus counters `outbox_events_delivered_total` / `outbox_events_failed_total` and gauge `outbox_worker_batch_size` include a `worker_id` label so multi-instance fleets are observable. Set `OUTBOX_WORKER_ID` to a stable pod/hostname when you want attributable series across restarts.
+
 ### Configuration
 
 | Environment Variable | Default | Description |
@@ -178,6 +191,10 @@ The outbox mechanism guarantees **at-least-once** delivery.
 | `OUTBOX_WORKER_BATCH_SIZE` | `50` | Max events per shard per poll |
 | `OUTBOX_WORKER_COUNT` | `1` | Number of concurrent shards for horizontal scaling |
 | `OUTBOX_WORKER_MIN_BATCH_SIZE` | `5` | Min batch size under backpressure |
+| `OUTBOX_WORKER_CLAIM_LEASE_MS` | `60000` | How long a claimed batch is held before another worker may reclaim it after a crash (ms). Must exceed worst-case handler latency. |
+| `OUTBOX_WORKER_ID` | *(random UUID)* | Stable identity for claim leases and `worker_id` metric labels; optional |
+
+See also `apps/access-api/README.md` for crash-recovery and ordering details.
 
 ### Pluggable Handler
 
