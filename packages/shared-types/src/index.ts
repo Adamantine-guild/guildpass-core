@@ -6,6 +6,18 @@ export const VALID_ROLES = ["admin", "member", "contributor"] as const;
 
 export type Role = (typeof VALID_ROLES)[number];
 
+/**
+ * A namespaced governance capability. Applications may extend the built-in
+ * catalogue while retaining the `resource:action` shape.
+ */
+export type Permission =
+  | "resource:create"
+  | "resource:archive"
+  | "member:remove"
+  | "member:role:manage"
+  | "policy:manage"
+  | `${string}:${string}`;
+
 // --- Role Hierarchy & Delegation Types ---
 export interface RoleDefinition {
   id: string;
@@ -14,6 +26,7 @@ export interface RoleDefinition {
   description?: string | null;
   parentRoleId?: string | null;
   builtInRole?: Role | null;
+  permissions?: Permission[];
   createdAt: string;
   updatedAt: string;
 }
@@ -215,6 +228,11 @@ export interface AccessPolicy {
   resource: string;
   ruleType: PolicyRuleType;
   params?: AccessPolicyParams;
+  /**
+   * All listed permissions are required in addition to the legacy rule.
+   * Omit this field to retain the original role-only behaviour.
+   */
+  requiredPermissions?: Permission[];
 }
 
 export type AccessOverrideEffect = "ALLOW" | "DENY";
@@ -346,6 +364,8 @@ export interface RoleContext {
   resource?: string;
   overrides?: AccessOverride[];
   memberSince?: string | Date | null;
+  /** Optional pre-resolved permissions, useful for remote policy consumers. */
+  permissions?: Permission[];
 }
 
 export interface PolicyEngine {
@@ -464,3 +484,4 @@ export interface DeadLetterEventDto {
 }
 
 export * from "./apiContract";
+export * from "./permissions";

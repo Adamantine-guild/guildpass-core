@@ -19,6 +19,7 @@ import type {
 import type { RuleProvider, EvaluationContext, ResolutionConfig, EvaluationResult } from './types';
 import { resolveConflicts, buildDecisionReasons, DEFAULT_RESOLUTION_CONFIG } from './resolution';
 import { resolveEffectiveRoles } from './roles';
+import { resolveEffectivePermissions } from './permissions';
 
 function normaliseWallet(value?: string): string | undefined {
   return value ? value.toLowerCase() : undefined;
@@ -122,12 +123,18 @@ export class PolicyEngine {
       roleDefinitions: options?.roleDefinitions,
       delegatedGrants: options?.delegatedGrants,
     }) as Role[];
+    const effectivePermissions = resolveEffectivePermissions(
+      roleContext,
+      effectiveRoles,
+      options?.roleDefinitions,
+    );
 
     // Build evaluation context
     const context: EvaluationContext = {
       policy,
       roleContext,
       effectiveRoles,
+      effectivePermissions,
     };
 
     // Collect membership state reason (for audit/debugging)
@@ -205,12 +212,14 @@ export function createDefaultEngine(): PolicyEngine {
   // Lazy load providers to avoid circular dependencies
   const { ValidationProvider } = require('./providers/validationProvider');
   const { ComposablePolicyProvider } = require('./providers/composablePolicyProvider');
+  const { PermissionProvider } = require('./providers/permissionProvider');
   const { StaticPolicyProvider } = require('./providers/staticPolicyProvider');
   const { FallbackProvider } = require('./providers/fallbackProvider');
 
   return new PolicyEngine([
     new ValidationProvider(),
     new ComposablePolicyProvider(),
+    new PermissionProvider(),
     new StaticPolicyProvider(),
     new FallbackProvider(),
   ]);

@@ -2470,16 +2470,25 @@
           {
             "schema": {
               "type": "string",
+              "description": "Community identifier"
+            },
+            "in": "path",
+            "name": "communityId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string",
               "enum": [
                 "admin",
                 "member",
                 "contributor"
-              ]
+              ],
+              "description": "Filter members by role"
             },
             "in": "query",
             "name": "role",
-            "required": false,
-            "description": "Filter members by role"
+            "required": false
           },
           {
             "schema": {
@@ -2489,53 +2498,42 @@
                 "active",
                 "expired",
                 "suspended"
-              ]
+              ],
+              "description": "Filter members by membership status"
             },
             "in": "query",
             "name": "status",
-            "required": false,
-            "description": "Filter members by membership status"
+            "required": false
           },
           {
             "schema": {
               "type": "integer",
               "minimum": 1,
-              "default": 1
-            },
-            "in": "query",
-            "name": "page",
-            "required": false,
-            "description": "Page number for pagination"
-          },
-          {
-            "schema": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 100,
-              "default": 20
+              "maximum": 200,
+              "default": 50,
+              "description": "Page size (default 50, maximum 200). Requests above 200 return 400."
             },
             "in": "query",
             "name": "limit",
-            "required": false,
-            "description": "Number of members per page (max 100)"
+            "required": false
           },
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "minLength": 1,
+              "description": "Opaque cursor from a previous response's pagination.nextCursor"
             },
-            "in": "path",
-            "name": "communityId",
-            "required": true,
-            "description": "Community identifier"
+            "in": "query",
+            "name": "cursor",
+            "required": false
           }
         ],
         "responses": {
           "200": {
-            "description": "Paginated member list",
+            "description": "Cursor-paginated member list",
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "Paginated member list",
                   "type": "object",
                   "required": [
                     "communityId",
@@ -2553,8 +2551,7 @@
                         "properties": {
                           "wallet": {
                             "type": "string",
-                            "pattern": "^0x[0-9a-fA-F]{40}$",
-                            "description": "EVM-compatible wallet address (checksummed or lowercase)"
+                            "pattern": "^0x[0-9a-fA-F]{40}$"
                           },
                           "displayName": {
                             "type": "string",
@@ -2586,23 +2583,21 @@
                     "pagination": {
                       "type": "object",
                       "required": [
-                        "page",
                         "limit",
-                        "total",
-                        "totalPages"
+                        "hasMore",
+                        "nextCursor"
                       ],
                       "properties": {
-                        "page": {
-                          "type": "integer"
-                        },
                         "limit": {
                           "type": "integer"
                         },
-                        "total": {
-                          "type": "integer"
+                        "hasMore": {
+                          "type": "boolean"
                         },
-                        "totalPages": {
-                          "type": "integer"
+                        "nextCursor": {
+                          "type": "string",
+                          "nullable": true,
+                          "description": "Pass as ?cursor= on the next request when hasMore"
                         }
                       }
                     }
@@ -2643,6 +2638,36 @@
                   "properties": {
                     "error": {
                       "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query parameters (e.g. limit above 200)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "statusCode": {
+                      "type": "integer"
                     }
                   }
                 }

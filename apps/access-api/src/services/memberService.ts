@@ -19,6 +19,7 @@ import {
   WalletAddress,
   RoleDefinition,
   DelegatedGrant,
+  MembershipState,
 } from "@guildpass/shared-types";
 import {
   createDefaultEngine,
@@ -36,6 +37,10 @@ import { logEvent } from "./auditService";
 import { logOutboxEventTx } from "./outboxService";
 import { getIdentityService } from "./identityService";
 import { validateAndEvaluateMutation } from "./constitutionalService";
+import {
+  hasPermission,
+} from "../lib/auth/permissions";
+import type { Permission } from "@guildpass/shared-types";
 
 import { config } from "../config";
 import { metrics } from "../observability/metrics";
@@ -546,11 +551,15 @@ export function getMemberService(
       resource,
       ruleType,
       params: policy.params as Record<string, any> | undefined,
+      requiredPermissions: (policy as any).requiredPermissions?.length
+        ? (policy as any).requiredPermissions
+        : undefined,
     };
 
     // Fetch all role definitions and delegated grants for the community and wallet
     const rawRoleDefinitions = await prismaClient.roleDefinition.findMany({
       where: { communityId },
+      include: { permissions: true },
     });
     const roleDefinitions: RoleDefinition[] = rawRoleDefinitions.map(def => ({
       id: def.id,
@@ -559,6 +568,9 @@ export function getMemberService(
       description: def.description,
       parentRoleId: def.parentRoleId,
       builtInRole: def.builtInRole as Role | null,
+      permissions: (def as any).permissions.map(
+        (entry: { permission: string }) => entry.permission,
+      ),
       createdAt: def.createdAt.toISOString(),
       updatedAt: def.updatedAt.toISOString(),
     }));
@@ -741,117 +753,16 @@ export function getMemberService(
     return !!admin;
   }
 
-  // --- Updated listMembersForAdmin with pagination & filtering ---
-  async function listMembersForAdmin(
-    communityId: string,
-    options: {
-      role?: Role;
-      status?: string;
-      page?: number;
-      limit?: number;
-    } = {},
+  function assertMemberPermission(
+    roles: { role?: string | null; active?: boolean }[] | undefined | null,
+    permission: Permission,
+    asMemberServiceError: boolean,
   ) {
-    const { role, status, page = 1, limit = 20 } = options;
-
-    // Cap limit to 100 (matching auditService pattern)
-    const safeLimit = Math.min(100, Math.max(1, limit));
-    const skip = (Math.max(1, page) - 1) * safeLimit;
-
-    // Build Prisma where clause
-    const where: Prisma.MemberWhereInput = { communityId };
-
-    // Role filter (via roles relation)
-    if (role) {
-      where.roles = {
-        some: {
-          role,
-          active: true,
-        },
-      };
+    if (hasPermission({ roles: roles ?? [] }, permission)) return;
+    if (asMemberServiceError) {
+      throw new MemberServiceError("Not authorized", 403);
     }
-
-    // Status filter (using membershipTokens relation)
-    if (status) {
-      const now = new Date();
-      switch (status) {
-        case "active":
-          where.membershipTokens = {
-            some: {
-              state: "active",
-              OR: [{ expiresAt: null }, { expiresAt: { gte: now } }],
-            },
-          };
-          break;
-        case "suspended":
-          where.membershipTokens = {
-            some: {
-              state: "suspended",
-            },
-          };
-          break;
-        case "expired":
-          where.membershipTokens = {
-            some: {
-              OR: [{ state: "expired" }, { expiresAt: { lt: now } }],
-            },
-          };
-          break;
-        case "invited":
-          where.membershipTokens = {
-            none: {},
-          };
-          break;
-        default:
-          // ignore unknown status
-          break;
-      }
-    }
-
-    // Run findMany and count in parallel
-    const [members, total] = await Promise.all([
-      prismaClient.member.findMany({
-        where,
-        include: {
-          wallet: true,
-          membership: true,
-          membershipTokens: true,
-          roles: {
-            where: { active: true },
-          },
-        },
-        orderBy: { createdAt: "desc" },
-        skip,
-        take: safeLimit,
-      }),
-      prismaClient.member.count({ where }),
-    ]);
-
-    // Map members to the expected shape (same as before)
-    const list = members.map((m: any) => {
-      const activeRoles = m.roles
-        .filter((r: any) => r.active)
-        .map((r: any) => r.role);
-      return {
-        wallet: m.wallet.address,
-        displayName: m.profile?.displayName ?? null,
-        state: getNormalizedMembershipState(
-          m.membership?.state ?? "invited",
-          m.membership?.expiresAt,
-        ),
-        roles: activeRoles,
-      };
-    });
-
-    return {
-      communityId,
-      members: list,
-      pagination: {
-        page: Math.max(1, page),
-        limit: safeLimit,
-        total,
-        totalPages: Math.ceil(total / safeLimit),
-      },
-    };
+    throw { statusCode: 403, message: "Not authorized" };
   }
 
   return {
@@ -956,18 +867,24 @@ export function getMemberService(
     async listMembersForAdmin(
       communityId: string,
       role?: Role,
-      pagination: { limit?: number; cursor?: string } = {},
+      pagination: {
+        limit?: number;
+        cursor?: string;
+        status?: MembershipState;
+      } = {},
     ) {
-      const limit = pagination.limit ?? 50;
+      const limit = Math.min(Math.max(pagination.limit ?? 50, 1), 200);
       const members = await prismaClient.member.findMany({
         where: {
           communityId,
           ...(role ? { roles: { some: { role, active: true } } } : {}),
         },
         include: { wallet: true, membership: true, roles: true, profile: true },
-        orderBy: { id: 'asc' },
+        orderBy: { id: "asc" },
         take: limit + 1,
-        ...(pagination.cursor ? { cursor: { id: pagination.cursor }, skip: 1 } : {}),
+        ...(pagination.cursor
+          ? { cursor: { id: pagination.cursor }, skip: 1 }
+          : {}),
       });
       const page = members.slice(0, limit);
       const list = page
@@ -976,6 +893,7 @@ export function getMemberService(
             .filter((r: any) => r.active)
             .map((r: any) => r.role);
           return {
+            id: m.id as string,
             wallet: m.wallet.address,
             displayName: m.profile?.displayName ?? null,
             state: getNormalizedMembershipState(
@@ -985,11 +903,14 @@ export function getMemberService(
             roles: activeRoles,
           };
         })
-        .filter((item: any) => (role ? item.roles.includes(role) : true));
+        .filter((item: any) => (role ? item.roles.includes(role) : true))
+        .filter((item: any) =>
+          pagination.status ? item.state === pagination.status : true,
+        );
       const hasMore = members.length > limit;
       return {
         communityId,
-        members: list,
+        members: list.map(({ id: _id, ...rest }) => rest),
         pagination: {
           limit,
           hasMore,
@@ -1021,10 +942,7 @@ export function getMemberService(
         where: { walletId: requester.id, communityId },
         include: { roles: true },
       });
-      const isRequesterAdmin = requesterMember?.roles.some(
-        (r) => r.role === "admin" && r.active,
-      );
-      if (!isRequesterAdmin) throw new MemberServiceError("Not authorized", 403);
+      assertMemberPermission(requesterMember?.roles, "write:roles", true);
 
       const target = await prismaClient.wallet.findUnique({
         where: { address: normaliseWallet(targetWallet) },
@@ -1110,11 +1028,7 @@ export function getMemberService(
         where: { walletId: requester.id, communityId },
         include: { roles: true },
       });
-      const isRequesterAdmin = requesterMember?.roles.some(
-        (r) => r.role === "admin" && r.active,
-      );
-      if (!isRequesterAdmin)
-        throw { statusCode: 403, message: "Not authorized" };
+      assertMemberPermission(requesterMember?.roles, "write:overrides", false);
 
       const parsedExpiresAt = expiresAt ? new Date(expiresAt) : null;
       const { wasExisting } = await prismaClient.$transaction(async (tx: any) => {
@@ -1201,11 +1115,7 @@ export function getMemberService(
         where: { walletId: requester.id, communityId },
         include: { roles: true },
       });
-      const isRequesterAdmin = requesterMember?.roles.some(
-        (r) => r.role === "admin" && r.active,
-      );
-      if (!isRequesterAdmin)
-        throw { statusCode: 403, message: "Not authorized" };
+      assertMemberPermission(requesterMember?.roles, "write:overrides", false);
 
       const existing = await prismaClient.accessOverride.findFirst({
         where: { communityId, wallet: normalizedWallet, resource },
@@ -1280,10 +1190,7 @@ export function getMemberService(
         where: { walletId: requester.id, communityId },
         include: { roles: true },
       });
-      const isRequesterAdmin = requesterMember?.roles.some(
-        (r) => r.role === "admin" && r.active,
-      );
-      if (!isRequesterAdmin) throw { statusCode: 403, message: "Not authorized" };
+      assertMemberPermission(requesterMember?.roles, "read:overrides", false);
 
       const overrides = await prismaClient.accessOverride.findMany({
         where: { communityId },
@@ -1326,10 +1233,7 @@ export function getMemberService(
         where: { walletId: requester.id, communityId },
         include: { roles: true },
       });
-      const isRequesterAdmin = requesterMember?.roles.some(
-        (r) => r.role === "admin" && r.active,
-      );
-      if (!isRequesterAdmin) throw new MemberServiceError("Not authorized", 403);
+      assertMemberPermission(requesterMember?.roles, "write:roles", true);
 
       const target = await prismaClient.wallet.findUnique({
         where: { address: normaliseWallet(targetWallet) },
@@ -1371,11 +1275,7 @@ export function getMemberService(
         where: { walletId: requester.id, communityId },
         include: { roles: true },
       });
-      const isRequesterAdmin = requesterMember?.roles.some(
-        (r) => r.role === "admin" && r.active,
-      );
-      if (!isRequesterAdmin)
-        throw new MemberServiceError("Not authorized", 403);
+      assertMemberPermission(requesterMember?.roles, "write:badges", true);
 
       const target = await prismaClient.wallet.findUnique({
         where: { address: normaliseWallet(targetWallet) },
@@ -1436,11 +1336,7 @@ export function getMemberService(
         where: { walletId: requester.id, communityId },
         include: { roles: true },
       });
-      const isRequesterAdmin = requesterMember?.roles.some(
-        (r) => r.role === "admin" && r.active,
-      );
-      if (!isRequesterAdmin)
-        throw new MemberServiceError("Not authorized", 403);
+      assertMemberPermission(requesterMember?.roles, "write:badges", true);
 
       const target = await prismaClient.wallet.findUnique({
         where: { address: normaliseWallet(targetWallet) },
@@ -1523,6 +1419,7 @@ export function getMemberService(
       resource: string,
       ruleType: string,
       params?: Record<string, unknown> | null,
+      requiredPermissions?: string[],
     ) {
       const existingPolicy = await prismaClient.accessPolicy.findUnique({
         where: {
@@ -1540,6 +1437,7 @@ export function getMemberService(
           data: {
             ruleType,
             params: params ? (params as any) : undefined,
+            requiredPermissions: requiredPermissions ?? [],
           },
         });
       } else {
@@ -1549,6 +1447,7 @@ export function getMemberService(
             resource,
             ruleType,
             params: params ? (params as any) : undefined,
+            requiredPermissions: requiredPermissions ?? [],
           },
         });
       }
@@ -1570,6 +1469,7 @@ export function getMemberService(
       return policy;
     },
 
+    isCommunityAdmin,
     bumpMembershipVersion,
     bumpRoleVersion,
     bumpPolicyVersion,

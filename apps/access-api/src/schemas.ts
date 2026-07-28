@@ -625,6 +625,12 @@ export const revokeBadgeSchema = {
 // ---------------------------------------------------------------------------
 // POST /v1/access/check
 // ---------------------------------------------------------------------------
+export interface AccessCheckBody {
+  wallet: string;
+  communityId: string;
+  resource: string;
+}
+
 export const accessCheckSchema = {
   summary: "Check whether a wallet has access to a resource in a community",
   tags: ["Access"],
@@ -774,6 +780,7 @@ export const listCommunityMembersSchema = {
   },
   querystring: {
     type: "object",
+    additionalProperties: false,
     properties: {
       role: {
         type: "string",
@@ -785,24 +792,25 @@ export const listCommunityMembersSchema = {
         enum: membershipStateEnum,
         description: "Filter members by membership status",
       },
-      page: {
-        type: "integer",
-        minimum: 1,
-        default: 1,
-        description: "Page number for pagination",
-      },
       limit: {
         type: "integer",
         minimum: 1,
-        maximum: 100,
-        default: 20,
-        description: "Number of members per page (max 100)",
+        maximum: 200,
+        default: 50,
+        description:
+          "Page size (default 50, maximum 200). Requests above 200 return 400.",
+      },
+      cursor: {
+        type: "string",
+        minLength: 1,
+        description:
+          "Opaque cursor from a previous response's pagination.nextCursor",
       },
     },
   },
   response: {
     200: {
-      description: "Paginated member list",
+      description: "Cursor-paginated member list",
       type: "object",
       required: ["communityId", "members", "pagination"],
       properties: {
@@ -824,15 +832,22 @@ export const listCommunityMembersSchema = {
         },
         pagination: {
           type: "object",
-          required: ["page", "limit", "total", "totalPages"],
+          required: ["limit", "hasMore", "nextCursor"],
           properties: {
-            page: { type: "integer" },
             limit: { type: "integer" },
-            total: { type: "integer" },
-            totalPages: { type: "integer" },
+            hasMore: { type: "boolean" },
+            nextCursor: {
+              type: "string",
+              nullable: true,
+              description: "Pass as ?cursor= on the next request when hasMore",
+            },
           },
         },
       },
+    },
+    400: {
+      description: "Invalid query parameters (e.g. limit above 200)",
+      ...errorSchema,
     },
     403: {
       description: "Forbidden — requester is not a community admin",
@@ -1442,6 +1457,15 @@ export const updateCustomPolicySchema = {
         description: 'Versioned, serializable rule tree AST',
         additionalProperties: true,
       },
+      requiredPermissions: {
+        type: 'array',
+        uniqueItems: true,
+        description: 'Granular permissions required in addition to the rule tree',
+        items: {
+          type: 'string',
+          pattern: '^[a-z][a-z0-9_-]*(?::[a-z][a-z0-9_-]*)+$',
+        },
+      },
     },
   },
   response: {
@@ -1460,6 +1484,10 @@ export const updateCustomPolicySchema = {
             resource: { type: 'string' },
             ruleType: { type: 'string' },
             params: { type: 'object', additionalProperties: true, nullable: true },
+            requiredPermissions: {
+              type: 'array',
+              items: { type: 'string' },
+            },
           },
         },
       },

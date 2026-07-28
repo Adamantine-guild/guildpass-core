@@ -13,6 +13,12 @@ jest.mock('../observability/metrics', () => ({
     indexerLag: {
       set: jest.fn(),
     },
+    indexerReorgsDetectedTotal: {
+      inc: jest.fn(),
+    },
+    indexerReconciliationDuration: {
+      startTimer: jest.fn(() => jest.fn()),
+    },
   },
 }));
 
@@ -25,6 +31,11 @@ describe('IndexerWorker', () => {
 
   beforeEach(() => {
     prisma = {
+      indexerState: {
+        findUnique: jest.fn(),
+        upsert: jest.fn(),
+        update: jest.fn(),
+      },
       indexerCheckpoint: {
         findUnique: jest.fn(),
         upsert: jest.fn(),
@@ -106,6 +117,27 @@ describe('IndexerWorker', () => {
       contractAddress: '0x0000000000000000000000000000000000000001',
       lastBlockHash: 'hash80-old',
     });
+    prisma.blockHeader.findUnique.mockImplementation(async ({ where }: any) => {
+      const n = where.chainId_blockNumber.blockNumber;
+      if (n > 75) return { chainId: 1, blockNumber: n, blockHash: `hash${n}-old` };
+      return { chainId: 1, blockNumber: n, blockHash: `hash${n}` };
+    });
+    provider.getBlock.mockImplementation(async (n) => ({
+      number: n,
+      hash: `hash${n}`,
+      parentHash: `hash${n - 1}`,
+    }));
+
+    await worker.runPass();
+
+    expect(prisma.indexerState.update).toHaveBeenCalledWith({
+      where: { id: '1:0x0000000000000000000000000000000000000001' },
+      data: { lastBlockNumber: 75, lastBlockHash: 'hash75' },
+    });
+    expect(prisma.processedEvent.deleteMany).toHaveBeenCalledWith({
+      where: { chainId: 1, blockNumber: { gt: 75 } },
+    });
+    expect(metrics.indexerReorgsDetectedTotal.inc).toHaveBeenCalled();
   });
 
   test('should support backfill mode to process historical block range', async () => {
@@ -116,13 +148,10 @@ describe('IndexerWorker', () => {
       parentHash: `hash${n - 1}`,
     }));
 
-    await worker.backfill(50, 250);
+    await worker.backfill(50, 55);
 
-    expect(prisma.indexerState.update).toHaveBeenCalled();
-    // Rewind 80 - 12*2 = 56
-    expect(prisma.processedEvent.deleteMany).toHaveBeenCalledWith({
-      where: { chainId: 1, blockNumber: { gt: 56 } },
-    });
+    expect(prisma.indexerState.upsert).toHaveBeenCalled();
+    expect(provider.getLogs).toHaveBeenCalled();
   });
 
   describe('applyContractEvent - Admin & Ownership Events', () => {

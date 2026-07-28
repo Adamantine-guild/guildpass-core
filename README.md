@@ -102,7 +102,7 @@ The GuildPass Access API follows a strict versioning and compatibility contract 
 | GET | `/v1/memberships/:wallet` | Membership status summary by wallet |
 | GET | `/v1/members/:wallet` | Member profile (with membership and roles) |
 | POST | `/v1/access/check` | Access decision for `{ wallet, communityId, resource }` (schema-validated; per-IP/API-key and per-wallet rate limits return `429` + `Retry-After`) |
-| GET | `/v1/communities/:communityId/members` | Admin member listing |
+| GET | `/v1/communities/:communityId/members` | Admin member listing (cursor pagination: `limit` default 50 / max 200, `cursor`, optional `role` / `status`) |
 
 Responses include `allowed`/`denied` plus human-readable and machine-readable reasons.
 
@@ -223,7 +223,10 @@ worker.start();
 `createWebhookHandler` (`apps/access-api/src/handlers/webhookHandler.ts`) is a
 ready-to-use `OutboxEventHandler` that delivers events as signed HTTP
 webhooks to every active `WebhookSubscription` registered for a community,
-filtered by event type:
+filtered by event type.
+
+Enable it in the process entrypoint with `OUTBOX_WEBHOOK_ENABLED=true` (see
+`.env.example`), or wire it manually:
 
 ```typescript
 import { createOutboxWorker } from './workers/outboxWorker';
@@ -264,7 +267,9 @@ To verify a webhook on the receiving side:
 `verifyWebhookSignature` in `webhookHandler.ts` is a reference
 implementation of steps 1–2 (nonce tracking is necessarily your
 application's responsibility, since it requires storage this library
-doesn't own).
+doesn't own). A frozen HMAC test vector for consumer implementations is
+documented in `docs/webhook-signature-verification.md` and asserted in
+`apps/access-api/src/handlers/webhookHandler.test.ts`.
 
 If **any** subscription delivery for an event fails (non-2xx response,
 timeout, network error), the whole event is re-queued through the outbox's
@@ -283,6 +288,8 @@ manually retriable via:
 | ------ | ---- | ----------- |
 | GET | `/v1/communities/:communityId/dead-letter-events` | List dead-lettered events for a community, optionally filtered by `?status=` |
 | POST | `/v1/communities/:communityId/dead-letter-events/:id/retry` | Re-enqueue a dead-lettered event as a fresh pending `OutboxEvent` |
+| GET | `/v1/communities/:communityId/outbox/failed` | Alias of the list endpoint (defaults to `status=pending`) |
+| POST | `/v1/communities/:communityId/outbox/:id/retry` | Alias of the retry endpoint |
 
 ### Observability
 
@@ -474,7 +481,7 @@ GuildPass supports deploying and indexing `MembershipNFT` contracts across multi
 
 ## Deferred Areas (Intentionally Not Implemented)
 
-- Advanced governance permissions
+- Advanced governance permissions (implemented; see `docs/governance-permissions.md`)
 - Rich reward distribution and advanced streak logic
 - Full event attendance ingestion
 - Multi-chain support (implemented: EVM multi-chain enabled per community)
