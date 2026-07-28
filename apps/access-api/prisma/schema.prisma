@@ -783,6 +783,38 @@ model StreakRewardHistory {
   @@unique([walletId, communityId, ruleId])
 }
 
+model RewardLedger {
+  id            String   @id @default(uuid())
+  walletId      String
+  communityId   String
+  rewardType    String
+  amount        Int?
+  metadata      Json?
+  ruleId        String?
+  sourceEventId String
+  grantedAt     DateTime @default(now())
+
+  @@unique([walletId, communityId, rewardType, sourceEventId])
+  @@index([walletId, communityId, grantedAt])
+  @@map("reward_ledger")
+}
+
+model RewardStreakState {
+  id              String   @id @default(uuid())
+  walletId        String
+  communityId     String
+  period          String
+  currentStreak   Int      @default(0)
+  longestStreak   Int      @default(0)
+  lastPeriodKey   String?
+  lastActivityAt  DateTime
+  updatedAt       DateTime @updatedAt
+
+  @@unique([walletId, communityId, period])
+  @@index([walletId, communityId])
+  @@map("reward_streak_state")
+}
+
 model AttendanceRecord {
   id          String   @id @default(uuid())
   walletId    String
@@ -867,4 +899,3 @@ model ConstitutionalRuleSet {
   @@index([communityId])
   @@index([communityId, active])
 }
-

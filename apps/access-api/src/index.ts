@@ -15,6 +15,8 @@ import { createOnChainReconciliationWorker, OnChainViewProvider } from './worker
 import { createContributionScoreHandler } from './handlers/contributionScoreHandler';
 import { createWebhookHandler } from './handlers/webhookHandler';
 import type { OutboxEventHandler } from './workers/outboxWorker';
+import { createRewardEventHandler } from './services/rewardEngineService';
+import { getPrisma } from './services/prisma';
 
 async function main() {
   const app = await buildApp();
@@ -23,6 +25,7 @@ async function main() {
   worker.start();
 
   const contributionHandler = createContributionScoreHandler();
+  const rewardHandler = createRewardEventHandler({ db: getPrisma() });
   // Opt-in webhook delivery (#243). When enabled, both handlers run for each
   // event: contribution scoring first, then HMAC-signed webhook fan-out.
   // Webhook failures throw and drive the existing outbox retry/backoff.
@@ -30,11 +33,15 @@ async function main() {
     ? createWebhookHandler()
     : null;
   const outboxHandler: OutboxEventHandler = webhookHandler
-    ? async (event) => {
+      ? async (event) => {
+        await rewardHandler(event);
         await contributionHandler(event);
         await webhookHandler(event);
       }
-    : contributionHandler;
+    : async (event) => {
+        await rewardHandler(event);
+        await contributionHandler(event);
+      };
 
   const outboxWorker = createOutboxWorker({
     intervalMs: config.outboxWorkerIntervalMs,

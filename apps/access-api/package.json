@@ -32,6 +32,7 @@
     "@guildpass/contribution-engine": "workspace:*",
     "@guildpass/governance-engine": "workspace:*",
     "@guildpass/policy-engine": "workspace:*",
+    "@guildpass/reward-engine": "workspace:*",
     "@guildpass/shared-types": "workspace:*",
     "@prisma/client": "^5.22.0",
     "ethers": "^6.17.0",
