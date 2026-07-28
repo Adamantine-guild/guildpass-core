@@ -36,7 +36,10 @@ export type {
   DecodedOwnershipTransferredEvent,
 };
 
-import { invalidateMembershipsCache } from './memberService';
+import {
+  bumpMembershipVersion,
+  invalidateMembershipsCache,
+} from './memberService';
 
 /**
  * Validates that required fields exist in an event
@@ -279,6 +282,11 @@ export async function applyContractEvent(
           nextRetryAt: new Date(),
         },
       });
+
+      // MembershipMinted changes the inputs to every access decision in this
+      // community. Bump the version inside the transaction so a cache failure
+      // rolls back the database write and the indexer can retry the event.
+      await bumpMembershipVersion(event.communityId);
     } else if (event.type === 'MembershipRenewed') {
       const token = await tx.membershipToken.findUnique({
         where: {
@@ -368,6 +376,9 @@ export async function applyContractEvent(
           nextRetryAt: new Date(),
         },
       });
+
+      // Renewal changes the membership state used by cached access decisions.
+      await bumpMembershipVersion(token.member.communityId);
     } else if (event.type === 'MembershipSuspended') {
       const token = await tx.membershipToken.findUnique({
         where: {
@@ -453,6 +464,10 @@ export async function applyContractEvent(
           nextRetryAt: new Date(),
         },
       });
+
+      // Suspension (and the corresponding unsuspension event) changes access
+      // eligibility, so invalidate decisions before the transaction commits.
+      await bumpMembershipVersion(token.member.communityId);
     } else if (event.type === 'AdminUpdated') {
       const adminAddress = event.admin.toLowerCase();
 

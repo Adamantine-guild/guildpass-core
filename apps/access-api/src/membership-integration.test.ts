@@ -327,6 +327,47 @@ describe('Membership Integration: Contract Events → API Access', () => {
       expect(result.membershipState).toBe('suspended');
     });
 
+    test('should not serve a cached ALLOW after suspension', async () => {
+      const event = testFixtures.suspendedMembership.event;
+      const suspendedEvent = testFixtures.suspendedMembership.suspendedEvent;
+
+      await applyContractEvent(prisma, event);
+      await prisma.accessPolicy.create({
+        data: {
+          communityId: event.communityId,
+          resource: 'dashboard',
+          ruleType: 'MEMBERS_ONLY',
+        },
+      });
+
+      const allowedBeforeSuspension = await app.inject({
+        method: 'POST',
+        url: '/v1/access/check',
+        payload: {
+          wallet: event.to,
+          communityId: event.communityId,
+          resource: 'dashboard',
+        },
+      });
+      expect(JSON.parse(allowedBeforeSuspension.body).allowed).toBe(true);
+
+      await applyContractEvent(prisma, suspendedEvent);
+
+      const deniedAfterSuspension = await app.inject({
+        method: 'POST',
+        url: '/v1/access/check',
+        payload: {
+          wallet: event.to,
+          communityId: event.communityId,
+          resource: 'dashboard',
+        },
+      });
+      const result = JSON.parse(deniedAfterSuspension.body);
+      expect(result.allowed).toBe(false);
+      expect(result.code).toBe('DENY');
+      expect(result.membershipState).toBe('suspended');
+    });
+
     test('should report suspended state in memberships list', async () => {
       const event = testFixtures.suspendedMembership.event;
       const suspendedEvent = testFixtures.suspendedMembership.suspendedEvent;
