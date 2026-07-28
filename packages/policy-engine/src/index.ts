@@ -1,16 +1,11 @@
 import {
   AccessDecision,
   AccessPolicy,
-  AccessOverride,
-  DecisionReason,
   RoleContext,
-  Role,
   RoleDefinition,
   DelegatedGrant,
 } from "@guildpass/shared-types";
-import { resolveEffectiveRoles as originalResolveEffectiveRoles } from "./roles";
 import {
-  PolicyRulePlugin,
   PolicyRulePluginRegistry,
 } from "./types";
 import {
@@ -22,7 +17,6 @@ import {
 import { PolicyEngine, createDefaultEngine } from "./engine";
 import {
   ValidationProvider,
-  PermissionProvider,
   FallbackProvider,
   RegistryRuleProvider,
 } from "./providers";

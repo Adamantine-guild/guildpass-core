@@ -76,18 +76,6 @@ function resolveRef(
     : undefined;
 }
 
-function resolveSchema(
-  schema: JsonSchema | undefined,
-  root: ContractSnapshot,
-): JsonSchema {
-  if (!schema) return {};
-  const ref = schema['$ref'];
-  if (typeof ref === 'string') {
-    return resolveRef(ref, root) ?? {};
-  }
-  return schema;
-}
-
 /**
  * Recursively resolve all $ref pointers inside a schema so we get a fully
  * inlined version for comparison.  Handles nested `items`, `properties`,

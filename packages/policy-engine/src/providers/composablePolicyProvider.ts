@@ -1,6 +1,6 @@
 import type { RuleTree } from "@guildpass/shared-types";
 import type { RuleProvider, EvaluationContext, EvaluationResult } from "../types";
-import { validateRuleTree, getLegacyRuleTemplate } from "../ruleGrammar";
+import { validateRuleTree } from "../ruleGrammar";
 import { evaluateRuleTree } from "../ruleEvaluator";
 
 /**

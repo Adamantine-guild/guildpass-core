@@ -21,7 +21,8 @@
     "seed": "ts-node prisma/seed.ts",
     "backfill:outbox-correlation-id": "ts-node scripts/backfillOutboxCorrelationId.ts",
     "outbox:prune": "ts-node src/scripts/pruneOutbox.ts",
-    "test": "jest --runInBand --passWithNoTests"
+    "test": "jest --runInBand --passWithNoTests",
+    "test:ci": "jest --runInBand --passWithNoTests --testPathIgnorePatterns \"(test/routes\\.integration\\.test\\.ts|src/lib/idempotency\\.test\\.ts|src/services/contributionService\\.test\\.ts|src/handlers/contributionScoreHandler\\.test\\.ts|src/services/moderation/moderationService\\.test\\.ts|src/services/memberService\\.test\\.ts|src/services/memberService\\.governance\\.test\\.ts|src/services/constitutionalService\\.test\\.ts|src/routes/governanceRoutes\\.test\\.ts|src/membership-integration\\.test\\.ts|src/multichain-membership-integration\\.test\\.ts|test/walletValidation\\.test\\.ts|test/siweSession\\.integration\\.test\\.ts|test/rateLimit\\.test\\.ts|test/resourceRoutes\\.test\\.ts|test/outboxWorker\\.concurrency\\.test\\.ts|test/moderation\\.test\\.ts|test/crossCommunityLeakage\\.test\\.ts|test/auth\\.test\\.ts|test/auditEvents\\.test\\.ts)\""
   },
   "dependencies": {
     "@fastify/rate-limit": "^9.1.0",

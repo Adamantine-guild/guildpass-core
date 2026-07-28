@@ -3,7 +3,6 @@
  */
 
 import {
-  ConstitutionalRule,
   ConstitutionalRuleSet,
   EvaluationResult,
   EvaluationTrace,

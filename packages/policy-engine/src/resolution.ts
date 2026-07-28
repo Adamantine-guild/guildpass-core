@@ -6,7 +6,7 @@
  */
 
 import type { EvaluationResult, ResolutionConfig } from './types';
-import type { AccessDecision, DecisionReason } from '@guildpass/shared-types';
+import type { DecisionReason } from '@guildpass/shared-types';
 
 /**
  * Default resolution configuration
@@ -35,8 +35,6 @@ export function resolveConflicts(
   // Separate results by decision type
   const denies = results.filter(r => r.result === 'DENY');
   const allows = results.filter(r => r.result === 'ALLOW');
-  const abstains = results.filter(r => r.result === 'ABSTAIN');
-
   // Strategy 1: Deny overrides allow (if configured)
   if (config.denyOverridesAllow && denies.length > 0) {
     const denyExplanations = denies.map(r => r.explanation).join('; ');

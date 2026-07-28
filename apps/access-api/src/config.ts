@@ -120,6 +120,16 @@ const ConfigSchema = z.object({
     .int()
     .nonnegative()
     .optional(),
+  onChainReconciliationIntervalMs: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(300_000),
+  onChainReconciliationSampleSize: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(50),
   membershipChainConfigs: z
     .string()
     .optional()
@@ -231,6 +241,10 @@ function validateConfig(): Config {
       process.env.CONFIRMATION_BLOCKS,
     indexerConfirmationDepth:
       process.env.INDEXER_CONFIRMATION_DEPTH ?? process.env.CONFIRMATION_BLOCKS,
+    onChainReconciliationIntervalMs:
+      process.env.ON_CHAIN_RECONCILIATION_INTERVAL_MS,
+    onChainReconciliationSampleSize:
+      process.env.ON_CHAIN_RECONCILIATION_SAMPLE_SIZE,
     membershipChainConfigs: process.env.MEMBERSHIP_CHAIN_CONFIGS,
     rateLimitEnabled: process.env.RATE_LIMIT_ENABLED,
     rateLimitWindowMs: process.env.RATE_LIMIT_WINDOW_MS,

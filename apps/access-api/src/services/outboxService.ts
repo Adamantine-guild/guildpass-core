@@ -217,6 +217,7 @@ export interface ClaimedOutboxEvent {
   communityId: string | null;
   payload: unknown;
   createdAt: Date;
+  correlationId: string | null;
 }
 
 /**
@@ -270,7 +271,7 @@ export async function claimPendingOutboxEvents(
       LIMIT ${limit}
       FOR UPDATE SKIP LOCKED
     )
-    RETURNING id, "eventType", "entityId", "entityType", "communityId", "payload", "createdAt";
+    RETURNING id, "eventType", "entityId", "entityType", "communityId", "payload", "createdAt", "correlationId";
   `;
 
   return claimed.sort((a, b) => {

@@ -972,7 +972,7 @@ describe("getMemberService - Membership State Normalization", () => {
 
       await expect(
         memberService.assignMemberRole({
-          requesterWallet: '',
+          requesterWallet: '0x0000000000000000000000000000000000000000',
           communityId: 'community-1',
           targetWallet: '0x2222222222222222222222222222222222222222',
           role: 'admin',
@@ -980,7 +980,7 @@ describe("getMemberService - Membership State Normalization", () => {
       ).rejects.toBeInstanceOf(MemberServiceError);
       await expect(
         memberService.assignMemberRole({
-          requesterWallet: '',
+          requesterWallet: '0x0000000000000000000000000000000000000000',
           communityId: 'community-1',
           targetWallet: '0x2222222222222222222222222222222222222222',
           role: 'admin',
@@ -1095,7 +1095,7 @@ describe("getMemberService - Membership State Normalization", () => {
 
       await expect(
         memberService.removeMemberRole({
-          requesterWallet: '',
+          requesterWallet: '0x0000000000000000000000000000000000000000',
           communityId: 'community-1',
           targetWallet: '0x2222222222222222222222222222222222222222',
           role: 'admin',

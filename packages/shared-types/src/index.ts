@@ -37,7 +37,7 @@ export interface DelegatedGrant {
   granterWalletId: string;
   granteeWalletId: string;
   roles: string[];
-  scope?: Record<string, any> | null;
+  scope?: Record<string, unknown> | null;
   expiresAt?: string | null;
   revokedAt?: string | null;
   revokedBy?: string | null;
@@ -386,8 +386,8 @@ export type AuditEventDto = {
   policyRule?: string | null;
   decision?: string | null;
   reasonCode?: string | null;
-  beforeState?: any | null;
-  afterState?: any | null;
+  beforeState?: Record<string, unknown> | null;
+  afterState?: Record<string, unknown> | null;
   createdAt?: string; // ISO datetime
 };
 
