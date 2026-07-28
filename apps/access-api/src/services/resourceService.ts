@@ -1,5 +1,6 @@
 import type { PrismaClient } from '@prisma/client';
 import { logOutboxEventTx } from './outboxService';
+import { requirePermission } from '../lib/auth/permissions';
 
 
 export class ResourceServiceError extends Error {
@@ -55,9 +56,12 @@ export type ArchiveResourceInput = {
 export function getResourceService(prisma: PrismaClient) {
   const db = prisma;
 
-  // Minimal auth helper: validate requester is an ACTIVE community admin.
-  // We intentionally avoid importing memberService here to prevent circular deps.
-  async function assertRequesterIsAdmin(communityId: string, requesterWallet: string) {
+  // Shared scoped-permission check (#145). Avoids importing memberService (circular deps).
+  async function assertRequesterPermission(
+    communityId: string,
+    requesterWallet: string,
+    permission: 'write:resources',
+  ) {
     const normalizedRequester = requesterWallet.trim().toLowerCase();
     const requesterWalletRecord = await db.wallet.findUnique({
       where: { address: normalizedRequester },
@@ -75,10 +79,9 @@ export function getResourceService(prisma: PrismaClient) {
       include: { roles: true },
     });
 
-    const isAdmin =
-      requesterMember?.roles?.some((r: any) => r.active && r.role === 'admin') ?? false;
-
-    if (!isAdmin) {
+    try {
+      requirePermission({ roles: requesterMember?.roles ?? [] }, permission);
+    } catch {
       throw new ResourceServiceError('Forbidden', 403);
     }
   }
@@ -139,7 +142,7 @@ export function getResourceService(prisma: PrismaClient) {
         throw new ResourceServiceError('Unauthorized', 401);
       }
 
-      await assertRequesterIsAdmin(normalizedCommunityId, input.requesterWallet);
+      await assertRequesterPermission(normalizedCommunityId, input.requesterWallet, 'write:resources');
 
       const existing = await db.resource.findUnique({
         where: {
@@ -256,7 +259,7 @@ export function getResourceService(prisma: PrismaClient) {
       if (!input.requesterWallet || input.requesterWallet.trim().length === 0) {
         throw new ResourceServiceError('Unauthorized', 401);
       }
-      await assertRequesterIsAdmin(normalizedCommunityId, input.requesterWallet);
+      await assertRequesterPermission(normalizedCommunityId, input.requesterWallet, 'write:resources');
 
       const existing = await db.resource.findUnique({
         where: {
@@ -330,7 +333,7 @@ export function getResourceService(prisma: PrismaClient) {
       if (!input.requesterWallet || input.requesterWallet.trim().length === 0) {
         throw new ResourceServiceError('Unauthorized', 401);
       }
-      await assertRequesterIsAdmin(normalizedCommunityId, input.requesterWallet);
+      await assertRequesterPermission(normalizedCommunityId, input.requesterWallet, 'write:resources');
 
       const existing = await db.resource.findUnique({
         where: {

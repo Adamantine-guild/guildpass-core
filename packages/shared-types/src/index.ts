@@ -464,3 +464,4 @@ export interface DeadLetterEventDto {
 }
 
 export * from "./apiContract";
+export * from "./permissions";
