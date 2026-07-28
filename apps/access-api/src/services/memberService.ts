@@ -60,6 +60,19 @@ export class MemberServiceError extends Error {
   }
 }
 
+function parseExpiresAt(value: string | null | undefined): Date | null {
+  if (!value) return null;
+
+  const expiresAt = new Date(value);
+  if (Number.isNaN(expiresAt.getTime())) {
+    throw new MemberServiceError("Invalid expiresAt", 400);
+  }
+  if (expiresAt.getTime() <= Date.now()) {
+    throw new MemberServiceError("expiresAt must be in the future", 400);
+  }
+
+  return expiresAt;
+}
 // normaliseWallet is imported from ../lib/wallet — single shared source (#173).
 
 function getNormalizedMembershipState(
@@ -1018,6 +1031,7 @@ export function getMemberService(
       ) {
         throw { statusCode: 400, message: "Invalid override payload" };
       }
+      const parsedExpiresAt = parseExpiresAt(expiresAt);
 
       const requester = await prismaClient.wallet.findUnique({
         where: { address: normalizedRequesterWallet },
@@ -1030,7 +1044,6 @@ export function getMemberService(
       });
       assertMemberPermission(requesterMember?.roles, "write:overrides", false);
 
-      const parsedExpiresAt = expiresAt ? new Date(expiresAt) : null;
       const { wasExisting } = await prismaClient.$transaction(async (tx: any) => {
         await validateAndEvaluateMutation(tx, {
           action: "OVERRIDE_CREATE",
