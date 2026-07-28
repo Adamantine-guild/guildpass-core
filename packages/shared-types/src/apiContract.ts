@@ -207,3 +207,26 @@ export interface ApiErrorResponse {
     details?: string | Record<string, unknown>;
   };
 }
+
+app.setErrorHandler((error, request, reply) => {
+  const statusCode = error.statusCode || 500;
+
+  // Map Fastify and HTTP errors to your strict ApiErrorCode literal types
+  let apiCode = 'INTERNAL_ERROR';
+  if (error.code && typeof error.code === 'string') apiCode = error.code;
+  if (statusCode === 429) apiCode = 'RATE_LIMITED';
+  if (statusCode === 400 || error.validation) apiCode = 'VALIDATION_ERROR';
+  if (statusCode === 404) apiCode = 'NOT_FOUND';
+  if (statusCode === 401) apiCode = 'UNAUTHORIZED';
+  if (statusCode === 403) apiCode = 'FORBIDDEN';
+  if (statusCode === 409) apiCode = 'CONFLICT';
+
+  // Return the strictly nested ApiErrorResponse shape
+  return reply.status(statusCode).send({
+    error: {
+      code: apiCode,
+      message: error.message,
+      details: error.validation || undefined
+    }
+  });
+});
