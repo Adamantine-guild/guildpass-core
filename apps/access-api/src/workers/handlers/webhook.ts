@@ -1,3 +1,20 @@
+/**
+ * DEPRECATED — do not use for new integrations.
+ *
+ * This module implements an older single-URL webhook outbox handler whose
+ * signature string is `${timestamp}.${body}` (no nonce). The production
+ * reference implementation is:
+ *
+ *   apps/access-api/src/handlers/webhookHandler.ts
+ *     createWebhookHandler / signWebhookPayload / verifyWebhookSignature
+ *
+ * That handler fans out to per-community `WebhookSubscription` rows and signs
+ * with `${timestamp}.${nonce}.${body}` (see docs/webhook-signature-verification.md).
+ * Prefer `OUTBOX_WEBHOOK_ENABLED=true` or wiring `createWebhookHandler()` directly.
+ *
+ * Kept temporarily for existing unit tests of the legacy single-URL shape.
+ */
+
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { OutboxEventHandler } from "../../workers/outboxWorker";
 

@@ -83,6 +83,25 @@ const ConfigSchema = z.object({
     .int()
     .positive()
     .default(5),
+  // Stable identity for this process in claim leases (`claimedBy`) and
+  // Prometheus `worker_id` labels. Defaults to a random UUID per process
+  // start when unset — set explicitly in multi-instance fleets so metrics
+  // and DB claims are attributable to a known pod/hostname.
+  outboxWorkerId: z.preprocess(
+    (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+    z.string().min(1).optional(),
+  ),
+
+  // When true, the process outbox worker also runs createWebhookHandler
+  // (HMAC-signed HTTP delivery to WebhookSubscription rows) after the
+  // contribution-score handler. Default false keeps the historical
+  // contribution-only wiring; enable explicitly in environments that have
+  // registered webhook subscriptions (issue #243).
+  outboxWebhookEnabled: z
+    .string()
+    .optional()
+    .transform((v) => v === 'true')
+    .default('false'),
 
   // Indexer worker
   indexerIntervalMs: z.coerce
@@ -196,6 +215,8 @@ function validateConfig(): Config {
     outboxWorkerClaimLeaseMs: process.env.OUTBOX_WORKER_CLAIM_LEASE_MS,
     outboxWorkerCount: process.env.OUTBOX_WORKER_COUNT,
     outboxWorkerMinBatchSize: process.env.OUTBOX_WORKER_MIN_BATCH_SIZE,
+    outboxWorkerId: process.env.OUTBOX_WORKER_ID,
+    outboxWebhookEnabled: process.env.OUTBOX_WEBHOOK_ENABLED,
     indexerIntervalMs: process.env.INDEXER_INTERVAL_MS,
     indexerFinalityWindow: process.env.INDEXER_FINALITY_WINDOW,
     membershipChainConfigs: process.env.MEMBERSHIP_CHAIN_CONFIGS,

@@ -5,15 +5,21 @@ datasource db {
 }
 
 model Community {
-  id            String            @id
-  name          String
-  chainConfigId String?
-  chainConfig   ChainConfig?      @relation(fields: [chainConfigId], references: [id])
-  members       Member[]
-  policies    AccessPolicy[]
-  resources   Resource[]
-  overrides   AccessOverride[]
-  createdAt     DateTime          @default(now())
+  id                     String                   @id
+  name                   String
+  chainConfigId          String?
+  chainConfig            ChainConfig?             @relation(fields: [chainConfigId], references: [id])
+  members                Member[]
+  policies               AccessPolicy[]
+  resources              Resource[]
+  overrides              AccessOverride[]
+  communityContracts     CommunityContract[]
+  roleDefinitions        RoleDefinition[]
+  delegatedGrants        DelegatedGrant[]
+  governanceRules        GovernanceRule[]
+  constitutionalRuleSets ConstitutionalRuleSet[]
+  suspensionAppeals      SuspensionAppeal[]
+  createdAt              DateTime                 @default(now())
 
   @@index([chainConfigId])
 }
@@ -104,6 +110,7 @@ model Member {
   roles            RoleAssignment[]
   badges           Badge[]
   appeals          Appeal[]
+  suspensionAppeals SuspensionAppeal[]
   createdAt        DateTime          @default(now())
 
   @@unique([communityId, walletId])
@@ -117,15 +124,18 @@ enum MembershipState {
 }
 
 model Membership {
-  id        String          @id @default(cuid())
-  memberId  String          @unique
-  tokenId   Int?
-  chainId   Int?
-  state     MembershipState
-  expiresAt DateTime?
-  renewedAt DateTime?
-  createdAt DateTime        @default(now())
-  member    Member          @relation(fields: [memberId], references: [id])
+  id            String           @id @default(cuid())
+  memberId      String           @unique
+  tokenId       Int?
+  chainId       Int?
+  state         MembershipState
+  expiresAt     DateTime?
+  renewedAt     DateTime?
+  createdAt     DateTime         @default(now())
+  member        Member           @relation(fields: [memberId], references: [id])
+  activeTokenId String?          @unique
+  activeToken   MembershipToken? @relation("ActiveToken", fields: [activeTokenId], references: [id])
+}
 
 model MembershipToken {
   id              String          @id @default(cuid())
@@ -359,10 +369,6 @@ model OutboxEvent {
   entityId      String? // ID of the entity that changed (memberId, resourceId, etc.)
   entityType    String? // e.g. "Member", "RoleAssignment", "Resource", "AccessPolicy"
   communityId   String? // community context
-  chainId       Int?
-  txHash        String?
-  blockNumber   Int?
-  logIndex      Int?
   // Groups outbox events emitted by the same originating request/mutation so
   // consumers can correlate related events (e.g. a role change plus its
   // downstream access re-evaluation). Nullable additive column — see the
@@ -666,6 +672,39 @@ model Appeal {
   member       Member       @relation(fields: [memberId], references: [id])
 }
 
+/// Suspension appeal workflow (#249).
+/// State machine: pending → approved | denied (terminal). One pending appeal
+/// per suspended membership. Access remains denied while status is pending
+/// (and until on-chain unsuspend is ingested after approval).
+enum SuspensionAppealStatus {
+  pending
+  approved
+  denied
+}
+
+model SuspensionAppeal {
+  id                String                 @id @default(cuid())
+  membershipId      String
+  memberId          String
+  wallet            String
+  communityId       String
+  memberStatement   String
+  status            SuspensionAppealStatus @default(pending)
+  submittedAt       DateTime               @default(now())
+  reviewerId        String?
+  reviewedAt        DateTime?
+  reviewerRationale String?
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+
+  member            Member                 @relation(fields: [memberId], references: [id])
+  community         Community              @relation(fields: [communityId], references: [id])
+
+  @@index([communityId, status, submittedAt])
+  @@index([memberId, status])
+  @@index([wallet, communityId])
+}
+
 model IndexerCheckpoint {
   chainId                  Int
   contractAddress          String   @default("0x0000000000000000000000000000000000000000")
@@ -773,8 +812,6 @@ model ConstitutionalRuleSet {
   @@index([communityId])
   @@index([communityId, active])
 }
-
-
 
 
 

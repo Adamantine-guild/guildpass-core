@@ -19,6 +19,7 @@ import {
   WalletAddress,
   RoleDefinition,
   DelegatedGrant,
+  MembershipState,
 } from "@guildpass/shared-types";
 import {
   createDefaultEngine,
@@ -345,7 +346,7 @@ export function getMemberService(
     });
 
     const cached = await cacheService.getJSON<any>(cacheKey);
-    if (cached) return cached as unknown as AccessDecision;
+    if (cached) return cached.value as unknown as AccessDecision;
 
     // Aggregate state from ALL linked wallets (primary + secondaries)
     // 1. Get all wallets
@@ -633,7 +634,21 @@ export function getMemberService(
         membershipState: auditMembershipSnapshot,
         roleState: allAssignments,
       });
-      await cacheService.setJSON(cacheKey, decision, decisionTtlSeconds);
+
+      // optimistic version re-check before cache write, skip write on any mismatch, no snapshot isolation attempted
+      // This is chosen because the system already treats cache failures as non-fatal.
+      const currentVersions = await getVersionedKeyParts(communityId);
+      const isConsistent =
+        versions.membershipVersion === currentVersions.membershipVersion &&
+        versions.roleVersion === currentVersions.roleVersion &&
+        versions.policyVersion === currentVersions.policyVersion &&
+        versions.resourceVersion === currentVersions.resourceVersion &&
+        versions.overrideVersion === currentVersions.overrideVersion &&
+        versions.delegationVersion === currentVersions.delegationVersion;
+
+      if (isConsistent) {
+        await cacheService.setJSON(cacheKey, decision, decisionTtlSeconds);
+      }
       return decision;
     }
 
@@ -688,7 +703,20 @@ export function getMemberService(
       roleState: allAssignments,
     });
 
-    await cacheService.setJSON(cacheKey, decision, decisionTtlSeconds);
+    // optimistic version re-check before cache write, skip write on any mismatch, no snapshot isolation attempted
+    // This is chosen because the system already treats cache failures as non-fatal.
+    const currentVersions = await getVersionedKeyParts(communityId);
+    const isConsistent =
+      versions.membershipVersion === currentVersions.membershipVersion &&
+      versions.roleVersion === currentVersions.roleVersion &&
+      versions.policyVersion === currentVersions.policyVersion &&
+      versions.resourceVersion === currentVersions.resourceVersion &&
+      versions.overrideVersion === currentVersions.overrideVersion &&
+      versions.delegationVersion === currentVersions.delegationVersion;
+
+    if (isConsistent) {
+      await cacheService.setJSON(cacheKey, decision, decisionTtlSeconds);
+    }
 
     return decision;
   }
@@ -712,119 +740,6 @@ export function getMemberService(
       },
     });
     return !!admin;
-  }
-
-  // --- Updated listMembersForAdmin with pagination & filtering ---
-  async function listMembersForAdmin(
-    communityId: string,
-    options: {
-      role?: Role;
-      status?: string;
-      page?: number;
-      limit?: number;
-    } = {},
-  ) {
-    const { role, status, page = 1, limit = 20 } = options;
-
-    // Cap limit to 100 (matching auditService pattern)
-    const safeLimit = Math.min(100, Math.max(1, limit));
-    const skip = (Math.max(1, page) - 1) * safeLimit;
-
-    // Build Prisma where clause
-    const where: Prisma.MemberWhereInput = { communityId };
-
-    // Role filter (via roles relation)
-    if (role) {
-      where.roles = {
-        some: {
-          role,
-          active: true,
-        },
-      };
-    }
-
-    // Status filter (using membershipTokens relation)
-    if (status) {
-      const now = new Date();
-      switch (status) {
-        case "active":
-          where.membershipTokens = {
-            some: {
-              state: "active",
-              OR: [{ expiresAt: null }, { expiresAt: { gte: now } }],
-            },
-          };
-          break;
-        case "suspended":
-          where.membershipTokens = {
-            some: {
-              state: "suspended",
-            },
-          };
-          break;
-        case "expired":
-          where.membershipTokens = {
-            some: {
-              OR: [{ state: "expired" }, { expiresAt: { lt: now } }],
-            },
-          };
-          break;
-        case "invited":
-          where.membershipTokens = {
-            none: {},
-          };
-          break;
-        default:
-          // ignore unknown status
-          break;
-      }
-    }
-
-    // Run findMany and count in parallel
-    const [members, total] = await Promise.all([
-      prismaClient.member.findMany({
-        where,
-        include: {
-          wallet: true,
-          membership: true,
-          membershipTokens: true,
-          roles: {
-            where: { active: true },
-          },
-        },
-        orderBy: { createdAt: "desc" },
-        skip,
-        take: safeLimit,
-      }),
-      prismaClient.member.count({ where }),
-    ]);
-
-    // Map members to the expected shape (same as before)
-    const list = members.map((m: any) => {
-      const activeRoles = m.roles
-        .filter((r: any) => r.active)
-        .map((r: any) => r.role);
-      return {
-        wallet: m.wallet.address,
-        displayName: m.profile?.displayName ?? null,
-        state: getNormalizedMembershipState(
-          m.membership?.state ?? "invited",
-          m.membership?.expiresAt,
-        ),
-        roles: activeRoles,
-      };
-    });
-
-    return {
-      communityId,
-      members: list,
-      pagination: {
-        page: Math.max(1, page),
-        limit: safeLimit,
-        total,
-        totalPages: Math.ceil(total / safeLimit),
-      },
-    };
   }
 
   return {
@@ -929,18 +844,24 @@ export function getMemberService(
     async listMembersForAdmin(
       communityId: string,
       role?: Role,
-      pagination: { limit?: number; cursor?: string } = {},
+      pagination: {
+        limit?: number;
+        cursor?: string;
+        status?: MembershipState;
+      } = {},
     ) {
-      const limit = pagination.limit ?? 50;
+      const limit = Math.min(Math.max(pagination.limit ?? 50, 1), 200);
       const members = await prismaClient.member.findMany({
         where: {
           communityId,
           ...(role ? { roles: { some: { role, active: true } } } : {}),
         },
         include: { wallet: true, membership: true, roles: true, profile: true },
-        orderBy: { id: 'asc' },
+        orderBy: { id: "asc" },
         take: limit + 1,
-        ...(pagination.cursor ? { cursor: { id: pagination.cursor }, skip: 1 } : {}),
+        ...(pagination.cursor
+          ? { cursor: { id: pagination.cursor }, skip: 1 }
+          : {}),
       });
       const page = members.slice(0, limit);
       const list = page
@@ -949,6 +870,7 @@ export function getMemberService(
             .filter((r: any) => r.active)
             .map((r: any) => r.role);
           return {
+            id: m.id as string,
             wallet: m.wallet.address,
             displayName: m.profile?.displayName ?? null,
             state: getNormalizedMembershipState(
@@ -958,11 +880,14 @@ export function getMemberService(
             roles: activeRoles,
           };
         })
-        .filter((item: any) => (role ? item.roles.includes(role) : true));
+        .filter((item: any) => (role ? item.roles.includes(role) : true))
+        .filter((item: any) =>
+          pagination.status ? item.state === pagination.status : true,
+        );
       const hasMore = members.length > limit;
       return {
         communityId,
-        members: list,
+        members: list.map(({ id: _id, ...rest }) => rest),
         pagination: {
           limit,
           hasMore,

@@ -429,6 +429,7 @@ export async function applyContractEvent(
     } else if (event.type === 'AdminUpdated') {
       const adminAddress = event.admin.toLowerCase();
 
+
       const existingAdmin = await tx.contractAdmin.findUnique({
         where: {
           chainId_address: {
@@ -478,6 +479,7 @@ export async function applyContractEvent(
       const currentOwner = event.currentOwner.toLowerCase();
       const proposedOwner = event.proposedOwner.toLowerCase();
 
+
       const existingOwnership = await tx.contractOwnership.findUnique({
         where: { chainId },
       });
@@ -517,6 +519,7 @@ export async function applyContractEvent(
     } else if (event.type === 'OwnershipTransferred') {
       const previousOwner = event.previousOwner.toLowerCase();
       const newOwner = event.newOwner.toLowerCase();
+
 
       const existingOwnership = await tx.contractOwnership.findUnique({
         where: { chainId },

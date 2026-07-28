@@ -102,7 +102,7 @@ The GuildPass Access API follows a strict versioning and compatibility contract 
 | GET | `/v1/memberships/:wallet` | Membership status summary by wallet |
 | GET | `/v1/members/:wallet` | Member profile (with membership and roles) |
 | POST | `/v1/access/check` | Access decision for `{ wallet, communityId, resource }` |
-| GET | `/v1/communities/:communityId/members` | Admin member listing |
+| GET | `/v1/communities/:communityId/members` | Admin member listing (cursor pagination: `limit` default 50 / max 200, `cursor`, optional `role` / `status`) |
 
 Responses include `allowed`/`denied` plus human-readable and machine-readable reasons.
 
@@ -142,6 +142,9 @@ Prisma schema includes: `communities`, `wallets`, `members`, `memberships`, `rol
 
 For an entity-relationship diagram and a per-table explanation of how these models connect (e.g. how `memberships` ties to `wallets` and `communities`, or how `access policies` reference roles), see [`docs/data-model.md`](docs/data-model.md).
 
+- [Suspension Appeals](./docs/suspension-appeals.md) — Appeal submission, admin review, and authorized on-chain unsuspend outbox flow
+
+
 ---
 
 ## Integration Event Outbox
@@ -153,7 +156,7 @@ The API uses the **transactional outbox pattern** to emit reliable integration e
 | Concept | Description |
 | ------- | ----------- |
 | **Event creation** | Events are written atomically with the domain mutation inside a Prisma `$transaction`. If the mutation fails, no event is created. If the event write fails, the entire transaction rolls back. |
-| **Event types** | `MEMBERSHIP_CREATED`, `MEMBERSHIP_UPDATED`, `MEMBERSHIP_DELETED`, `ROLE_ASSIGNED`, `ROLE_REMOVED`, `RESOURCE_CREATED`, `RESOURCE_UPDATED`, `RESOURCE_ARCHIVED`, `POLICY_CREATED`\*, `POLICY_UPDATED`\*, `POLICY_DELETED`\*, `ACCESS_DECISION`, `ACCESS_OVERRIDE_CREATED`, `ACCESS_OVERRIDE_UPDATED`, `ACCESS_OVERRIDE_REVOKED`, `MEMBER_ATTENDED`, `BADGE_ASSIGNED`, `BADGE_REVOKED` |
+| **Event types** | `MEMBERSHIP_CREATED`, `MEMBERSHIP_UPDATED`, `MEMBERSHIP_DELETED`, `MEMBERSHIP_SUSPENDED`, `MEMBERSHIP_UNSUSPENDED`, `MEMBERSHIP_REINSTATED`, `MEMBERSHIP_UNSUSPEND_REQUESTED`, `ROLE_ASSIGNED`, `ROLE_REMOVED`, `RESOURCE_CREATED`, `RESOURCE_UPDATED`, `RESOURCE_ARCHIVED`, `POLICY_CREATED`\*, `POLICY_UPDATED`\*, `POLICY_DELETED`\*, `ACCESS_DECISION`, `ACCESS_OVERRIDE_CREATED`, `ACCESS_OVERRIDE_UPDATED`, `ACCESS_OVERRIDE_REVOKED`, `MEMBER_ATTENDED`, `BADGE_ASSIGNED`, `BADGE_REVOKED` |
 | **Statuses** | `pending` (awaiting delivery), `delivered` (successfully processed), `failed` (permanently failed after max retries) |
 | **Retry strategy** | Exponential backoff: `nextRetryAt = now + 10 × 2^retryCount` seconds. Default max 5 retries. |
 | **Delivery worker** | `outboxWorker` polls for pending events every `OUTBOX_WORKER_INTERVAL_MS` (default 10s) and delegates to a pluggable handler. The default handler is a no-op logger. |
@@ -170,6 +173,19 @@ The outbox mechanism guarantees **at-least-once** delivery.
 - Every outbox event payload explicitly includes a stable, unique `id` and a `createdAt` timestamp. Consumers should use `id` (e.g., checking it against a cache or database table of processed IDs) to de-duplicate incoming events.
 - See `@guildpass/sdk-lite` for an `IdempotentWebhookConsumer` helper demonstrating this pattern.
 
+### Horizontal scaling (multi-instance)
+
+It is safe to run multiple `access-api` processes (or `OUTBOX_WORKER_COUNT` shards within one process) against the same database. Coordination uses **Postgres row-level locking**, not a Redis leader lock:
+
+| Approach | How it works | Trade-off |
+| -------- | ------------ | --------- |
+| **Chosen: `SELECT … FOR UPDATE SKIP LOCKED` + claim lease** | Each poll atomically claims a disjoint batch (`claimPendingOutboxEvents`), stamping `claimedBy` / `claimExpiresAt`. Concurrent workers skip locked rows and process different events in parallel. If a worker dies mid-batch, the lease expires and another worker reclaims the rows. | Throughput scales with worker count. Cross-worker delivery order is no longer strictly `createdAt`-ascending under contention. |
+| **Alternative: Redis distributed lock / leader election** | One leader holds `SET key NX PX <ttl>` (with renewal) and is the only process allowed to poll. | Simpler mental model (single active drain), but serializes all delivery through one instance — no parallel drain — and adds a Redis dependency for correctness of the outbox path. Redis is already used elsewhere; we still prefer Postgres locking so outbox delivery stays correct even if Redis is down. |
+
+Lock TTL for crash recovery is `OUTBOX_WORKER_CLAIM_LEASE_MS` (the claim lease). There is no separate Redis lock renewal interval because leadership is not used.
+
+Prometheus counters `outbox_events_delivered_total` / `outbox_events_failed_total` and gauge `outbox_worker_batch_size` include a `worker_id` label so multi-instance fleets are observable. Set `OUTBOX_WORKER_ID` to a stable pod/hostname when you want attributable series across restarts.
+
 ### Configuration
 
 | Environment Variable | Default | Description |
@@ -178,6 +194,10 @@ The outbox mechanism guarantees **at-least-once** delivery.
 | `OUTBOX_WORKER_BATCH_SIZE` | `50` | Max events per shard per poll |
 | `OUTBOX_WORKER_COUNT` | `1` | Number of concurrent shards for horizontal scaling |
 | `OUTBOX_WORKER_MIN_BATCH_SIZE` | `5` | Min batch size under backpressure |
+| `OUTBOX_WORKER_CLAIM_LEASE_MS` | `60000` | How long a claimed batch is held before another worker may reclaim it after a crash (ms). Must exceed worst-case handler latency. |
+| `OUTBOX_WORKER_ID` | *(random UUID)* | Stable identity for claim leases and `worker_id` metric labels; optional |
+
+See also `apps/access-api/README.md` for crash-recovery and ordering details.
 
 ### Pluggable Handler
 
@@ -203,7 +223,10 @@ worker.start();
 `createWebhookHandler` (`apps/access-api/src/handlers/webhookHandler.ts`) is a
 ready-to-use `OutboxEventHandler` that delivers events as signed HTTP
 webhooks to every active `WebhookSubscription` registered for a community,
-filtered by event type:
+filtered by event type.
+
+Enable it in the process entrypoint with `OUTBOX_WEBHOOK_ENABLED=true` (see
+`.env.example`), or wire it manually:
 
 ```typescript
 import { createOutboxWorker } from './workers/outboxWorker';
@@ -244,7 +267,9 @@ To verify a webhook on the receiving side:
 `verifyWebhookSignature` in `webhookHandler.ts` is a reference
 implementation of steps 1–2 (nonce tracking is necessarily your
 application's responsibility, since it requires storage this library
-doesn't own).
+doesn't own). A frozen HMAC test vector for consumer implementations is
+documented in `docs/webhook-signature-verification.md` and asserted in
+`apps/access-api/src/handlers/webhookHandler.test.ts`.
 
 If **any** subscription delivery for an event fails (non-2xx response,
 timeout, network error), the whole event is re-queued through the outbox's
@@ -263,6 +288,8 @@ manually retriable via:
 | ------ | ---- | ----------- |
 | GET | `/v1/communities/:communityId/dead-letter-events` | List dead-lettered events for a community, optionally filtered by `?status=` |
 | POST | `/v1/communities/:communityId/dead-letter-events/:id/retry` | Re-enqueue a dead-lettered event as a fresh pending `OutboxEvent` |
+| GET | `/v1/communities/:communityId/outbox/failed` | Alias of the list endpoint (defaults to `status=pending`) |
+| POST | `/v1/communities/:communityId/outbox/:id/retry` | Alias of the retry endpoint |
 
 ### Observability
 
@@ -455,7 +482,6 @@ GuildPass supports deploying and indexing `MembershipNFT` contracts across multi
 ## Deferred Areas (Intentionally Not Implemented)
 
 - Advanced governance permissions
-- Complex moderation workflows / appeals / reinstatement
 - Rich reward distribution and advanced streak logic
 - Full event attendance ingestion
 - Multi-chain support (implemented: EVM multi-chain enabled per community)

@@ -96,18 +96,20 @@ const outboxEventsCreatedTotal = new Counter({
 
 /**
  * Tracks outbox event delivery outcomes.
+ * `worker_id` identifies the claiming instance/shard so multi-instance
+ * fleets can be broken down in Prometheus (see OUTBOX_WORKER_ID).
  */
 const outboxEventsDeliveredTotal = new Counter({
   name: 'outbox_events_delivered_total',
   help: 'Total number of outbox events delivered',
-  labelNames: ['event_type'] as const,
+  labelNames: ['event_type', 'worker_id'] as const,
   registers: [registry],
 });
 
 const outboxEventsFailedTotal = new Counter({
   name: 'outbox_events_failed_total',
   help: 'Total number of outbox events permanently failed',
-  labelNames: ['event_type'] as const,
+  labelNames: ['event_type', 'worker_id'] as const,
   registers: [registry],
 });
 
@@ -129,7 +131,7 @@ const outboxBacklogDepth = new Gauge({
 const outboxWorkerBatchSize = new Gauge({
   name: 'outbox_worker_batch_size',
   help: 'Current adaptive batch size per outbox worker shard',
-  labelNames: ['shard'] as const,
+  labelNames: ['shard', 'worker_id'] as const,
   registers: [registry],
 });
 
