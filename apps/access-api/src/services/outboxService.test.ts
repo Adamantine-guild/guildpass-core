@@ -25,6 +25,7 @@ import {
   claimPendingOutboxEvents,
   getOutboxStats,
   pruneDeliveredOutboxEvents,
+  pruneOutboxEvents,
   claimPendingOutboxEventsWithLock,
   getOutboxBacklogDepth,
 } from "./outboxService";
@@ -644,6 +645,82 @@ describe("pruneDeliveredOutboxEvents", () => {
     });
     expect(count).toBe(5);
   });
+
+  test("removes only delivered events strictly past retention", async () => {
+    const now = new Date("2026-07-28T12:00:00.000Z");
+    const retentionMs = 7 * 24 * 60 * 60 * 1000;
+    const cutoff = new Date(now.getTime() - retentionMs);
+    const events = [
+      {
+        id: "delivered-old",
+        status: "delivered",
+        deliveredAt: new Date(cutoff.getTime() - 1),
+      },
+      {
+        id: "delivered-boundary",
+        status: "delivered",
+        deliveredAt: cutoff,
+      },
+      {
+        id: "delivered-recent",
+        status: "delivered",
+        deliveredAt: new Date(cutoff.getTime() + 1),
+      },
+      {
+        id: "pending-old",
+        status: "pending",
+        deliveredAt: new Date(cutoff.getTime() - 30 * 24 * 60 * 60 * 1000),
+      },
+      {
+        id: "failed-old",
+        status: "failed",
+        deliveredAt: new Date(cutoff.getTime() - 30 * 24 * 60 * 60 * 1000),
+      },
+    ];
+    const db = {
+      outboxEvent: {
+        deleteMany: jest.fn(async ({ where }: any) => {
+          const before = events.length;
+          for (let index = events.length - 1; index >= 0; index--) {
+            const event = events[index];
+            if (
+              event.status === where.status &&
+              event.deliveredAt < where.deliveredAt.lt
+            ) {
+              events.splice(index, 1);
+            }
+          }
+          return { count: before - events.length };
+        }),
+      },
+    } as any;
+
+    const count = await pruneOutboxEvents(db, retentionMs, now);
+
+    expect(count).toBe(1);
+    expect(events.map((event) => event.id)).toEqual([
+      "delivered-boundary",
+      "delivered-recent",
+      "pending-old",
+      "failed-old",
+    ]);
+    expect(db.outboxEvent.deleteMany).toHaveBeenCalledWith({
+      where: {
+        status: "delivered",
+        deliveredAt: { lt: cutoff },
+      },
+    });
+  });
+
+  test.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY])(
+    "rejects unsafe retention duration %s",
+    async (retentionMs) => {
+      const { db } = makeDb();
+      await expect(pruneOutboxEvents(db, retentionMs)).rejects.toThrow(
+        "Outbox retention duration must be greater than zero",
+      );
+    },
+  );
 });
 
 // ---------------------------------------------------------------------------

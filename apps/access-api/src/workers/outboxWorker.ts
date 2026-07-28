@@ -44,7 +44,8 @@ import {
   getOutboxBacklogDepth,
   markOutboxDelivered,
   markOutboxFailed,
-  pruneDeliveredOutboxEvents,
+  DEFAULT_OUTBOX_RETENTION_MS,
+  pruneOutboxEvents,
 } from "../services/outboxService";
 import { recordDeadLetter } from "../services/deadLetterService";
 import { metrics } from "../observability/metrics";
@@ -157,6 +158,12 @@ export interface OutboxWorkerOptions {
    * config.ts's outboxWorkerClaimLeaseMs). Default: 60 000.
    */
   claimLeaseMs?: number;
+
+  /**
+   * How long delivered events are retained before automatic pruning.
+   * Defaults to seven days.
+   */
+  pruneRetentionMs?: number;
 }
 
 export interface OutboxWorkerShard {
@@ -383,10 +390,12 @@ function createShard(
         );
       }
 
-      // Periodically prune delivered events older than 7 days.
+      // Periodically prune only delivered events past the retention window.
       try {
-        const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-        await pruneDeliveredOutboxEvents(prisma as any, sevenDaysAgo);
+        await pruneOutboxEvents(
+          prisma as any,
+          options.pruneRetentionMs ?? DEFAULT_OUTBOX_RETENTION_MS,
+        );
       } catch {
         // Pruning is best-effort; never crash the worker.
       }
