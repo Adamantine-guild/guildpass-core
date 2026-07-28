@@ -6,7 +6,6 @@
     "version": "0.1.0"
   },
   "components": {
-    "schemas": {},
     "securitySchemes": {
       "RequesterWallet": {
         "type": "apiKey",
@@ -14,7 +13,8 @@
         "name": "x-wallet",
         "description": "Requester identity for admin-only routes. Clients should send x-wallet. For backwards compatibility, the server resolves requester headers in this precedence order: x-wallet, x-user-wallet, then x-requester-wallet."
       }
-    }
+    },
+    "schemas": {}
   },
   "paths": {
     "/metrics": {
@@ -94,6 +94,3660 @@
                     },
                     "error": {
                       "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/communities/{communityId}/members/{wallet}/appeals": {
+      "post": {
+        "summary": "Submit a suspension appeal",
+        "tags": [
+          "Appeals"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "memberStatement"
+                ],
+                "properties": {
+                  "memberStatement": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Member's supporting statement for the appeal"
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "communityId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^0x[0-9a-fA-F]{40}$"
+            },
+            "in": "path",
+            "name": "wallet",
+            "required": true,
+            "description": "EVM-compatible wallet address (checksummed or lowercase)"
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Appeal created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Appeal created",
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "membershipId": {
+                      "type": "string"
+                    },
+                    "memberId": {
+                      "type": "string"
+                    },
+                    "wallet": {
+                      "type": "string",
+                      "pattern": "^0x[0-9a-fA-F]{40}$",
+                      "description": "EVM-compatible wallet address (checksummed or lowercase)"
+                    },
+                    "communityId": {
+                      "type": "string"
+                    },
+                    "memberStatement": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "pending",
+                        "approved",
+                        "denied"
+                      ]
+                    },
+                    "submittedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "reviewerId": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "reviewedAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "nullable": true
+                    },
+                    "reviewerRationale": {
+                      "type": "string",
+                      "nullable": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error / not suspended",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Validation error / not suspended",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Unauthorized",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — not the member's wallet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Forbidden — not the member's wallet",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Member not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Member not found",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Pending appeal already exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Pending appeal already exists",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/communities/{communityId}/appeals": {
+      "get": {
+        "summary": "List suspension appeals (admin review queue)",
+        "tags": [
+          "Appeals"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "approved",
+                "denied"
+              ]
+            },
+            "in": "query",
+            "name": "status",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            },
+            "in": "query",
+            "name": "page",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "communityId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated appeals queue",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Paginated appeals queue",
+                  "type": "object",
+                  "required": [
+                    "appeals",
+                    "pagination"
+                  ],
+                  "properties": {
+                    "appeals": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "membershipId": {
+                            "type": "string"
+                          },
+                          "memberId": {
+                            "type": "string"
+                          },
+                          "wallet": {
+                            "type": "string",
+                            "pattern": "^0x[0-9a-fA-F]{40}$",
+                            "description": "EVM-compatible wallet address (checksummed or lowercase)"
+                          },
+                          "communityId": {
+                            "type": "string"
+                          },
+                          "memberStatement": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "pending",
+                              "approved",
+                              "denied"
+                            ]
+                          },
+                          "submittedAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "reviewerId": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "reviewedAt": {
+                            "type": "string",
+                            "format": "date-time",
+                            "nullable": true
+                          },
+                          "reviewerRationale": {
+                            "type": "string",
+                            "nullable": true
+                          }
+                        }
+                      }
+                    },
+                    "pagination": {
+                      "type": "object",
+                      "required": [
+                        "page",
+                        "limit",
+                        "total",
+                        "totalPages"
+                      ],
+                      "properties": {
+                        "page": {
+                          "type": "integer"
+                        },
+                        "limit": {
+                          "type": "integer"
+                        },
+                        "total": {
+                          "type": "integer"
+                        },
+                        "totalPages": {
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Unauthorized",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — not a community admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Forbidden — not a community admin",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/communities/{communityId}/appeals/{appealId}/decision": {
+      "post": {
+        "summary": "Approve or deny a suspension appeal",
+        "tags": [
+          "Appeals"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "decision",
+                  "rationale"
+                ],
+                "properties": {
+                  "decision": {
+                    "type": "string",
+                    "enum": [
+                      "approved",
+                      "denied"
+                    ]
+                  },
+                  "rationale": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Required reviewer rationale recorded in audit_events"
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "communityId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "appealId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Updated appeal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Updated appeal",
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "membershipId": {
+                      "type": "string"
+                    },
+                    "memberId": {
+                      "type": "string"
+                    },
+                    "wallet": {
+                      "type": "string",
+                      "pattern": "^0x[0-9a-fA-F]{40}$",
+                      "description": "EVM-compatible wallet address (checksummed or lowercase)"
+                    },
+                    "communityId": {
+                      "type": "string"
+                    },
+                    "memberStatement": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "pending",
+                        "approved",
+                        "denied"
+                      ]
+                    },
+                    "submittedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "reviewerId": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "reviewedAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "nullable": true
+                    },
+                    "reviewerRationale": {
+                      "type": "string",
+                      "nullable": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid transition / missing rationale",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Invalid transition / missing rationale",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Unauthorized",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — not a community admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Forbidden — not a community admin",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Appeal not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Appeal not found",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/communities/{communityId}/governance-rules": {
+      "post": {
+        "summary": "Create a governance rule for a community resource",
+        "tags": [
+          "Governance"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "name",
+                  "description",
+                  "resource",
+                  "ast"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "description": "Unique rule name within the resource"
+                  },
+                  "description": {
+                    "type": "string",
+                    "description": "Human-readable description"
+                  },
+                  "resource": {
+                    "type": "string",
+                    "description": "Resource the rule governs"
+                  },
+                  "ast": {
+                    "type": "object",
+                    "additionalProperties": true
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "communityId",
+            "required": true,
+            "description": "Community identifier"
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Rule created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "communityId": {
+                      "type": "string"
+                    },
+                    "resource": {
+                      "type": "string"
+                    },
+                    "active": {
+                      "type": "boolean"
+                    },
+                    "ast": {
+                      "type": "object",
+                      "additionalProperties": true
+                    }
+                  },
+                  "description": "Rule created"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error (missing fields or invalid AST)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Validation error (missing fields or invalid AST)",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — requester is not a community admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Forbidden — requester is not a community admin",
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Duplicate rule name for the resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Duplicate rule name for the resource",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Internal server error",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "List governance rules for a community",
+        "tags": [
+          "Governance"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "resource",
+            "required": false,
+            "description": "Filter by resource"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            },
+            "in": "query",
+            "name": "activeOnly",
+            "required": false,
+            "description": "When \"false\", include inactive rules (default true)"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "communityId",
+            "required": true,
+            "description": "Community identifier"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of governance rules",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "List of governance rules",
+                  "type": "object",
+                  "required": [
+                    "rules"
+                  ],
+                  "properties": {
+                    "rules": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true,
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "communityId": {
+                            "type": "string"
+                          },
+                          "resource": {
+                            "type": "string"
+                          },
+                          "active": {
+                            "type": "boolean"
+                          },
+                          "ast": {
+                            "type": "object",
+                            "additionalProperties": true
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — requester is not a community admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Forbidden — requester is not a community admin",
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Internal server error",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/communities/{communityId}/governance-rules/{ruleId}": {
+      "get": {
+        "summary": "Get a single governance rule",
+        "tags": [
+          "Governance"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "communityId",
+            "required": true,
+            "description": "Community identifier"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "ruleId",
+            "required": true,
+            "description": "Governance rule identifier"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The governance rule",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "communityId": {
+                      "type": "string"
+                    },
+                    "resource": {
+                      "type": "string"
+                    },
+                    "active": {
+                      "type": "boolean"
+                    },
+                    "ast": {
+                      "type": "object",
+                      "additionalProperties": true
+                    }
+                  },
+                  "description": "The governance rule"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — requester is not a community admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Forbidden — requester is not a community admin",
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Rule not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Rule not found",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Internal server error",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "summary": "Update a governance rule (partial)",
+        "tags": [
+          "Governance"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "ast": {
+                    "type": "object",
+                    "additionalProperties": true
+                  },
+                  "active": {
+                    "type": "boolean",
+                    "description": "Activate/deactivate the rule"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "communityId",
+            "required": true,
+            "description": "Community identifier"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "ruleId",
+            "required": true,
+            "description": "Governance rule identifier"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Updated rule",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "communityId": {
+                      "type": "string"
+                    },
+                    "resource": {
+                      "type": "string"
+                    },
+                    "active": {
+                      "type": "boolean"
+                    },
+                    "ast": {
+                      "type": "object",
+                      "additionalProperties": true
+                    }
+                  },
+                  "description": "Updated rule"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error (invalid AST)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Validation error (invalid AST)",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — requester is not a community admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Forbidden — requester is not a community admin",
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Rule not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Rule not found",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Internal server error",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a governance rule",
+        "tags": [
+          "Governance"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "communityId",
+            "required": true,
+            "description": "Community identifier"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "ruleId",
+            "required": true,
+            "description": "Governance rule identifier"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Rule deleted"
+          },
+          "403": {
+            "description": "Forbidden — requester is not a community admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Forbidden — requester is not a community admin",
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Rule not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Rule not found",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Internal server error",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/communities/{communityId}/governance-rules/{ruleId}/approval-requests": {
+      "post": {
+        "summary": "Open an approval request for a governance rule",
+        "tags": [
+          "Governance"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expiresAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "nullable": true,
+                    "description": "Optional ISO 8601 expiry for the request"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "communityId",
+            "required": true,
+            "description": "Community identifier"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "ruleId",
+            "required": true,
+            "description": "Governance rule identifier"
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Approval request created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Approval request created",
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing requester wallet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Missing requester wallet",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Rule not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Rule not found",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Internal server error",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/communities/{communityId}/approval-requests/{requestId}/approvals": {
+      "post": {
+        "summary": "Submit an approval or rejection for an approval request",
+        "tags": [
+          "Governance"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "approverRole",
+                  "approved"
+                ],
+                "properties": {
+                  "approverRole": {
+                    "type": "string",
+                    "enum": [
+                      "admin",
+                      "member",
+                      "contributor"
+                    ],
+                    "description": "Role the approver is acting as"
+                  },
+                  "approved": {
+                    "type": "boolean",
+                    "description": "true to approve, false to reject"
+                  },
+                  "signature": {
+                    "type": "string",
+                    "description": "Optional cryptographic signature"
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "communityId",
+            "required": true,
+            "description": "Community identifier"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "requestId",
+            "required": true,
+            "description": "Approval request identifier"
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Approval recorded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Approval recorded",
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Validation error",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Approver already submitted for this request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Approver already submitted for this request",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Internal server error",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "List approvals submitted for an approval request",
+        "tags": [
+          "Governance"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "communityId",
+            "required": true,
+            "description": "Community identifier"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "requestId",
+            "required": true,
+            "description": "Approval request identifier"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of approvals",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "List of approvals",
+                  "type": "object",
+                  "required": [
+                    "approvals"
+                  ],
+                  "properties": {
+                    "approvals": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Internal server error",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/communities/{communityId}/role-definitions": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "name",
+                  "permissions"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 64
+                  },
+                  "description": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "parentRoleId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "permissions": {
+                    "type": "array",
+                    "uniqueItems": true,
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9_-]*(?::[a-z][a-z0-9_-]*)+$"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "communityId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "communityId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/v1/communities/{communityId}/role-definitions/{roleId}": {
+      "put": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "name",
+                  "permissions"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 64
+                  },
+                  "description": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "parentRoleId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "permissions": {
+                    "type": "array",
+                    "uniqueItems": true,
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9_-]*(?::[a-z][a-z0-9_-]*)+$"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "communityId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "roleId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "delete": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "communityId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "roleId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/v1/communities/{communityId}/members/{wallet}/custom-roles/{roleId}": {
+      "put": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "communityId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "wallet",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "roleId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "delete": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "communityId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "wallet",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "roleId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/v1/communities/{communityId}/events": {
+      "post": {
+        "summary": "Create a community event (admin only)",
+        "tags": [
+          "Events"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "title",
+                  "startsAt",
+                  "endsAt"
+                ],
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "description": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 2000
+                  },
+                  "startsAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "endsAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "communityId",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "RequesterWallet": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "communityId",
+                    "title",
+                    "startsAt",
+                    "endsAt",
+                    "createdAt",
+                    "updatedAt"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "communityId": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "startsAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "endsAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "updatedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "List community events (admin only)",
+        "tags": [
+          "Events"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "communityId",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "RequesterWallet": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "events"
+                  ],
+                  "properties": {
+                    "events": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "communityId",
+                          "title",
+                          "startsAt",
+                          "endsAt",
+                          "createdAt",
+                          "updatedAt"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "communityId": {
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          },
+                          "startsAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "endsAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "createdAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "updatedAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/communities/{communityId}/events/{eventId}": {
+      "get": {
+        "summary": "Get a community event (admin only)",
+        "tags": [
+          "Events"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "communityId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "eventId",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "RequesterWallet": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "communityId",
+                    "title",
+                    "startsAt",
+                    "endsAt",
+                    "createdAt",
+                    "updatedAt"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "communityId": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "startsAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "endsAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "updatedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Replace a community event (admin only)",
+        "tags": [
+          "Events"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "title",
+                  "startsAt",
+                  "endsAt"
+                ],
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "description": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 2000
+                  },
+                  "startsAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "endsAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "communityId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "eventId",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "RequesterWallet": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "communityId",
+                    "title",
+                    "startsAt",
+                    "endsAt",
+                    "createdAt",
+                    "updatedAt"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "communityId": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "startsAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "endsAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "updatedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a community event (admin only)",
+        "tags": [
+          "Events"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "communityId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "eventId",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "RequesterWallet": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Default Response"
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/communities/{communityId}/events/{eventId}/attend": {
+      "post": {
+        "summary": "Check an active community member into a current event",
+        "tags": [
+          "Event attendance"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "wallet": {
+                    "type": "string",
+                    "pattern": "^0x[0-9a-fA-F]{40}$"
+                  },
+                  "method": {
+                    "type": "string",
+                    "enum": [
+                      "manual",
+                      "qr",
+                      "signed_message"
+                    ],
+                    "default": "manual"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "communityId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "eventId",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "RequesterWallet": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "eventId",
+                    "walletId",
+                    "wallet",
+                    "checkedInAt",
+                    "method"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "eventId": {
+                      "type": "string"
+                    },
+                    "walletId": {
+                      "type": "string"
+                    },
+                    "wallet": {
+                      "type": "string",
+                      "pattern": "^0x[0-9a-fA-F]{40}$"
+                    },
+                    "checkedInAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "method": {
+                      "type": "string",
+                      "enum": [
+                        "manual",
+                        "qr",
+                        "signed_message"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/communities/{communityId}/members/{wallet}/attendance": {
+      "get": {
+        "summary": "List a member's community event attendance history",
+        "tags": [
+          "Event attendance"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "communityId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^0x[0-9a-fA-F]{40}$"
+            },
+            "in": "path",
+            "name": "wallet",
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "RequesterWallet": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "attendance"
+                  ],
+                  "properties": {
+                    "attendance": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "eventId",
+                          "wallet",
+                          "checkedInAt",
+                          "method",
+                          "event"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "eventId": {
+                            "type": "string"
+                          },
+                          "wallet": {
+                            "type": "string",
+                            "pattern": "^0x[0-9a-fA-F]{40}$"
+                          },
+                          "checkedInAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "method": {
+                            "type": "string",
+                            "enum": [
+                              "manual",
+                              "qr",
+                              "signed_message"
+                            ]
+                          },
+                          "event": {
+                            "type": "object",
+                            "required": [
+                              "id",
+                              "communityId",
+                              "title",
+                              "startsAt",
+                              "endsAt",
+                              "createdAt",
+                              "updatedAt"
+                            ],
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "communityId": {
+                                "type": "string"
+                              },
+                              "title": {
+                                "type": "string"
+                              },
+                              "description": {
+                                "type": [
+                                  "null",
+                                  "string"
+                                ]
+                              },
+                              "startsAt": {
+                                "type": "string",
+                                "format": "date-time"
+                              },
+                              "endsAt": {
+                                "type": "string",
+                                "format": "date-time"
+                              },
+                              "createdAt": {
+                                "type": "string",
+                                "format": "date-time"
+                              },
+                              "updatedAt": {
+                                "type": "string",
+                                "format": "date-time"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      }
                     }
                   }
                 }
@@ -218,9 +3872,10 @@
     },
     "/v1/communities/{communityId}/roles": {
       "get": {
-        "summary": "List community members for admins",
+        "summary": "Get community roles and hierarchy metadata",
         "tags": [
-          "Members"
+          "Communities",
+          "Roles"
         ],
         "parameters": [
           {
@@ -229,39 +3884,8 @@
             },
             "in": "path",
             "name": "communityId",
-            "required": true
-          },
-          {
-            "schema": {
-              "type": "string",
-              "enum": [
-                "admin",
-                "member",
-                "contributor"
-              ]
-            },
-            "in": "query",
-            "name": "role",
-            "required": false
-          },
-          {
-            "schema": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 200,
-              "default": 50
-            },
-            "in": "query",
-            "name": "limit",
-            "required": false
-          },
-          {
-            "schema": {
-              "type": "string"
-            },
-            "in": "query",
-            "name": "cursor",
-            "required": false
+            "required": true,
+            "description": "Community identifier"
           }
         ],
         "responses": {
@@ -911,11 +4535,11 @@
             }
           },
           "403": {
-            "description": "Forbidden \u2014 requester does not have permission",
+            "description": "Forbidden — requester does not have permission",
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "Forbidden \u2014 requester does not have permission",
+                  "description": "Forbidden — requester does not have permission",
                   "type": "object",
                   "required": [
                     "error"
@@ -1086,11 +4710,11 @@
             }
           },
           "403": {
-            "description": "Forbidden \u2014 requester does not have permission",
+            "description": "Forbidden — requester does not have permission",
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "Forbidden \u2014 requester does not have permission",
+                  "description": "Forbidden — requester does not have permission",
                   "type": "object",
                   "required": [
                     "error"
@@ -1282,11 +4906,11 @@
             }
           },
           "403": {
-            "description": "Forbidden \u2014 requester does not have permission",
+            "description": "Forbidden — requester does not have permission",
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "Forbidden \u2014 requester does not have permission",
+                  "description": "Forbidden — requester does not have permission",
                   "type": "object",
                   "required": [
                     "error"
@@ -1683,11 +5307,11 @@
             }
           },
           "403": {
-            "description": "Forbidden \u2014 requester does not have permission",
+            "description": "Forbidden — requester does not have permission",
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "Forbidden \u2014 requester does not have permission",
+                  "description": "Forbidden — requester does not have permission",
                   "type": "object",
                   "required": [
                     "error"
@@ -1881,11 +5505,11 @@
             }
           },
           "400": {
-            "description": "Validation error \u2014 missing required fields",
+            "description": "Validation error — missing required fields",
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "Validation error \u2014 missing required fields",
+                  "description": "Validation error — missing required fields",
                   "type": "object",
                   "required": [
                     "error",
@@ -1927,11 +5551,11 @@
             }
           },
           "403": {
-            "description": "Forbidden \u2014 requester does not have permission",
+            "description": "Forbidden — requester does not have permission",
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "Forbidden \u2014 requester does not have permission",
+                  "description": "Forbidden — requester does not have permission",
                   "type": "object",
                   "required": [
                     "error"
@@ -2051,11 +5675,11 @@
             }
           },
           "403": {
-            "description": "Forbidden \u2014 requester does not have permission",
+            "description": "Forbidden — requester does not have permission",
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "Forbidden \u2014 requester does not have permission",
+                  "description": "Forbidden — requester does not have permission",
                   "type": "object",
                   "required": [
                     "error"
@@ -2177,11 +5801,11 @@
             }
           },
           "403": {
-            "description": "Forbidden \u2014 requester does not have permission",
+            "description": "Forbidden — requester does not have permission",
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "Forbidden \u2014 requester does not have permission",
+                  "description": "Forbidden — requester does not have permission",
                   "type": "object",
                   "required": [
                     "error"
@@ -2270,16 +5894,14 @@
                   ],
                   "properties": {
                     "allowed": {
-                      "type": "boolean",
-                      "description": "Whether access is granted"
+                      "type": "boolean"
                     },
                     "code": {
                       "type": "string",
                       "enum": [
                         "ALLOW",
                         "DENY"
-                      ],
-                      "description": "Machine-readable decision code"
+                      ]
                     },
                     "reasons": {
                       "type": "array",
@@ -2302,23 +5924,12 @@
                     "effectiveRoles": {
                       "type": "array",
                       "items": {
-                        "type": "string",
-                        "enum": [
-                          "admin",
-                          "member",
-                          "contributor"
-                        ]
+                        "type": "string"
                       },
                       "nullable": true
                     },
                     "membershipState": {
                       "type": "string",
-                      "enum": [
-                        "invited",
-                        "active",
-                        "expired",
-                        "suspended"
-                      ],
                       "nullable": true
                     }
                   }
@@ -2327,11 +5938,11 @@
             }
           },
           "400": {
-            "description": "Validation error \u2014 missing required fields or invalid format",
+            "description": "Validation error — missing required fields or invalid format",
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "Validation error \u2014 missing required fields or invalid format",
+                  "description": "Validation error — missing required fields or invalid format",
                   "type": "object",
                   "required": [
                     "error"
@@ -2380,24 +5991,28 @@
             "description": "Rate limit exceeded for this IP/API key or wallet. Clients must honour the Retry-After header (RFC 9110 delta-seconds) before retrying.",
             "headers": {
               "Retry-After": {
-                "description": "Seconds until the client may retry (RFC 9110 delta-seconds, not milliseconds)",
                 "schema": {
-                  "type": "integer",
-                  "minimum": 1
-                }
+                  "schema": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "description": "Seconds until the client may retry (RFC 9110 delta-seconds, not milliseconds)"
               },
               "X-RateLimit-Reset": {
-                "description": "Same value as Retry-After, for clients that prefer this header name",
                 "schema": {
-                  "type": "integer",
-                  "minimum": 1
-                }
+                  "schema": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "description": "Same value as Retry-After, for clients that prefer this header name"
               }
             },
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "Rate limit exceeded",
+                  "description": "Rate limit exceeded for this IP/API key or wallet. Clients must honour the Retry-After header (RFC 9110 delta-seconds) before retrying.",
                   "type": "object",
                   "required": [
                     "error"
@@ -2450,7 +6065,30 @@
                   ],
                   "properties": {
                     "error": {
-                      "type": "string"
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {
+                          "oneOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "object",
+                              "additionalProperties": true
+                            }
+                          ]
+                        }
+                      }
                     }
                   }
                 }
@@ -2470,25 +6108,16 @@
           {
             "schema": {
               "type": "string",
-              "description": "Community identifier"
-            },
-            "in": "path",
-            "name": "communityId",
-            "required": true
-          },
-          {
-            "schema": {
-              "type": "string",
               "enum": [
                 "admin",
                 "member",
                 "contributor"
-              ],
-              "description": "Filter members by role"
+              ]
             },
             "in": "query",
             "name": "role",
-            "required": false
+            "required": false,
+            "description": "Filter members by role"
           },
           {
             "schema": {
@@ -2498,34 +6127,43 @@
                 "active",
                 "expired",
                 "suspended"
-              ],
-              "description": "Filter members by membership status"
+              ]
             },
             "in": "query",
             "name": "status",
-            "required": false
+            "required": false,
+            "description": "Filter members by membership status"
           },
           {
             "schema": {
               "type": "integer",
               "minimum": 1,
               "maximum": 200,
-              "default": 50,
-              "description": "Page size (default 50, maximum 200). Requests above 200 return 400."
+              "default": 50
             },
             "in": "query",
             "name": "limit",
-            "required": false
+            "required": false,
+            "description": "Page size (default 50, maximum 200). Requests above 200 return 400."
           },
           {
             "schema": {
               "type": "string",
-              "minLength": 1,
-              "description": "Opaque cursor from a previous response's pagination.nextCursor"
+              "minLength": 1
             },
             "in": "query",
             "name": "cursor",
-            "required": false
+            "required": false,
+            "description": "Opaque cursor from a previous response's pagination.nextCursor"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "communityId",
+            "required": true,
+            "description": "Community identifier"
           }
         ],
         "responses": {
@@ -2534,6 +6172,7 @@
             "content": {
               "application/json": {
                 "schema": {
+                  "description": "Cursor-paginated member list",
                   "type": "object",
                   "required": [
                     "communityId",
@@ -2551,7 +6190,8 @@
                         "properties": {
                           "wallet": {
                             "type": "string",
-                            "pattern": "^0x[0-9a-fA-F]{40}$"
+                            "pattern": "^0x[0-9a-fA-F]{40}$",
+                            "description": "EVM-compatible wallet address (checksummed or lowercase)"
                           },
                           "displayName": {
                             "type": "string",
@@ -2606,12 +6246,58 @@
               }
             }
           },
-          "403": {
-            "description": "Forbidden \u2014 requester is not a community admin",
+          "400": {
+            "description": "Invalid query parameters (e.g. limit above 200)",
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "Forbidden \u2014 requester is not a community admin",
+                  "description": "Invalid query parameters (e.g. limit above 200)",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — requester is not a community admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Forbidden — requester is not a community admin",
                   "type": "object",
                   "required": [
                     "error"
@@ -2638,36 +6324,6 @@
                   "properties": {
                     "error": {
                       "type": "string"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid query parameters (e.g. limit above 200)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "error",
-                    "code",
-                    "message",
-                    "statusCode"
-                  ],
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    },
-                    "message": {
-                      "type": "string"
-                    },
-                    "statusCode": {
-                      "type": "integer"
                     }
                   }
                 }
@@ -2794,11 +6450,11 @@
             }
           },
           "403": {
-            "description": "Forbidden \u2014 requester is not a community admin",
+            "description": "Forbidden — requester is not a community admin",
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "Forbidden \u2014 requester is not a community admin",
+                  "description": "Forbidden — requester is not a community admin",
                   "type": "object",
                   "required": [
                     "error"
@@ -2884,11 +6540,323 @@
             }
           },
           "403": {
-            "description": "Forbidden \u2014 requester is not a community admin",
+            "description": "Forbidden — requester is not a community admin",
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "Forbidden \u2014 requester is not a community admin",
+                  "description": "Forbidden — requester is not a community admin",
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Dead-letter event not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Dead-letter event not found",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "description": "Machine-readable error identifier"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "HTTP status phrase / error code"
+                    },
+                    "message": {
+                      "type": "string",
+                      "description": "Human-readable description"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "description": "HTTP status code"
+                    },
+                    "details": {
+                      "description": "Optional detail payload",
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Event has already been retried or resolved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Event has already been retried or resolved",
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Internal server error",
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/communities/{communityId}/outbox/failed": {
+      "get": {
+        "summary": "List dead-lettered webhook delivery events for a community",
+        "tags": [
+          "Dead Letter"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "retried",
+                "resolved"
+              ]
+            },
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "description": "Filter events by status"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "communityId",
+            "required": true,
+            "description": "Community identifier"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of dead-letter events",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "List of dead-letter events",
+                  "type": "object",
+                  "required": [
+                    "events"
+                  ],
+                  "properties": {
+                    "events": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "originalEventId",
+                          "eventType",
+                          "failureReason",
+                          "retryCount",
+                          "status",
+                          "createdAt"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "originalEventId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "eventType": {
+                            "type": "string"
+                          },
+                          "entityId": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "entityType": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "communityId": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "payload": {
+                            "type": "object",
+                            "additionalProperties": true
+                          },
+                          "failureReason": {
+                            "type": "string"
+                          },
+                          "retryCount": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "pending",
+                              "retried",
+                              "resolved"
+                            ]
+                          },
+                          "createdAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "resolvedAt": {
+                            "type": "string",
+                            "format": "date-time",
+                            "nullable": true
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — requester is not a community admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Forbidden — requester is not a community admin",
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Internal server error",
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/communities/{communityId}/outbox/{id}/retry": {
+      "post": {
+        "summary": "Re-enqueue a dead-lettered event for redelivery",
+        "tags": [
+          "Dead Letter"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "communityId",
+            "required": true,
+            "description": "Community identifier"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "Dead-letter event ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Event re-enqueued successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Event re-enqueued successfully",
+                  "type": "object",
+                  "required": [
+                    "newEventId"
+                  ],
+                  "properties": {
+                    "newEventId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "ID of the newly created pending outbox event"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — requester is not a community admin",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Forbidden — requester is not a community admin",
                   "type": "object",
                   "required": [
                     "error"
@@ -3286,11 +7254,11 @@
             }
           },
           "403": {
-            "description": "Forbidden \u2014 requester is not a community admin",
+            "description": "Forbidden — requester is not a community admin",
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "Forbidden \u2014 requester is not a community admin",
+                  "description": "Forbidden — requester is not a community admin",
                   "type": "object",
                   "required": [
                     "error"
@@ -3506,11 +7474,11 @@
             }
           },
           "403": {
-            "description": "Forbidden \u2014 requester does not have permission",
+            "description": "Forbidden — requester does not have permission",
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "Forbidden \u2014 requester does not have permission",
+                  "description": "Forbidden — requester does not have permission",
                   "type": "object",
                   "required": [
                     "error",
@@ -4343,6 +8311,15 @@
                     "type": "object",
                     "description": "Versioned, serializable rule tree AST",
                     "additionalProperties": true
+                  },
+                  "requiredPermissions": {
+                    "type": "array",
+                    "uniqueItems": true,
+                    "description": "Granular permissions required in addition to the rule tree",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9_-]*(?::[a-z][a-z0-9_-]*)+$"
+                    }
                   }
                 }
               }
@@ -4411,6 +8388,12 @@
                           "type": "object",
                           "additionalProperties": true,
                           "nullable": true
+                        },
+                        "requiredPermissions": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
                         }
                       }
                     }
