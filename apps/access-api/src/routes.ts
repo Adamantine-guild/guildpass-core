@@ -11,6 +11,8 @@ import { registerGovernanceRoutes } from "./routes/governanceRoutes";
 import { registerCustomRoleRoutes } from "./routes/customRoleRoutes";
 import { CustomRoleService } from "./services/customRoleService";
 import { registerSuspensionAppealRoutes } from "./routes/suspensionAppealRoutes";
+import { registerEventRoutes } from "./routes/eventRoutes";
+import { EventService } from "./services/eventService";
 import {
   getModerationService,
   ModerationError,
@@ -188,6 +190,12 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   });
   registerCustomRoleRoutes(app, {
     service: new CustomRoleService(prisma),
+    requireCommunityAdmin: (communityId, requesterWallet) =>
+      memberService.isCommunityAdmin(communityId, requesterWallet),
+    getRequesterWallet,
+  });
+  registerEventRoutes(app, {
+    service: new EventService(prisma),
     requireCommunityAdmin: (communityId, requesterWallet) =>
       memberService.isCommunityAdmin(communityId, requesterWallet),
     getRequesterWallet,
@@ -515,6 +523,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   app.post('/v1/communities/:communityId/members/:wallet/roles', { schema: assignMemberRoleSchema, preHandler: [authenticateApiKey, requireSiweSession, idempotencyPreHandler], onSend: [idempotencyOnSend] }, async (request: FastifyRequest, reply: FastifyReply) => {
     const { communityId, wallet } = request.params as { communityId: string; wallet: string };
     const body = request.body as { role?: string };
+    const role = body.role;
     const requesterWallet = resolveRequesterWallet(request);
 
     if (!wallet || !/^0x[0-9a-fA-F]{40}$/.test(wallet)) {

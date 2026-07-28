@@ -156,7 +156,7 @@ The API uses the **transactional outbox pattern** to emit reliable integration e
 | Concept | Description |
 | ------- | ----------- |
 | **Event creation** | Events are written atomically with the domain mutation inside a Prisma `$transaction`. If the mutation fails, no event is created. If the event write fails, the entire transaction rolls back. |
-| **Event types** | `MEMBERSHIP_CREATED`, `MEMBERSHIP_UPDATED`, `MEMBERSHIP_DELETED`, `MEMBERSHIP_SUSPENDED`, `MEMBERSHIP_UNSUSPENDED`, `MEMBERSHIP_REINSTATED`, `MEMBERSHIP_UNSUSPEND_REQUESTED`, `ROLE_ASSIGNED`, `ROLE_REMOVED`, `RESOURCE_CREATED`, `RESOURCE_UPDATED`, `RESOURCE_ARCHIVED`, `POLICY_CREATED`\*, `POLICY_UPDATED`\*, `POLICY_DELETED`\*, `ACCESS_DECISION`, `ACCESS_OVERRIDE_CREATED`, `ACCESS_OVERRIDE_UPDATED`, `ACCESS_OVERRIDE_REVOKED`, `MEMBER_ATTENDED`, `BADGE_ASSIGNED`, `BADGE_REVOKED` |
+| **Event types** | `MEMBERSHIP_CREATED`, `MEMBERSHIP_UPDATED`, `MEMBERSHIP_DELETED`, `MEMBERSHIP_SUSPENDED`, `MEMBERSHIP_UNSUSPENDED`, `MEMBERSHIP_REINSTATED`, `MEMBERSHIP_UNSUSPEND_REQUESTED`, `ROLE_ASSIGNED`, `ROLE_REMOVED`, `RESOURCE_CREATED`, `RESOURCE_UPDATED`, `RESOURCE_ARCHIVED`, `POLICY_CREATED`\*, `POLICY_UPDATED`\*, `POLICY_DELETED`\*, `ACCESS_DECISION`, `ACCESS_OVERRIDE_CREATED`, `ACCESS_OVERRIDE_UPDATED`, `ACCESS_OVERRIDE_REVOKED`, `MEMBER_ATTENDED`, `EVENT_CREATED`, `EVENT_UPDATED`, `EVENT_DELETED`, `EVENT_ATTENDANCE_RECORDED`, `BADGE_ASSIGNED`, `BADGE_REVOKED` |
 | **Statuses** | `pending` (awaiting delivery), `delivered` (successfully processed), `failed` (permanently failed after max retries) |
 | **Retry strategy** | Exponential backoff: `nextRetryAt = now + 10 × 2^retryCount` seconds. Default max 5 retries. |
 | **Delivery worker** | `outboxWorker` polls for pending events every `OUTBOX_WORKER_INTERVAL_MS` (default 10s) and delegates to a pluggable handler. The default handler is a no-op logger. |
@@ -500,7 +500,7 @@ GuildPass supports deploying and indexing `MembershipNFT` contracts across multi
 
 - Advanced governance permissions (implemented; see `docs/governance-permissions.md`)
 - Rich reward distribution and advanced streak logic
-- Full event attendance ingestion
+- Full event attendance ingestion (implemented with community events, active-window check-in, and attendance history)
 - Multi-chain support (implemented: EVM multi-chain enabled per community)
 - Advanced indexing pipeline
 - Multi-chain membership indexing with per-community `(chainId, contractAddress)` routing

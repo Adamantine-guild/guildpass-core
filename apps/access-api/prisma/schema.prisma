@@ -20,6 +20,7 @@ model Community {
   governanceRules        GovernanceRule[]
   constitutionalRuleSets ConstitutionalRuleSet[]
   suspensionAppeals      SuspensionAppeal[]
+  events                 Event[]
   createdAt              DateTime                 @default(now())
 
   @@index([chainConfigId])
@@ -53,6 +54,7 @@ model Wallet {
   secondaryChallenges   Challenge[] @relation("challengeSecondaryWallet")
   delegatedGrantsAsGranter DelegatedGrant[] @relation("DelegatedGrantGranter")
   delegatedGrantsAsGrantee DelegatedGrant[] @relation("DelegatedGrantGrantee")
+  eventAttendances      EventAttendance[]
 }
 
 // --- Wallet Linking Models ---
@@ -794,6 +796,42 @@ model AttendanceRecord {
   @@index([communityId])
 }
 
+enum AttendanceMethod {
+  manual
+  qr
+  signed_message
+}
+
+model Event {
+  id          String            @id @default(uuid())
+  communityId String
+  title       String
+  description String?
+  startsAt    DateTime
+  endsAt      DateTime
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  community   Community         @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  attendance  EventAttendance[]
+
+  @@index([communityId, startsAt])
+  @@map("events")
+}
+
+model EventAttendance {
+  id          String           @id @default(uuid())
+  eventId     String
+  walletId    String
+  checkedInAt DateTime         @default(now())
+  method      AttendanceMethod
+  event       Event            @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  wallet      Wallet           @relation(fields: [walletId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, walletId])
+  @@index([walletId, checkedInAt])
+  @@map("event_attendance")
+}
+
 model ContractAdmin {
   chainId   Int
   address   String
@@ -829,6 +867,4 @@ model ConstitutionalRuleSet {
   @@index([communityId])
   @@index([communityId, active])
 }
-
-
 

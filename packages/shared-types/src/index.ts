@@ -424,12 +424,38 @@ export type OutboxEventType =
   | "ACCESS_OVERRIDE_UPDATED"
   | "ACCESS_OVERRIDE_REVOKED"
   | "MEMBER_ATTENDED"
+  | "EVENT_CREATED"
+  | "EVENT_UPDATED"
+  | "EVENT_DELETED"
+  | "EVENT_ATTENDANCE_RECORDED"
   | "BADGE_ASSIGNED"
   | "BADGE_REVOKED"
   | "CONSTITUTIONAL_RULESET_CREATED"
   | (string & {});
 
 export type OutboxEventStatus = "pending" | "delivered" | "failed";
+
+export type AttendanceMethod = "manual" | "qr" | "signed_message";
+
+export interface CommunityEventDto {
+  id: string;
+  communityId: string;
+  title: string;
+  description?: string | null;
+  startsAt: string;
+  endsAt: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface EventAttendanceDto {
+  id: string;
+  eventId: string;
+  wallet: WalletAddress | string;
+  checkedInAt: string;
+  method: AttendanceMethod;
+  event?: CommunityEventDto;
+}
 
 export interface OutboxEventDto {
   id?: string;

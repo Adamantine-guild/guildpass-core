@@ -66,6 +66,21 @@ describe('createContributionScoreHandler', () => {
     expect(mockRecompute).toHaveBeenCalled();
   });
 
+  it('should recompute score on EVENT_ATTENDANCE_RECORDED event', async () => {
+    const handler = createContributionScoreHandler({ db: {} as any });
+    await handler({
+      id: 'evt-attendance',
+      eventType: 'EVENT_ATTENDANCE_RECORDED',
+      entityId: 'att-2',
+      entityType: 'EventAttendance',
+      communityId: 'community-1',
+      payload: { wallet: '0xabc123', eventId: 'event-1' },
+      createdAt: new Date(),
+    });
+
+    expect(mockRecompute).toHaveBeenCalled();
+  });
+
   it('should not recompute on irrelevant events', async () => {
     const handler = createContributionScoreHandler({ db: {} as any });
     await handler({
