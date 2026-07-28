@@ -105,7 +105,7 @@ describe('IndexerWorker', () => {
     expect(prisma.indexerState.upsert).toHaveBeenCalledWith(expect.objectContaining({
       create: expect.objectContaining({ chainId: 1, lastBlockNumber: 88 }),
     }));
-    expect(metrics.indexerLag.set).toHaveBeenCalledWith({ chain_id: String(chainId) }, 20); // 100 - 80 = 20
+    expect(metrics.indexerLag.set).toHaveBeenCalledWith({ chain_id: '1' }, 20); // 100 - 80 = 20
   });
 
   test('should detect reorg, trigger reconciliation duration metric, and rewind to LCA', async () => {
@@ -215,6 +215,7 @@ describe('IndexerWorker', () => {
 
       expect(prisma.processedEvent.create).toHaveBeenCalledWith({
         data: {
+          chainId,
           transactionHash,
           logIndex,
           blockHash,
