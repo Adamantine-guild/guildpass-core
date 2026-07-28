@@ -147,29 +147,45 @@ describe("policy engine", () => {
     expect(d.reasons.some((r) => r.code === "RULE_PUBLIC")).toBe(true);
   });
 
-  test("resolveEffectiveRoles adds member when active", () => {
+  test("permanent role assignments grant access when expiresAt is omitted", () => {
     const roles = resolveEffectiveRoles(ctxAdmin);
     expect(roles).toContain("member");
     expect(roles).toContain("admin");
   });
 
-  test("resolveEffectiveRoles filters out expired roles", () => {
-    const now = new Date();
-    const past = new Date(now.getTime() - 1000).toISOString();
-    const future = new Date(now.getTime() + 1000).toISOString();
-
-    const ctx: RoleContext = {
+  test("future role assignments grant access before expiry", () => {
+    const roles = resolveEffectiveRoles({
       assignments: [
-        { role: "admin", source: "manual", active: true, expiresAt: past },
-        { role: "contributor", source: "manual", active: true, expiresAt: future },
+        {
+          role: "contributor",
+          source: "manual",
+          active: true,
+          expiresAt: new Date(Date.now() + 1000).toISOString(),
+        },
       ],
-      membershipState: "active",
-    };
+      membershipState: "invited",
+    });
 
-    const roles = resolveEffectiveRoles(ctx);
-    expect(roles).not.toContain("admin");
     expect(roles).toContain("contributor");
-    expect(roles).toContain("member"); // from contributor and membershipState
+    expect(roles).toContain("member");
+  });
+
+  test("past role assignments do not grant access", () => {
+    const roles = resolveEffectiveRoles({
+      assignments: [
+        {
+          role: "admin",
+          source: "manual",
+          active: true,
+          expiresAt: new Date(Date.now() - 1000).toISOString(),
+        },
+      ],
+      membershipState: "invited",
+    });
+
+    expect(roles).not.toContain("admin");
+    expect(roles).not.toContain("contributor");
+    expect(roles).not.toContain("member");
   });
 
   test("resolveEffectiveRoles applies hierarchy (admin -> contributor -> member)", () => {

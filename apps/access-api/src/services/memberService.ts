@@ -922,10 +922,17 @@ export function getMemberService(
     async assignMemberRole(
       input: AssignRoleInput,
     ): Promise<RoleMutationResult> {
-      const { requesterWallet, communityId, targetWallet, role } = input;
+      const { requesterWallet, communityId, targetWallet, role, expiresAt } = input;
       const validRoles: Role[] = ["admin", "member", "contributor"];
       if (!validRoles.includes(role)) {
         throw new MemberServiceError("Invalid role", 400);
+      }
+      const parsedExpiresAt =
+        expiresAt === undefined || expiresAt === null
+          ? null
+          : new Date(expiresAt);
+      if (parsedExpiresAt && Number.isNaN(parsedExpiresAt.getTime())) {
+        throw new MemberServiceError("Invalid expiresAt", 400);
       }
 
       const community = await prismaClient.community.findUnique({
@@ -974,7 +981,7 @@ export function getMemberService(
           communityId,
           actorWallet: requesterWallet,
           targetWallet,
-          proposedData: { role },
+          proposedData: { role, expiresAt: expiresAt ?? null },
         });
 
         await tx.roleAssignment.create({
@@ -983,6 +990,7 @@ export function getMemberService(
             role,
             source: "manual",
             active: true,
+            expiresAt: parsedExpiresAt,
           },
         });
       });
