@@ -214,6 +214,31 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   // Generate a SIWE nonce
   app.post(
     "/v1/auth/nonce",
+    {
+      schema: {
+        summary: "Generate a SIWE nonce",
+        description:
+          "Issues a one-time 32-byte hex nonce valid for 5 minutes. " +
+          "Pass this nonce in the SIWE message you present for signing, " +
+          "then submit the signed message to `POST /v1/auth/verify`.",
+        tags: ["Auth"],
+        response: {
+          200: {
+            description: "Nonce issued",
+            type: "object",
+            required: ["nonce"],
+            properties: {
+              nonce: {
+                type: "string",
+                description: "One-time hex nonce, expires in 5 minutes",
+                example: "a3f8c2e1b7d94f6a0e5b3d2c9a1f4e7b",
+              },
+            },
+            example: { nonce: "a3f8c2e1b7d94f6a0e5b3d2c9a1f4e7b" },
+          },
+        },
+      },
+    },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const nonce = crypto.randomBytes(16).toString("hex");
       const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes expiry
@@ -230,6 +255,95 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   // Verify SIWE signature and issue session token
   app.post(
     "/v1/auth/verify",
+    {
+      schema: {
+        summary: "Verify a SIWE signature and issue a session token",
+        description:
+          "Validates the signed EIP-4361 (Sign-In With Ethereum) message and nonce. " +
+          "On success, returns a bearer token valid for 2 hours. " +
+          "Include the token in the `Authorization: Bearer <token>` header on subsequent requests.",
+        tags: ["Auth"],
+        body: {
+          type: "object",
+          required: ["message", "signature"],
+          properties: {
+            message: {
+              type: "string",
+              description: "EIP-4361 SIWE message string",
+              example:
+                "localhost wants you to sign in with your Ethereum account:\n" +
+                "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045\n\n" +
+                "Sign in to GuildPass\n\n" +
+                "URI: http://localhost:3000\nVersion: 1\nChain ID: 1\n" +
+                "Nonce: a3f8c2e1b7d94f6a0e5b3d2c9a1f4e7b\nIssued At: 2026-07-28T12:00:00Z",
+            },
+            signature: {
+              type: "string",
+              description: "Hex-encoded ECDSA signature over the SIWE message",
+              example:
+                "0x4a8f2c1d3e7b6a9f5c2e0d8b1a4f3e7c9d5b2a8e1c4f6b3a7d9e2c5f8a1b4e7c0d3f6a9b2e5c8f1a4b7d0e3f6a9c2d5e8f1b4a7c0d3f6a92e",
+            },
+          },
+          example: {
+            message:
+              "localhost wants you to sign in with your Ethereum account:\n" +
+              "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045\n\n" +
+              "Sign in to GuildPass\n\n" +
+              "URI: http://localhost:3000\nVersion: 1\nChain ID: 1\n" +
+              "Nonce: a3f8c2e1b7d94f6a0e5b3d2c9a1f4e7b\nIssued At: 2026-07-28T12:00:00Z",
+            signature:
+              "0x4a8f2c1d3e7b6a9f5c2e0d8b1a4f3e7c9d5b2a8e1c4f6b3a7d9e2c5f8a1b4e7c0d3f6a9b2e5c8f1a4b7d0e3f6a9c2d5e8f1b4a7c0d3f6a92e",
+          },
+        },
+        response: {
+          200: {
+            description: "Session token issued — valid for 2 hours",
+            type: "object",
+            required: ["token", "expiresAt", "walletAddress"],
+            properties: {
+              token: {
+                type: "string",
+                description: "Bearer token to include in the Authorization header",
+                example: "7e3f1a9b4c2d6e8f0a1b3c5d7e9f2a4b",
+              },
+              expiresAt: {
+                type: "string",
+                format: "date-time",
+                description: "ISO 8601 timestamp when the session expires",
+                example: "2026-07-28T14:00:00.000Z",
+              },
+              walletAddress: {
+                type: "string",
+                description: "Checksummed wallet address extracted from the SIWE message",
+                example: "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
+              },
+            },
+            example: {
+              token: "7e3f1a9b4c2d6e8f0a1b3c5d7e9f2a4b",
+              expiresAt: "2026-07-28T14:00:00.000Z",
+              walletAddress: "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
+            },
+          },
+          400: {
+            description: "Invalid SIWE message, expired nonce, or signature mismatch",
+            type: "object",
+            required: ["error", "code", "message", "statusCode"],
+            properties: {
+              error: { type: "string", example: "VALIDATION_ERROR" },
+              code: { type: "string", example: "VALIDATION_ERROR" },
+              message: { type: "string", example: "Nonce has expired" },
+              statusCode: { type: "integer", example: 400 },
+            },
+            example: {
+              error: "VALIDATION_ERROR",
+              code: "VALIDATION_ERROR",
+              message: "Nonce has expired",
+              statusCode: 400,
+            },
+          },
+        },
+      },
+    },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const { message, signature } = request.body as {
         message: string;
@@ -303,6 +417,88 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   // Generate a challenge
   app.post(
     "/v1/wallets/:primaryWallet/challenges",
+    {
+      schema: {
+        summary: "Generate a wallet-link challenge",
+        description:
+          "Creates a one-time challenge that the secondary wallet must sign to " +
+          "prove ownership before it can be linked to the primary wallet.",
+        tags: ["Wallets"],
+        params: {
+          type: "object",
+          required: ["primaryWallet"],
+          properties: {
+            primaryWallet: {
+              type: "string",
+              pattern: "^0x[0-9a-fA-F]{40}$",
+              description: "Primary EVM wallet address",
+              example: "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+            },
+          },
+        },
+        body: {
+          type: "object",
+          required: ["secondaryWallet"],
+          properties: {
+            secondaryWallet: {
+              type: "string",
+              pattern: "^0x[0-9a-fA-F]{40}$",
+              description: "Secondary EVM wallet address to link",
+              example: "0xAbCd1234567890AbCd1234567890AbCd12345678",
+            },
+          },
+          example: { secondaryWallet: "0xAbCd1234567890AbCd1234567890AbCd12345678" },
+        },
+        response: {
+          200: {
+            description: "Challenge generated — pass to POST /v1/wallets/:primaryWallet/link",
+            type: "object",
+            properties: {
+              challenge: { type: "string", description: "Opaque challenge string to sign", example: "guildpass-link:0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045:0xAbCd1234567890AbCd1234567890AbCd12345678:1722168000000" },
+              expiresAt: { type: "string", format: "date-time", example: "2026-07-28T12:10:00.000Z" },
+            },
+            example: {
+              challenge: "guildpass-link:0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045:0xAbCd1234567890AbCd1234567890AbCd12345678:1722168000000",
+              expiresAt: "2026-07-28T12:10:00.000Z",
+            },
+          },
+          400: {
+            description: "Invalid wallet address or wallets are already linked",
+            type: "object",
+            required: ["error", "code", "message", "statusCode"],
+            properties: {
+              error: { type: "string", example: "VALIDATION_ERROR" },
+              code: { type: "string", example: "VALIDATION_ERROR" },
+              message: { type: "string", example: "Invalid wallet address" },
+              statusCode: { type: "integer", example: 400 },
+            },
+            example: {
+              error: "VALIDATION_ERROR",
+              code: "VALIDATION_ERROR",
+              message: "Invalid wallet address",
+              statusCode: 400,
+            },
+          },
+          409: {
+            description: "Wallets are already linked",
+            type: "object",
+            required: ["error", "code", "message", "statusCode"],
+            properties: {
+              error: { type: "string", example: "CONFLICT" },
+              code: { type: "string", example: "CONFLICT" },
+              message: { type: "string", example: "Wallets are already linked" },
+              statusCode: { type: "integer", example: 409 },
+            },
+            example: {
+              error: "CONFLICT",
+              code: "CONFLICT",
+              message: "Wallets are already linked",
+              statusCode: 409,
+            },
+          },
+        },
+      },
+    },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const { primaryWallet } = request.params as { primaryWallet: string };
       const { secondaryWallet } = request.body as { secondaryWallet: string };
@@ -330,6 +526,84 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   // Link a wallet using a challenge and signature
   app.post(
     "/v1/wallets/:primaryWallet/link",
+    {
+      schema: {
+        summary: "Link a secondary wallet to a primary wallet",
+        description:
+          "Completes the wallet-link flow by submitting the challenge " +
+          "(from `POST /v1/wallets/:primaryWallet/challenges`) and the " +
+          "secondary wallet's signature over that challenge.",
+        tags: ["Wallets"],
+        params: {
+          type: "object",
+          required: ["primaryWallet"],
+          properties: {
+            primaryWallet: {
+              type: "string",
+              pattern: "^0x[0-9a-fA-F]{40}$",
+              description: "Primary EVM wallet address",
+              example: "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+            },
+          },
+        },
+        body: {
+          type: "object",
+          required: ["challenge", "signature"],
+          properties: {
+            challenge: {
+              type: "object",
+              description: "Challenge object returned by POST /v1/wallets/:primaryWallet/challenges",
+              example: { challenge: "guildpass-link:0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045:0xAbCd1234567890AbCd1234567890AbCd12345678:1722168000000", expiresAt: "2026-07-28T12:10:00.000Z" },
+            },
+            signature: {
+              type: "string",
+              description: "Hex-encoded ECDSA signature of the challenge by the secondary wallet",
+              example: "0x9b3c2a1e4f7d6b8a5c0e2f9d1b4a7c3e6f8b2d5a1c4e7f0b3d6a9c2e5f8b1d4a7c0e3f6a9b2c5e8f1b4d7a0c3f6a9b2e5c8f1a4b7d0e3f6a92e",
+            },
+          },
+          example: {
+            challenge: {
+              challenge: "guildpass-link:0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045:0xAbCd1234567890AbCd1234567890AbCd12345678:1722168000000",
+              expiresAt: "2026-07-28T12:10:00.000Z",
+            },
+            signature: "0x9b3c2a1e4f7d6b8a5c0e2f9d1b4a7c3e6f8b2d5a1c4e7f0b3d6a9c2e5f8b1d4a7c0e3f6a9b2c5e8f1b4d7a0c3f6a9b2e5c8f1a4b7d0e3f6a92e",
+          },
+        },
+        response: {
+          200: {
+            description: "Wallets successfully linked",
+            type: "object",
+            properties: {
+              primaryWallet: { type: "string", example: "0xd8da6bf26964af9d7eed9e03e53415d37aa96045" },
+              secondaryWallet: { type: "string", example: "0xabcd1234567890abcd1234567890abcd12345678" },
+              linkedAt: { type: "string", format: "date-time", example: "2026-07-28T12:05:00.000Z" },
+            },
+            example: {
+              primaryWallet: "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
+              secondaryWallet: "0xabcd1234567890abcd1234567890abcd12345678",
+              linkedAt: "2026-07-28T12:05:00.000Z",
+            },
+          },
+          400: {
+            description: "Invalid or expired challenge, or signature mismatch",
+            type: "object",
+            required: ["error", "code", "message", "statusCode"],
+            properties: {
+              error: { type: "string", example: "VALIDATION_ERROR" },
+              code: { type: "string", example: "VALIDATION_ERROR" },
+              message: { type: "string", example: "Challenge has expired" },
+              statusCode: { type: "integer", example: 400 },
+            },
+            example: {
+              error: "VALIDATION_ERROR",
+              code: "VALIDATION_ERROR",
+              message: "Challenge has expired",
+              statusCode: 400,
+            },
+          },
+        },
+      },
+    },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const { primaryWallet } = request.params as { primaryWallet: string };
       const { challenge, signature } = request.body as {
@@ -360,6 +634,61 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   // Get linked wallets for a primary wallet
   app.get(
     "/v1/wallets/:primaryWallet/linked",
+    {
+      schema: {
+        summary: "List wallets linked to a primary wallet",
+        description: "Returns all secondary wallet addresses that have been successfully linked to the given primary wallet.",
+        tags: ["Wallets"],
+        params: {
+          type: "object",
+          required: ["primaryWallet"],
+          properties: {
+            primaryWallet: {
+              type: "string",
+              pattern: "^0x[0-9a-fA-F]{40}$",
+              description: "Primary EVM wallet address",
+              example: "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+            },
+          },
+        },
+        response: {
+          200: {
+            description: "Linked wallets for the primary address",
+            type: "object",
+            required: ["primaryWallet", "linkedWallets"],
+            properties: {
+              primaryWallet: { type: "string", example: "0xd8da6bf26964af9d7eed9e03e53415d37aa96045" },
+              linkedWallets: {
+                type: "array",
+                items: { type: "string" },
+                example: ["0xabcd1234567890abcd1234567890abcd12345678"],
+              },
+            },
+            example: {
+              primaryWallet: "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
+              linkedWallets: ["0xabcd1234567890abcd1234567890abcd12345678"],
+            },
+          },
+          404: {
+            description: "Primary wallet not found",
+            type: "object",
+            required: ["error", "code", "message", "statusCode"],
+            properties: {
+              error: { type: "string", example: "NOT_FOUND" },
+              code: { type: "string", example: "NOT_FOUND" },
+              message: { type: "string", example: "Wallet not found" },
+              statusCode: { type: "integer", example: 404 },
+            },
+            example: {
+              error: "NOT_FOUND",
+              code: "NOT_FOUND",
+              message: "Wallet not found",
+              statusCode: 404,
+            },
+          },
+        },
+      },
+    },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const { primaryWallet } = request.params as { primaryWallet: string };
       try {
@@ -1312,7 +1641,101 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   // --- Constitutional Rule Set Management Routes ---
 
   // POST /v1/communities/:communityId/constitutional-rulesets — Create a new versioned constitutional rule set
-  app.post('/v1/communities/:communityId/constitutional-rulesets', { preHandler: [authenticateApiKey, requireSiweSession] }, async (request: FastifyRequest, reply: FastifyReply) => {
+  app.post('/v1/communities/:communityId/constitutional-rulesets', {
+    preHandler: [authenticateApiKey, requireSiweSession],
+    schema: {
+      summary: 'Create a new versioned constitutional rule set',
+      description:
+        'Creates an immutable, versioned rule set that constrains all role ' +
+        'mutations, policy updates, and override actions within the community. ' +
+        'The new version becomes active immediately; previous versions are archived.',
+      tags: ['Constitutional Rules'],
+      params: {
+        type: 'object',
+        required: ['communityId'],
+        properties: {
+          communityId: { type: 'string', description: 'Community identifier', example: 'community-mainnet-42' },
+        },
+      },
+      body: {
+        type: 'object',
+        required: ['rules'],
+        properties: {
+          rules: {
+            type: 'array',
+            description: 'Array of constitutional rule objects',
+            items: { type: 'object', additionalProperties: true },
+            example: [{ type: 'COOLDOWN', action: 'ROLE_ASSIGNMENT', durationMs: 86400000 }],
+          },
+          description: {
+            type: 'string',
+            description: 'Human-readable description of this rule set version',
+            example: 'Adds a 24-hour cooldown between consecutive role assignments',
+          },
+        },
+        example: {
+          rules: [{ type: 'COOLDOWN', action: 'ROLE_ASSIGNMENT', durationMs: 86400000 }],
+          description: 'Adds a 24-hour cooldown between consecutive role assignments',
+        },
+      },
+      response: {
+        201: {
+          description: 'Rule set version created and activated',
+          type: 'object',
+          properties: {
+            id: { type: 'string', example: 'crs_01HZ9K3XB7E4F2WQMN8VDTG1R' },
+            communityId: { type: 'string', example: 'community-mainnet-42' },
+            version: { type: 'integer', example: 3 },
+            description: { type: 'string', example: 'Adds a 24-hour cooldown between consecutive role assignments' },
+            createdBy: { type: 'string', example: '0xd8da6bf26964af9d7eed9e03e53415d37aa96045' },
+            createdAt: { type: 'string', format: 'date-time', example: '2026-07-28T12:00:00.000Z' },
+          },
+          example: {
+            id: 'crs_01HZ9K3XB7E4F2WQMN8VDTG1R',
+            communityId: 'community-mainnet-42',
+            version: 3,
+            description: 'Adds a 24-hour cooldown between consecutive role assignments',
+            createdBy: '0xd8da6bf26964af9d7eed9e03e53415d37aa96045',
+            createdAt: '2026-07-28T12:00:00.000Z',
+          },
+        },
+        400: {
+          description: 'Missing rules array or invalid rule definition',
+          type: 'object',
+          required: ['error', 'code', 'message', 'statusCode'],
+          properties: {
+            error: { type: 'string', example: 'VALIDATION_ERROR' },
+            code: { type: 'string', example: 'VALIDATION_ERROR' },
+            message: { type: 'string', example: "Missing required field: rules array" },
+            statusCode: { type: 'integer', example: 400 },
+          },
+          example: {
+            error: 'VALIDATION_ERROR',
+            code: 'VALIDATION_ERROR',
+            message: 'Missing required field: rules array',
+            statusCode: 400,
+          },
+        },
+        401: {
+          description: 'Unauthorized',
+          type: 'object',
+          required: ['error', 'code', 'message', 'statusCode'],
+          properties: {
+            error: { type: 'string', example: 'UNAUTHORIZED' },
+            code: { type: 'string', example: 'UNAUTHORIZED' },
+            message: { type: 'string', example: 'Missing or invalid API key' },
+            statusCode: { type: 'integer', example: 401 },
+          },
+          example: {
+            error: 'UNAUTHORIZED',
+            code: 'UNAUTHORIZED',
+            message: 'Missing or invalid API key',
+            statusCode: 401,
+          },
+        },
+      },
+    },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
     const { communityId } = request.params as { communityId: string };
     const body = request.body as { rules?: any[]; description?: string };
     const requesterWallet = getRequesterWallet(request);
@@ -1335,14 +1758,136 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // GET /v1/communities/:communityId/constitutional-rulesets — List all rule set versions
-  app.get('/v1/communities/:communityId/constitutional-rulesets', { preHandler: [authenticateApiKey] }, async (request: FastifyRequest, reply: FastifyReply) => {
+  app.get('/v1/communities/:communityId/constitutional-rulesets', {
+    preHandler: [authenticateApiKey],
+    schema: {
+      summary: 'List all constitutional rule set versions for a community',
+      description: 'Returns every version of the community constitutional rule set in descending order (newest first). The active version is the first entry.',
+      tags: ['Constitutional Rules'],
+      params: {
+        type: 'object',
+        required: ['communityId'],
+        properties: {
+          communityId: { type: 'string', description: 'Community identifier', example: 'community-mainnet-42' },
+        },
+      },
+      response: {
+        200: {
+          description: 'All rule set versions',
+          type: 'object',
+          required: ['communityId', 'versions'],
+          properties: {
+            communityId: { type: 'string', example: 'community-mainnet-42' },
+            versions: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  id: { type: 'string' },
+                  version: { type: 'integer' },
+                  description: { type: 'string', nullable: true },
+                  createdBy: { type: 'string' },
+                  createdAt: { type: 'string', format: 'date-time' },
+                },
+              },
+              example: [
+                { id: 'crs_01HZ9K3XB7E4F2WQMN8VDTG1R', version: 3, description: 'Adds a 24-hour cooldown', createdBy: '0xd8da6bf26964af9d7eed9e03e53415d37aa96045', createdAt: '2026-07-28T12:00:00.000Z' },
+                { id: 'crs_01HZ8B2WA6D3E1VPLN7UCSH0Q', version: 2, description: null, createdBy: '0xd8da6bf26964af9d7eed9e03e53415d37aa96045', createdAt: '2026-06-15T09:00:00.000Z' },
+              ],
+            },
+          },
+          example: {
+            communityId: 'community-mainnet-42',
+            versions: [
+              { id: 'crs_01HZ9K3XB7E4F2WQMN8VDTG1R', version: 3, description: 'Adds a 24-hour cooldown', createdBy: '0xd8da6bf26964af9d7eed9e03e53415d37aa96045', createdAt: '2026-07-28T12:00:00.000Z' },
+            ],
+          },
+        },
+        401: {
+          description: 'Unauthorized',
+          type: 'object',
+          required: ['error', 'code', 'message', 'statusCode'],
+          properties: {
+            error: { type: 'string', example: 'UNAUTHORIZED' },
+            code: { type: 'string', example: 'UNAUTHORIZED' },
+            message: { type: 'string', example: 'Missing or invalid API key' },
+            statusCode: { type: 'integer', example: 401 },
+          },
+          example: {
+            error: 'UNAUTHORIZED',
+            code: 'UNAUTHORIZED',
+            message: 'Missing or invalid API key',
+            statusCode: 401,
+          },
+        },
+      },
+    },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
     const { communityId } = request.params as { communityId: string };
     const result = await getConstitutionalRuleSetVersions(prisma, communityId);
     return { communityId, versions: result };
   });
 
   // GET /v1/communities/:communityId/constitutional-rulesets/active — Get current active rule set
-  app.get('/v1/communities/:communityId/constitutional-rulesets/active', async (request: FastifyRequest, reply: FastifyReply) => {
+  app.get('/v1/communities/:communityId/constitutional-rulesets/active', {
+    schema: {
+      summary: 'Get the currently active constitutional rule set',
+      description: 'Returns the highest-version rule set that is currently enforced for this community. Returns 404 when no rule set has been created yet.',
+      tags: ['Constitutional Rules'],
+      params: {
+        type: 'object',
+        required: ['communityId'],
+        properties: {
+          communityId: { type: 'string', description: 'Community identifier', example: 'community-mainnet-42' },
+        },
+      },
+      response: {
+        200: {
+          description: 'Active constitutional rule set',
+          type: 'object',
+          properties: {
+            id: { type: 'string', example: 'crs_01HZ9K3XB7E4F2WQMN8VDTG1R' },
+            communityId: { type: 'string', example: 'community-mainnet-42' },
+            version: { type: 'integer', example: 3 },
+            rules: {
+              type: 'array',
+              items: { type: 'object', additionalProperties: true },
+              example: [{ type: 'COOLDOWN', action: 'ROLE_ASSIGNMENT', durationMs: 86400000 }],
+            },
+            description: { type: 'string', nullable: true, example: 'Adds a 24-hour cooldown between consecutive role assignments' },
+            createdBy: { type: 'string', example: '0xd8da6bf26964af9d7eed9e03e53415d37aa96045' },
+            createdAt: { type: 'string', format: 'date-time', example: '2026-07-28T12:00:00.000Z' },
+          },
+          example: {
+            id: 'crs_01HZ9K3XB7E4F2WQMN8VDTG1R',
+            communityId: 'community-mainnet-42',
+            version: 3,
+            rules: [{ type: 'COOLDOWN', action: 'ROLE_ASSIGNMENT', durationMs: 86400000 }],
+            description: 'Adds a 24-hour cooldown between consecutive role assignments',
+            createdBy: '0xd8da6bf26964af9d7eed9e03e53415d37aa96045',
+            createdAt: '2026-07-28T12:00:00.000Z',
+          },
+        },
+        404: {
+          description: 'No active constitutional rule set found for this community',
+          type: 'object',
+          required: ['error', 'code', 'message', 'statusCode'],
+          properties: {
+            error: { type: 'string', example: 'NOT_FOUND' },
+            code: { type: 'string', example: 'NOT_FOUND' },
+            message: { type: 'string', example: 'No active constitutional rule set found for this community' },
+            statusCode: { type: 'integer', example: 404 },
+          },
+          example: {
+            error: 'NOT_FOUND',
+            code: 'NOT_FOUND',
+            message: 'No active constitutional rule set found for this community',
+            statusCode: 404,
+          },
+        },
+      },
+    },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
     const { communityId } = request.params as { communityId: string };
     const active = await getActiveConstitutionalRuleSet(prisma, communityId);
     if (!active) {
