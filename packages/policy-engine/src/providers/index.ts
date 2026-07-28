@@ -3,6 +3,7 @@
  */
 
 export { ValidationProvider } from './validationProvider';
+export { PermissionProvider } from './permissionProvider';
 export { StaticPolicyProvider } from './staticPolicyProvider';
 export { ComposablePolicyProvider } from './composablePolicyProvider';
 export { FallbackProvider } from './fallbackProvider';

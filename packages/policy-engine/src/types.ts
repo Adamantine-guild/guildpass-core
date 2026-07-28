@@ -2,7 +2,7 @@
  * Core types for the Chain of Responsibility policy evaluation architecture
  */
 
-import type { RoleContext, AccessPolicy, Role, AccessDecision, DecisionReason } from '@guildpass/shared-types';
+import type { RoleContext, AccessPolicy, Role, AccessDecision, Permission } from '@guildpass/shared-types';
 
 /**
  * The three possible outcomes of a rule provider evaluation
@@ -31,6 +31,8 @@ export interface EvaluationContext {
   roleContext: RoleContext;
   /** The effective roles resolved from the role context */
   effectiveRoles: Role[];
+  /** Permissions resolved from effective custom roles and the context. */
+  effectivePermissions?: Permission[];
 }
 
 /**
