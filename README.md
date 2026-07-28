@@ -160,9 +160,26 @@ The API uses the **transactional outbox pattern** to emit reliable integration e
 | **Statuses** | `pending` (awaiting delivery), `delivered` (successfully processed), `failed` (permanently failed after max retries) |
 | **Retry strategy** | Exponential backoff: `nextRetryAt = now + 10 × 2^retryCount` seconds. Default max 5 retries. |
 | **Delivery worker** | `outboxWorker` polls for pending events every `OUTBOX_WORKER_INTERVAL_MS` (default 10s) and delegates to a pluggable handler. The default handler is a no-op logger. |
-| **Pruning** | Delivered events older than 7 days are automatically pruned to prevent unbounded table growth. |
+| **Pruning** | Delivered events older than 7 days are automatically pruned to prevent unbounded table growth. The predicate explicitly excludes `pending` and `failed` events regardless of age. |
 
 \* `POLICY_CREATED`/`POLICY_UPDATED`/`POLICY_DELETED` are reserved for future CRUD on the base `AccessPolicy` (per-resource `ruleType`) record, which today is only read, not managed via an API. Wallet-specific **access overrides** (see Policy Engine, above) are a separate concept with their own `ACCESS_OVERRIDE_*` event types.
+
+### Manual pruning
+
+Operators can run the same safety-scoped pruning logic on demand:
+
+```bash
+npm run -w access-api outbox:prune -- --days 14
+```
+
+`--days=N` is also supported. If the flag is omitted, the script reads
+`OUTBOX_RETENTION_DAYS`, then defaults to 7 days. The value must be greater
+than zero and may be fractional. Only rows with `status = delivered` and a
+`deliveredAt` timestamp strictly older than the calculated cutoff are deleted;
+events exactly on the boundary are retained.
+
+The script uses `DATABASE_URL` through the normal Prisma configuration and
+prints the number of deleted events before disconnecting.
 
 ### Delivery Guarantees
 

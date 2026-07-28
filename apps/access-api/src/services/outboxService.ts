@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { PrismaClient } from "@prisma/client";
+import { Prisma, type PrismaClient } from "@prisma/client";
 import type {
   OutboxEventType,
   OutboxEventDto,
@@ -7,6 +7,7 @@ import type {
   OutboxEventStatus,
 } from "@guildpass/shared-types";
 import { getCorrelationId } from "./requestContext";
+import { metrics } from "../observability/metrics";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -55,6 +56,7 @@ export type OutboxEventInput = {
 
 const DEFAULT_MAX_RETRIES = 5;
 const BASE_RETRY_DELAY_SECONDS = 10;
+export const DEFAULT_OUTBOX_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
 function computeNextRetryAt(retryCount: number): Date {
   const delaySeconds = BASE_RETRY_DELAY_SECONDS * Math.pow(2, retryCount);
@@ -365,11 +367,40 @@ export async function pruneDeliveredOutboxEvents(
   db: PrismaLikeClient,
   olderThan: Date,
 ): Promise<number> {
+  if (Number.isNaN(olderThan.getTime())) {
+    throw new Error("Outbox pruning cutoff must be a valid date");
+  }
+
   const result = await (db as any).outboxEvent.deleteMany({
     where: {
+      // These predicates are deliberately explicit and load-bearing:
+      // pending and failed events must never be removed by retention pruning.
       status: "delivered",
       deliveredAt: { lt: olderThan },
     },
   });
   return result?.count ?? 0;
+}
+
+/**
+ * Prune delivered events whose delivery timestamp is strictly older than the
+ * configured retention duration. The injectable clock makes boundary
+ * behaviour deterministic in tests and operator tooling.
+ */
+export async function pruneOutboxEvents(
+  db: PrismaLikeClient,
+  retentionMs: number = DEFAULT_OUTBOX_RETENTION_MS,
+  now: Date = new Date(),
+): Promise<number> {
+  if (!Number.isFinite(retentionMs) || retentionMs <= 0) {
+    throw new Error("Outbox retention duration must be greater than zero");
+  }
+  if (Number.isNaN(now.getTime())) {
+    throw new Error("Outbox pruning clock must be a valid date");
+  }
+
+  return pruneDeliveredOutboxEvents(
+    db,
+    new Date(now.getTime() - retentionMs),
+  );
 }
