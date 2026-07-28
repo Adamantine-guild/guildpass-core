@@ -19,6 +19,26 @@ import { createApiError, unauthorized } from './errors';
 import { isValidWalletAddress } from './lib/wallet';
 import { config } from './config';
 import { setRequestContext } from './services/requestContext';
+import accessCheckRateLimiter from './plugins/accessCheckRateLimiter';
+
+// --------------------------------------------------------------------------
+// Helper: interpret the TRUST_PROXY setting for Fastify
+//
+// Fastify only derives request.ip from X-Forwarded-For when trustProxy is set.
+// Left off (the default), the header is ignored and request.ip is the socket
+// address — which is what rate limiting must key on, since an untrusted
+// X-Forwarded-For lets any caller mint a fresh bucket on every request.
+// --------------------------------------------------------------------------
+export function parseTrustProxy(value: string): boolean | number | string[] {
+  const raw = value.trim();
+  if (raw === '' || raw === 'false' || raw === '0') return false;
+  if (raw === 'true') return true;
+  if (/^\d+$/.test(raw)) return Number(raw);
+  return raw
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
 
 // --------------------------------------------------------------------------
 // Helper: normalise a Fastify route URL into a stable label

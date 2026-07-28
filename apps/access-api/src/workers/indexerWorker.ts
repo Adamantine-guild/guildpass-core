@@ -359,6 +359,129 @@ export class IndexerWorker {
       const stateId = indexerStateId(this.chainConfig);
 
       await this.prisma.$transaction(async (tx) => {
+        // Reverse membership / admin / ownership derived from orphaned blocks (#273).
+        const orphanedAuditEvents = await tx.auditEvent.findMany({
+          where: {
+            blockNumber: { gt: rewindTo },
+            OR: [
+              { chainId: this.chainConfig.chainId },
+              { chainId: null },
+            ],
+          },
+          orderBy: { createdAt: 'desc' },
+        });
+
+        for (const audit of orphanedAuditEvents) {
+          const beforeState = audit.beforeState as Record<string, unknown> | null;
+          const afterState = audit.afterState as Record<string, unknown> | null;
+
+          if (
+            audit.eventType === 'MEMBERSHIP_CREATED' ||
+            audit.eventType === 'MEMBERSHIP_UPDATED'
+          ) {
+            const tokenId = afterState?.tokenId as number | undefined;
+            const tokenChainId =
+              (afterState?.chainId as number | undefined) ??
+              this.chainConfig.chainId;
+            const tokenContract =
+              (afterState?.contractAddress as string | undefined) ??
+              this.contractAddress;
+
+            if (tokenId !== undefined) {
+              if (beforeState && beforeState.state) {
+                await tx.membershipToken.updateMany({
+                  where: {
+                    chainId: tokenChainId,
+                    contractAddress: tokenContract,
+                    tokenId,
+                  },
+                  data: {
+                    state: beforeState.state as any,
+                    expiresAt: beforeState.expiresAt
+                      ? new Date(String(beforeState.expiresAt))
+                      : null,
+                  },
+                });
+              } else if (audit.eventType === 'MEMBERSHIP_CREATED') {
+                const tokens = await tx.membershipToken.findMany({
+                  where: {
+                    chainId: tokenChainId,
+                    contractAddress: tokenContract,
+                    tokenId,
+                  },
+                  select: { id: true },
+                });
+                const tokenIds = tokens.map((t) => t.id);
+                if (tokenIds.length > 0) {
+                  await tx.membership.updateMany({
+                    where: { activeTokenId: { in: tokenIds } },
+                    data: { activeTokenId: null },
+                  });
+                  await tx.membershipToken.deleteMany({
+                    where: { id: { in: tokenIds } },
+                  });
+                }
+              }
+            }
+          } else if (audit.eventType === 'CONTRACT_ADMIN_UPDATED') {
+            if (audit.walletId) {
+              if (beforeState && beforeState.enabled !== undefined) {
+                await tx.contractAdmin.updateMany({
+                  where: {
+                    chainId: this.chainConfig.chainId,
+                    address: audit.walletId,
+                  },
+                  data: { enabled: Boolean(beforeState.enabled) },
+                });
+              } else {
+                await tx.contractAdmin.deleteMany({
+                  where: {
+                    chainId: this.chainConfig.chainId,
+                    address: audit.walletId,
+                  },
+                });
+              }
+            }
+          } else if (audit.eventType === 'CONTRACT_OWNERSHIP_TRANSFERRED') {
+            if (beforeState && beforeState.owner !== undefined) {
+              await tx.contractOwnership.updateMany({
+                where: { chainId: this.chainConfig.chainId },
+                data: {
+                  owner: String(beforeState.owner),
+                  proposedOwner:
+                    (beforeState.proposedOwner as string | null | undefined) ??
+                    null,
+                },
+              });
+            } else {
+              await tx.contractOwnership.deleteMany({
+                where: { chainId: this.chainConfig.chainId },
+              });
+            }
+          }
+        }
+
+        // Drop orphaned audit / outbox rows so the next forward pass can re-apply
+        // canonical logs cleanly. Append-only history for confirmed blocks is preserved.
+        await tx.auditEvent.deleteMany({
+          where: {
+            blockNumber: { gt: rewindTo },
+            OR: [
+              { chainId: this.chainConfig.chainId },
+              { chainId: null },
+            ],
+          },
+        });
+        await tx.outboxEvent.deleteMany({
+          where: {
+            blockNumber: { gt: rewindTo },
+            OR: [
+              { chainId: this.chainConfig.chainId },
+              { chainId: null },
+            ],
+          },
+        });
+
         await tx.indexerState.update({
           where: { id: stateId },
           data: {

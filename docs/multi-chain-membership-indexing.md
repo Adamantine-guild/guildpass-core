@@ -30,3 +30,8 @@ Running one process per chain isolates RPC failures, makes horizontal scaling an
 ## Recommended path
 
 Start with a single multiplexed process for small installations. Move high-volume or unreliable chains to per-chain processes once metrics show distinct scaling or availability requirements.
+
+## Ingestion guarantees
+
+See [indexer-ingestion-guarantees.md](./indexer-ingestion-guarantees.md) for idempotency, confirmation depth, and reorg rollback (#273).
+

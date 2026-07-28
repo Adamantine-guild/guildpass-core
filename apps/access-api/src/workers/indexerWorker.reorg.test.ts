@@ -49,6 +49,29 @@ describe('IndexerWorker common-ancestor reorg (#144)', () => {
         upsert: jest.fn(),
         update: jest.fn(),
       },
+      auditEvent: {
+        findMany: jest.fn().mockResolvedValue([]),
+        deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+      },
+      outboxEvent: {
+        deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+      },
+      membershipToken: {
+        findMany: jest.fn().mockResolvedValue([]),
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+        deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+      },
+      membership: {
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+      },
+      contractAdmin: {
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+        deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+      },
+      contractOwnership: {
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+        deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+      },
       blockHeader: {
         findUnique: jest.fn(async ({ where }: any) => {
           const key = `${where.chainId_blockNumber.chainId}:${where.chainId_blockNumber.blockNumber}`;
@@ -235,6 +258,52 @@ describe('IndexerWorker common-ancestor reorg (#144)', () => {
       blockNumber: 49,
       blockHash: 'hash49',
       depth: 1,
+    });
+  });
+
+  test('rolls back membership state from orphaned audits (#273)', async () => {
+    seedHeaders(11, (n) => (n === 11 ? `hash${n}-old` : `hash${n}`));
+
+    prisma.indexerState.findUnique.mockResolvedValue({
+      id: stateId,
+      chainId: 1,
+      contractAddress: chainConfig.membershipNftAddress,
+      lastBlockNumber: 11,
+      lastBlockHash: 'hash11-old',
+    });
+    provider.getLatestBlockNumber.mockResolvedValue(20);
+
+    prisma.auditEvent.findMany.mockResolvedValue([
+      {
+        eventType: 'MEMBERSHIP_UPDATED',
+        walletId: '0xabc',
+        beforeState: { state: 'active', expiresAt: null },
+        afterState: {
+          tokenId: 99,
+          chainId: 1,
+          contractAddress: chainConfig.membershipNftAddress,
+          state: 'suspended',
+        },
+      },
+    ]);
+
+    const worker = new IndexerWorker(prisma, provider, {
+      finalityWindow: 0,
+      maxReorgSearchDepth: 64,
+      chainConfig,
+    });
+
+    await worker.runPass();
+
+    expect(prisma.membershipToken.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ tokenId: 99, chainId: 1 }),
+        data: expect.objectContaining({ state: 'active' }),
+      }),
+    );
+    expect(prisma.auditEvent.deleteMany).toHaveBeenCalled();
+    expect(prisma.processedEvent.deleteMany).toHaveBeenCalledWith({
+      where: { chainId: 1, blockNumber: { gt: 10 } },
     });
   });
 });

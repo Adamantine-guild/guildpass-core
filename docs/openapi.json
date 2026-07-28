@@ -2233,6 +2233,7 @@
                   "communityId",
                   "resource"
                 ],
+                "additionalProperties": false,
                 "properties": {
                   "wallet": {
                     "type": "string",
@@ -2241,10 +2242,12 @@
                   },
                   "communityId": {
                     "type": "string",
+                    "minLength": 1,
                     "description": "Community identifier"
                   },
                   "resource": {
                     "type": "string",
+                    "minLength": 1,
                     "description": "Resource identifier"
                   }
                 }
@@ -2324,45 +2327,111 @@
             }
           },
           "400": {
-            "description": "Validation error \u2014 missing required fields",
+            "description": "Validation error \u2014 missing required fields or invalid format",
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "Validation error \u2014 missing required fields",
+                  "description": "Validation error \u2014 missing required fields or invalid format",
                   "type": "object",
                   "required": [
-                    "error",
-                    "code",
-                    "message",
-                    "statusCode"
+                    "error"
                   ],
                   "properties": {
                     "error": {
-                      "type": "string",
-                      "description": "Machine-readable error identifier"
-                    },
-                    "code": {
-                      "type": "string",
-                      "description": "HTTP status phrase / error code"
-                    },
-                    "message": {
-                      "type": "string",
-                      "description": "Human-readable description"
-                    },
-                    "statusCode": {
-                      "type": "integer",
-                      "description": "HTTP status code"
-                    },
-                    "details": {
-                      "description": "Optional detail payload",
-                      "oneOf": [
-                        {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
                           "type": "string"
                         },
-                        {
-                          "type": "object"
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {
+                          "description": "Optional detail payload (validation array or message)",
+                          "oneOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "object",
+                              "additionalProperties": true
+                            },
+                            {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "additionalProperties": true
+                              }
+                            }
+                          ]
                         }
-                      ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded for this IP/API key or wallet. Clients must honour the Retry-After header (RFC 9110 delta-seconds) before retrying.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds until the client may retry (RFC 9110 delta-seconds, not milliseconds)",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "X-RateLimit-Reset": {
+                "description": "Same value as Retry-After, for clients that prefer this header name",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Rate limit exceeded",
+                  "type": "object",
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "RATE_LIMITED"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {
+                          "description": "Includes retryAfter in seconds when present",
+                          "oneOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "object",
+                              "additionalProperties": true
+                            }
+                          ]
+                        }
+                      }
                     }
                   }
                 }

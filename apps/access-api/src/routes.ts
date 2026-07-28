@@ -1,7 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import crypto from "crypto";
-
 import { getMemberService, MemberServiceError } from "./services/memberService";
 import {
   getIdentityService,
@@ -24,19 +23,14 @@ import {
   getAuditTracesByWallet,
 } from "./services/auditTraceService";
 import {
-    notFound,
-    validationError,
-    validationErrorWithReason,
-    internalError,
-    forbidden,
-    conflict,
-    unauthorized,
-    createApiError
+  notFound,
+  validationError,
+  validationErrorWithReason,
+  internalError,
+  forbidden,
+  conflict,
+  createApiError,
 } from "./errors";
-import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { z } from 'zod';
-import { getMemberService, MemberServiceError } from './services/memberService';
-import { getPrisma } from './services/prisma';
 import {
   listDeadLetterEvents,
   retryDeadLetterEvent,
@@ -81,8 +75,7 @@ import {
   updateResourceSchema,
   archiveResourceSchema,
   listResourcesSchema,
-  AccessCheckBody {
-}
+  AccessCheckBody,
 } from "./schemas";
 import {
   authenticateApiKey,
@@ -94,6 +87,7 @@ import {
   createIdempotencyPreHandler,
   createIdempotencyOnSend,
 } from "./lib/idempotency";
+import { resolveRequesterWallet } from "./utils/requesterIdentity";
 
 /**
  * Prefer SIWE session wallet. When SIWE is enforced, never trust client
@@ -847,8 +841,8 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 
-    // POST /v1/access/check — check access for wallet/resource
-    app.post<{ Body: AccessCheckBody }>(
+  // POST /v1/access/check — check access for wallet/resource
+  app.post<{ Body: AccessCheckBody }>(
       "/v1/access/check",
       {
         schema: accessCheckSchema,
@@ -880,64 +874,6 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   ): Promise<boolean> {
     return memberService.isCommunityAdmin(communityId, requesterWallet);
   }
-
-  // GET /v1/communities/:communityId/members — list members for admin
-  app.get('/v1/communities/:communityId/members', {
-    schema: {
-      summary: 'List community members for admins',
-      tags: ['Members'],
-      querystring: {
-        type: 'object',
-        properties: {
-          role: { type: 'string', enum: ['admin', 'member', 'contributor'] },
-          limit: { type: 'integer', minimum: 1, maximum: 200, default: 50 },
-          cursor: { type: 'string' },
-        },
-      },
-    },
-    // Don't forget to require authentication for admin routes!
-    preHandler: [authenticateApiKey, requireSiweSession] 
-  }, async (request: FastifyRequest, reply: FastifyReply) => {
-    const { communityId } = request.params as { communityId: string };
-    
-    const parsedQuery = memberListQuerySchema.safeParse(request.query ?? {});
-    if (!parsedQuery.success) {
-      return reply.status(400).send(validationError('Invalid query parameters', parsedQuery.error.flatten()));
-    }
-    const { role, limit, cursor } = parsedQuery.data;
-    
-    // Resolve the caller's wallet
-    const requesterWallet = resolveRequesterWallet(request);
-    
-    try {
-      // 1. Properly check if the requester is an admin using the helper function
-      const isAdmin = await requireCommunityAdmin(communityId, requesterWallet);
-      if (!isAdmin) {
-        return reply.status(403).send(forbidden("Forbidden"));
-      }
-
-      // 2. Now that we know they are an admin, fetch the paginated members
-      const result = await memberService.listMembersForAdmin(
-        communityId,
-        role,
-        { limit, cursor }
-      );
-      
-      return reply.status(200).send(result);
-      
-    } catch (error) {
-      if (error instanceof MemberServiceError) {
-        return reply.status(error.statusCode).send(
-            createApiError({
-              statusCode: error.statusCode,
-              code: error.statusCode === 404 ? 'NOT_FOUND' : error.statusCode === 400 ? 'VALIDATION_ERROR' : error.statusCode === 409 ? 'CONFLICT' : error.statusCode === 403 ? 'FORBIDDEN' : 'INTERNAL_ERROR',
-              message: error.message
-            })
-          );
-      }
-      return reply.status(500).send(internalError("Internal server error"));
-    }
-  });
 
   // GET /v1/communities/:communityId/members — cursor-paginated admin listing (#236)
   app.get(

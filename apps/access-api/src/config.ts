@@ -114,6 +114,12 @@ const ConfigSchema = z.object({
     .int()
     .nonnegative()
     .default(12), // e.g., 12 blocks for Ethereum mainnet-like safety
+  /** Alias for indexerFinalityWindow (#273 CONFIRMATION_BLOCKS). */
+  indexerConfirmationDepth: z.coerce
+    .number()
+    .int()
+    .nonnegative()
+    .optional(),
   membershipChainConfigs: z
     .string()
     .optional()
@@ -218,7 +224,13 @@ function validateConfig(): Config {
     outboxWorkerId: process.env.OUTBOX_WORKER_ID,
     outboxWebhookEnabled: process.env.OUTBOX_WEBHOOK_ENABLED,
     indexerIntervalMs: process.env.INDEXER_INTERVAL_MS,
-    indexerFinalityWindow: process.env.INDEXER_FINALITY_WINDOW,
+    // Prefer explicit FINALITY_WINDOW; fall back to CONFIRMATION_DEPTH / CONFIRMATION_BLOCKS (#273).
+    indexerFinalityWindow:
+      process.env.INDEXER_FINALITY_WINDOW ??
+      process.env.INDEXER_CONFIRMATION_DEPTH ??
+      process.env.CONFIRMATION_BLOCKS,
+    indexerConfirmationDepth:
+      process.env.INDEXER_CONFIRMATION_DEPTH ?? process.env.CONFIRMATION_BLOCKS,
     membershipChainConfigs: process.env.MEMBERSHIP_CHAIN_CONFIGS,
     rateLimitEnabled: process.env.RATE_LIMIT_ENABLED,
     rateLimitWindowMs: process.env.RATE_LIMIT_WINDOW_MS,
