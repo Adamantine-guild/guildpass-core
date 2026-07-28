@@ -15,6 +15,7 @@ model Community {
   overrides              AccessOverride[]
   communityContracts     CommunityContract[]
   roleDefinitions        RoleDefinition[]
+  rolePermissions        RolePermission[]
   delegatedGrants        DelegatedGrant[]
   governanceRules        GovernanceRule[]
   constitutionalRuleSets ConstitutionalRuleSet[]
@@ -184,9 +185,24 @@ model RoleDefinition {
 
   community Community @relation(fields: [communityId], references: [id])
   roleAssignments RoleAssignment[]
+  permissions RolePermission[]
 
   @@unique([communityId, name])
   @@index([parentRoleId])
+}
+
+model RolePermission {
+  id           String         @id @default(cuid())
+  roleId       String
+  communityId  String
+  permission   String
+  createdAt    DateTime       @default(now())
+  role         RoleDefinition @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  community    Community      @relation(fields: [communityId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permission])
+  @@index([communityId, permission])
+  @@map("role_permissions")
 }
 
 // Delegated grant: granter gives permissions to grantee with scope and expiry
@@ -263,6 +279,7 @@ model AccessPolicy {
   resource    String
   ruleType    String
   params      Json?
+  requiredPermissions String[] @default([])
   community   Community @relation(fields: [communityId], references: [id])
 
   @@unique([communityId, resource])
@@ -812,7 +829,6 @@ model ConstitutionalRuleSet {
   @@index([communityId])
   @@index([communityId, active])
 }
-
 
 
 

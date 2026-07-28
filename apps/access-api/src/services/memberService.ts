@@ -551,11 +551,15 @@ export function getMemberService(
       resource,
       ruleType,
       params: policy.params as Record<string, any> | undefined,
+      requiredPermissions: (policy as any).requiredPermissions?.length
+        ? (policy as any).requiredPermissions
+        : undefined,
     };
 
     // Fetch all role definitions and delegated grants for the community and wallet
     const rawRoleDefinitions = await prismaClient.roleDefinition.findMany({
       where: { communityId },
+      include: { permissions: true },
     });
     const roleDefinitions: RoleDefinition[] = rawRoleDefinitions.map(def => ({
       id: def.id,
@@ -564,6 +568,9 @@ export function getMemberService(
       description: def.description,
       parentRoleId: def.parentRoleId,
       builtInRole: def.builtInRole as Role | null,
+      permissions: (def as any).permissions.map(
+        (entry: { permission: string }) => entry.permission,
+      ),
       createdAt: def.createdAt.toISOString(),
       updatedAt: def.updatedAt.toISOString(),
     }));
@@ -1412,6 +1419,7 @@ export function getMemberService(
       resource: string,
       ruleType: string,
       params?: Record<string, unknown> | null,
+      requiredPermissions?: string[],
     ) {
       const existingPolicy = await prismaClient.accessPolicy.findUnique({
         where: {
@@ -1429,6 +1437,7 @@ export function getMemberService(
           data: {
             ruleType,
             params: params ? (params as any) : undefined,
+            requiredPermissions: requiredPermissions ?? [],
           },
         });
       } else {
@@ -1438,6 +1447,7 @@ export function getMemberService(
             resource,
             ruleType,
             params: params ? (params as any) : undefined,
+            requiredPermissions: requiredPermissions ?? [],
           },
         });
       }

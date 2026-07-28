@@ -1414,6 +1414,15 @@ export const updateCustomPolicySchema = {
         description: 'Versioned, serializable rule tree AST',
         additionalProperties: true,
       },
+      requiredPermissions: {
+        type: 'array',
+        uniqueItems: true,
+        description: 'Granular permissions required in addition to the rule tree',
+        items: {
+          type: 'string',
+          pattern: '^[a-z][a-z0-9_-]*(?::[a-z][a-z0-9_-]*)+$',
+        },
+      },
     },
   },
   response: {
@@ -1432,6 +1441,10 @@ export const updateCustomPolicySchema = {
             resource: { type: 'string' },
             ruleType: { type: 'string' },
             params: { type: 'object', additionalProperties: true, nullable: true },
+            requiredPermissions: {
+              type: 'array',
+              items: { type: 'string' },
+            },
           },
         },
       },

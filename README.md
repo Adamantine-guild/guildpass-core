@@ -481,7 +481,7 @@ GuildPass supports deploying and indexing `MembershipNFT` contracts across multi
 
 ## Deferred Areas (Intentionally Not Implemented)
 
-- Advanced governance permissions
+- Advanced governance permissions (implemented; see `docs/governance-permissions.md`)
 - Rich reward distribution and advanced streak logic
 - Full event attendance ingestion
 - Multi-chain support (implemented: EVM multi-chain enabled per community)

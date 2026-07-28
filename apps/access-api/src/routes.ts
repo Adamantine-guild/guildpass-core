@@ -9,6 +9,8 @@ import {
 } from "./services/identityService";
 import { getGovernanceService } from "./services/governanceService";
 import { registerGovernanceRoutes } from "./routes/governanceRoutes";
+import { registerCustomRoleRoutes } from "./routes/customRoleRoutes";
+import { CustomRoleService } from "./services/customRoleService";
 import { registerSuspensionAppealRoutes } from "./routes/suspensionAppealRoutes";
 import {
   getModerationService,
@@ -186,6 +188,12 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
   registerGovernanceRoutes(app, {
     governanceService: getGovernanceService(prisma),
+    requireCommunityAdmin: (communityId, requesterWallet) =>
+      memberService.isCommunityAdmin(communityId, requesterWallet),
+    getRequesterWallet,
+  });
+  registerCustomRoleRoutes(app, {
+    service: new CustomRoleService(prisma),
     requireCommunityAdmin: (communityId, requesterWallet) =>
       memberService.isCommunityAdmin(communityId, requesterWallet),
     getRequesterWallet,
@@ -1402,7 +1410,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     { schema: updateCustomPolicySchema, preHandler: [authenticateApiKey] },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const { communityId, resource } = request.params as { communityId: string; resource: string };
-      const body = request.body as { ruleTree: any };
+      const body = request.body as { ruleTree: any; requiredPermissions?: string[] };
 
       if (!body || !body.ruleTree) {
         return reply.status(400).send(validationError('Missing required field: ruleTree'));
@@ -1418,7 +1426,8 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
           communityId,
           resource,
           'COMPOSABLE',
-          { ruleTree: body.ruleTree }
+          { ruleTree: body.ruleTree },
+          body.requiredPermissions,
         );
         return reply.status(200).send({ success: true, policy });
       } catch (error) {
