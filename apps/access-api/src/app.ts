@@ -84,6 +84,13 @@ export async function buildApp(): Promise<FastifyInstance> {
     // and exposes the real client address as request.ip. When unset, the header
     // is ignored entirely so it cannot be used to evade rate limits.
     trustProxy: parseTrustProxy(config.trustProxy),
+    // Allow the OpenAPI `example` keyword to pass through AJV validation
+    // without triggering FST_ERR_SCH_VALIDATION_BUILD in strict mode.
+    ajv: {
+      customOptions: {
+        keywords: ['example'],
+      },
+    },
     logger: {
       level: process.env.LOG_LEVEL || 'info',
       redact: {
@@ -148,7 +155,15 @@ export async function buildApp(): Promise<FastifyInstance> {
     openapi: {
       info: {
         title: 'GuildPass Access API',
-        description: 'MVP API for wallet membership and access checks',
+        description:
+          'MVP API for wallet membership and access checks.\n\n' +
+          '## API Versioning & Compatibility\n\n' +
+          'All responses include the `x-guildpass-api-version` header (e.g. `1.0.0`) ' +
+          'indicating the version being served. The API commits to backwards ' +
+          'compatibility on all `/v1` routes — fields will not be removed and ' +
+          'new mandatory parameters will not be added without a major version bump. ' +
+          'Routes being phased out will carry a `deprecation: true` response header ' +
+          'for a minimum sunset period before removal.',
         version: '0.1.0',
       },
       servers: [{ url: `http://localhost:${process.env.PORT || 3000}` }],
@@ -160,6 +175,137 @@ export async function buildApp(): Promise<FastifyInstance> {
             name: 'x-wallet',
             description:
               'Requester identity for admin-only routes. Clients should send x-wallet. For backwards compatibility, the server resolves requester headers in this precedence order: x-wallet, x-user-wallet, then x-requester-wallet.',
+          },
+        },
+        headers: {
+          'x-guildpass-api-version': {
+            description:
+              'Semantic version of the GuildPass Access API that served this response (e.g. `1.0.0`). ' +
+              'Present on every response. Clients can inspect this header to detect server upgrades without ' +
+              'polling `/health/live`.',
+            schema: { type: 'string', example: '1.0.0' },
+          },
+          'x-request-id': {
+            description:
+              'Opaque correlation ID echoed from the incoming `x-request-id` / `x-correlation-id` ' +
+              'request header, or a server-generated UUID when none is provided. ' +
+              'Use this value when filing bug reports or tracing requests across services.',
+            schema: { type: 'string', format: 'uuid', example: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890' },
+          },
+          deprecation: {
+            description:
+              'Present with value `true` when the endpoint has been formally deprecated. ' +
+              'Deprecated endpoints continue to function for the announced sunset period. ' +
+              'Clients should monitor this header and migrate before the endpoint is removed.',
+            schema: { type: 'string', enum: ['true'], example: 'true' },
+          },
+        },
+        schemas: {
+          Error: {
+            type: 'object',
+            required: ['error', 'code', 'message', 'statusCode'],
+            description: 'Standard error envelope returned by every access-api error response.',
+            properties: {
+              error: { type: 'string', description: 'Machine-readable error identifier', example: 'VALIDATION_ERROR' },
+              code: { type: 'string', description: 'HTTP status phrase / error code', example: 'VALIDATION_ERROR' },
+              message: { type: 'string', description: 'Human-readable description', example: 'Invalid wallet format' },
+              statusCode: { type: 'integer', description: 'HTTP status code', example: 400 },
+              details: {
+                description: 'Optional detail payload',
+                oneOf: [{ type: 'string' }, { type: 'object' }],
+              },
+            },
+            example: {
+              error: 'VALIDATION_ERROR',
+              code: 'VALIDATION_ERROR',
+              message: 'Invalid wallet format',
+              statusCode: 400,
+            },
+          },
+          UnauthorizedError: {
+            type: 'object',
+            required: ['error', 'code', 'message', 'statusCode'],
+            description: 'Returned when a request lacks valid authentication credentials.',
+            properties: {
+              error: { type: 'string', example: 'UNAUTHORIZED' },
+              code: { type: 'string', example: 'UNAUTHORIZED' },
+              message: { type: 'string', example: 'Missing or invalid API key' },
+              statusCode: { type: 'integer', example: 401 },
+            },
+            example: {
+              error: 'UNAUTHORIZED',
+              code: 'UNAUTHORIZED',
+              message: 'Missing or invalid API key',
+              statusCode: 401,
+            },
+          },
+          ForbiddenError: {
+            type: 'object',
+            required: ['error', 'code', 'message', 'statusCode'],
+            description: 'Returned when the authenticated requester lacks the required permission.',
+            properties: {
+              error: { type: 'string', example: 'FORBIDDEN' },
+              code: { type: 'string', example: 'FORBIDDEN' },
+              message: { type: 'string', example: 'Requester is not a community admin' },
+              statusCode: { type: 'integer', example: 403 },
+            },
+            example: {
+              error: 'FORBIDDEN',
+              code: 'FORBIDDEN',
+              message: 'Requester is not a community admin',
+              statusCode: 403,
+            },
+          },
+          NotFoundError: {
+            type: 'object',
+            required: ['error', 'code', 'message', 'statusCode'],
+            description: 'Returned when the requested resource does not exist.',
+            properties: {
+              error: { type: 'string', example: 'NOT_FOUND' },
+              code: { type: 'string', example: 'NOT_FOUND' },
+              message: { type: 'string', example: 'Resource not found' },
+              statusCode: { type: 'integer', example: 404 },
+            },
+            example: {
+              error: 'NOT_FOUND',
+              code: 'NOT_FOUND',
+              message: 'Resource not found',
+              statusCode: 404,
+            },
+          },
+          ConflictError: {
+            type: 'object',
+            required: ['error', 'code', 'message', 'statusCode'],
+            description: 'Returned when the request conflicts with current resource state.',
+            properties: {
+              error: { type: 'string', example: 'CONFLICT' },
+              code: { type: 'string', example: 'CONFLICT' },
+              message: { type: 'string', example: 'A pending appeal already exists for this member' },
+              statusCode: { type: 'integer', example: 409 },
+            },
+            example: {
+              error: 'CONFLICT',
+              code: 'CONFLICT',
+              message: 'A pending appeal already exists for this member',
+              statusCode: 409,
+            },
+          },
+          InternalError: {
+            type: 'object',
+            required: ['error', 'code', 'message', 'statusCode'],
+            description: 'Returned on unexpected server-side failures.',
+            properties: {
+              error: { type: 'string', example: 'INTERNAL_ERROR' },
+              code: { type: 'string', example: 'INTERNAL_ERROR' },
+              message: { type: 'string', example: 'Internal server error' },
+              statusCode: { type: 'integer', example: 500 },
+            },
+            example: {
+              error: 'INTERNAL_ERROR',
+              code: 'INTERNAL_ERROR',
+              message: 'Internal server error',
+              statusCode: 500,
+            },
           },
         },
       },
@@ -231,16 +377,21 @@ export async function buildApp(): Promise<FastifyInstance> {
     schema: {
       tags: ['Health'],
       summary: 'Liveness probe',
+      description:
+        'Returns 200 when the process is alive. The `version` field reflects the ' +
+        '`x-guildpass-api-version` header value served on all responses.',
       response: {
         200: {
+          description: 'Server is alive',
           type: 'object',
           properties: {
-            status: { type: 'string' },
-            version: { type: 'string' }
-          }
-        }
-      }
-    }
+            status: { type: 'string', example: 'ok' },
+            version: { type: 'string', example: '1.0.0' },
+          },
+          example: { status: 'ok', version: '1.0.0' },
+        },
+      },
+    },
   }, async (_req, reply) => {
     return reply.send({ status: 'ok', version: '1.0.0' });
   });
@@ -250,24 +401,36 @@ export async function buildApp(): Promise<FastifyInstance> {
     schema: {
       tags: ['Health'],
       summary: 'Readiness probe',
+      description:
+        'Returns 200 when the database is reachable. Returns 503 when the ' +
+        'database connection is degraded — load balancers should stop routing ' +
+        'traffic to this instance until it recovers.',
       response: {
         200: {
+          description: 'Server and database are ready',
           type: 'object',
           properties: {
-            status: { type: 'string' },
-            db: { type: 'string' }
-          }
+            status: { type: 'string', example: 'ok' },
+            db: { type: 'string', example: 'reachable' },
+          },
+          example: { status: 'ok', db: 'reachable' },
         },
         503: {
+          description: 'Database is unreachable — instance is not ready to serve traffic',
           type: 'object',
           properties: {
-            status: { type: 'string' },
-            db: { type: 'string' },
-            error: { type: 'string' }
-          }
-        }
-      }
-    }
+            status: { type: 'string', example: 'degraded' },
+            db: { type: 'string', example: 'unreachable' },
+            error: { type: 'string', example: 'connect ECONNREFUSED 127.0.0.1:5432' },
+          },
+          example: {
+            status: 'degraded',
+            db: 'unreachable',
+            error: 'connect ECONNREFUSED 127.0.0.1:5432',
+          },
+        },
+      },
+    },
   }, async (_req, reply) => {
     const prisma = getPrisma();
     try {

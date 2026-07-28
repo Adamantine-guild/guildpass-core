@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "GuildPass Access API",
-    "description": "MVP API for wallet membership and access checks",
+    "description": "MVP API for wallet membership and access checks.\n\n## API Versioning & Compatibility\n\nAll responses include the `x-guildpass-api-version` header (e.g. `1.0.0`) indicating the version being served. The API commits to backwards compatibility on all `/v1` routes — fields will not be removed and new mandatory parameters will not be added without a major version bump. Routes being phased out will carry a `deprecation: true` response header for a minimum sunset period before removal.",
     "version": "0.1.0"
   },
   "components": {
@@ -14,7 +14,254 @@
         "description": "Requester identity for admin-only routes. Clients should send x-wallet. For backwards compatibility, the server resolves requester headers in this precedence order: x-wallet, x-user-wallet, then x-requester-wallet."
       }
     },
-    "schemas": {}
+    "headers": {
+      "x-guildpass-api-version": {
+        "description": "Semantic version of the GuildPass Access API that served this response (e.g. `1.0.0`). Present on every response. Clients can inspect this header to detect server upgrades without polling `/health/live`.",
+        "schema": {
+          "type": "string",
+          "example": "1.0.0"
+        }
+      },
+      "x-request-id": {
+        "description": "Opaque correlation ID echoed from the incoming `x-request-id` / `x-correlation-id` request header, or a server-generated UUID when none is provided. Use this value when filing bug reports or tracing requests across services.",
+        "schema": {
+          "type": "string",
+          "format": "uuid",
+          "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+        }
+      },
+      "deprecation": {
+        "description": "Present with value `true` when the endpoint has been formally deprecated. Deprecated endpoints continue to function for the announced sunset period. Clients should monitor this header and migrate before the endpoint is removed.",
+        "schema": {
+          "type": "string",
+          "enum": [
+            "true"
+          ],
+          "example": "true"
+        }
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "required": [
+          "error",
+          "code",
+          "message",
+          "statusCode"
+        ],
+        "description": "Standard error envelope returned by every access-api error response.",
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "Machine-readable error identifier",
+            "example": "VALIDATION_ERROR"
+          },
+          "code": {
+            "type": "string",
+            "description": "HTTP status phrase / error code",
+            "example": "VALIDATION_ERROR"
+          },
+          "message": {
+            "type": "string",
+            "description": "Human-readable description",
+            "example": "Invalid wallet format"
+          },
+          "statusCode": {
+            "type": "integer",
+            "description": "HTTP status code",
+            "example": 400
+          },
+          "details": {
+            "description": "Optional detail payload",
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object"
+              }
+            ]
+          }
+        },
+        "example": {
+          "error": "VALIDATION_ERROR",
+          "code": "VALIDATION_ERROR",
+          "message": "Invalid wallet format",
+          "statusCode": 400
+        }
+      },
+      "UnauthorizedError": {
+        "type": "object",
+        "required": [
+          "error",
+          "code",
+          "message",
+          "statusCode"
+        ],
+        "description": "Returned when a request lacks valid authentication credentials.",
+        "properties": {
+          "error": {
+            "type": "string",
+            "example": "UNAUTHORIZED"
+          },
+          "code": {
+            "type": "string",
+            "example": "UNAUTHORIZED"
+          },
+          "message": {
+            "type": "string",
+            "example": "Missing or invalid API key"
+          },
+          "statusCode": {
+            "type": "integer",
+            "example": 401
+          }
+        },
+        "example": {
+          "error": "UNAUTHORIZED",
+          "code": "UNAUTHORIZED",
+          "message": "Missing or invalid API key",
+          "statusCode": 401
+        }
+      },
+      "ForbiddenError": {
+        "type": "object",
+        "required": [
+          "error",
+          "code",
+          "message",
+          "statusCode"
+        ],
+        "description": "Returned when the authenticated requester lacks the required permission.",
+        "properties": {
+          "error": {
+            "type": "string",
+            "example": "FORBIDDEN"
+          },
+          "code": {
+            "type": "string",
+            "example": "FORBIDDEN"
+          },
+          "message": {
+            "type": "string",
+            "example": "Requester is not a community admin"
+          },
+          "statusCode": {
+            "type": "integer",
+            "example": 403
+          }
+        },
+        "example": {
+          "error": "FORBIDDEN",
+          "code": "FORBIDDEN",
+          "message": "Requester is not a community admin",
+          "statusCode": 403
+        }
+      },
+      "NotFoundError": {
+        "type": "object",
+        "required": [
+          "error",
+          "code",
+          "message",
+          "statusCode"
+        ],
+        "description": "Returned when the requested resource does not exist.",
+        "properties": {
+          "error": {
+            "type": "string",
+            "example": "NOT_FOUND"
+          },
+          "code": {
+            "type": "string",
+            "example": "NOT_FOUND"
+          },
+          "message": {
+            "type": "string",
+            "example": "Resource not found"
+          },
+          "statusCode": {
+            "type": "integer",
+            "example": 404
+          }
+        },
+        "example": {
+          "error": "NOT_FOUND",
+          "code": "NOT_FOUND",
+          "message": "Resource not found",
+          "statusCode": 404
+        }
+      },
+      "ConflictError": {
+        "type": "object",
+        "required": [
+          "error",
+          "code",
+          "message",
+          "statusCode"
+        ],
+        "description": "Returned when the request conflicts with current resource state.",
+        "properties": {
+          "error": {
+            "type": "string",
+            "example": "CONFLICT"
+          },
+          "code": {
+            "type": "string",
+            "example": "CONFLICT"
+          },
+          "message": {
+            "type": "string",
+            "example": "A pending appeal already exists for this member"
+          },
+          "statusCode": {
+            "type": "integer",
+            "example": 409
+          }
+        },
+        "example": {
+          "error": "CONFLICT",
+          "code": "CONFLICT",
+          "message": "A pending appeal already exists for this member",
+          "statusCode": 409
+        }
+      },
+      "InternalError": {
+        "type": "object",
+        "required": [
+          "error",
+          "code",
+          "message",
+          "statusCode"
+        ],
+        "description": "Returned on unexpected server-side failures.",
+        "properties": {
+          "error": {
+            "type": "string",
+            "example": "INTERNAL_ERROR"
+          },
+          "code": {
+            "type": "string",
+            "example": "INTERNAL_ERROR"
+          },
+          "message": {
+            "type": "string",
+            "example": "Internal server error"
+          },
+          "statusCode": {
+            "type": "integer",
+            "example": 500
+          }
+        },
+        "example": {
+          "error": "INTERNAL_ERROR",
+          "code": "INTERNAL_ERROR",
+          "message": "Internal server error",
+          "statusCode": 500
+        }
+      }
+    }
   },
   "paths": {
     "/metrics": {
@@ -32,20 +279,28 @@
         "tags": [
           "Health"
         ],
+        "description": "Returns 200 when the process is alive. The `version` field reflects the `x-guildpass-api-version` header value served on all responses.",
         "responses": {
           "200": {
-            "description": "Default Response",
+            "description": "Server is alive",
             "content": {
               "application/json": {
                 "schema": {
+                  "description": "Server is alive",
                   "type": "object",
                   "properties": {
                     "status": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "ok"
                     },
                     "version": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "1.0.0"
                     }
+                  },
+                  "example": {
+                    "status": "ok",
+                    "version": "1.0.0"
                   }
                 }
               }
@@ -60,41 +315,58 @@
         "tags": [
           "Health"
         ],
+        "description": "Returns 200 when the database is reachable. Returns 503 when the database connection is degraded — load balancers should stop routing traffic to this instance until it recovers.",
         "responses": {
           "200": {
-            "description": "Default Response",
+            "description": "Server and database are ready",
             "content": {
               "application/json": {
                 "schema": {
+                  "description": "Server and database are ready",
                   "type": "object",
                   "properties": {
                     "status": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "ok"
                     },
                     "db": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "reachable"
                     }
+                  },
+                  "example": {
+                    "status": "ok",
+                    "db": "reachable"
                   }
                 }
               }
             }
           },
           "503": {
-            "description": "Default Response",
+            "description": "Database is unreachable — instance is not ready to serve traffic",
             "content": {
               "application/json": {
                 "schema": {
+                  "description": "Database is unreachable — instance is not ready to serve traffic",
                   "type": "object",
                   "properties": {
                     "status": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "degraded"
                     },
                     "db": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "unreachable"
                     },
                     "error": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "connect ECONNREFUSED 127.0.0.1:5432"
                     }
+                  },
+                  "example": {
+                    "status": "degraded",
+                    "db": "unreachable",
+                    "error": "connect ECONNREFUSED 127.0.0.1:5432"
                   }
                 }
               }
@@ -121,8 +393,12 @@
                   "memberStatement": {
                     "type": "string",
                     "minLength": 1,
-                    "description": "Member's supporting statement for the appeal"
+                    "description": "Member's supporting statement for the appeal",
+                    "example": "I believe my suspension was applied in error. I have not violated any community rules."
                   }
+                },
+                "example": {
+                  "memberStatement": "I believe my suspension was applied in error. I have not violated any community rules."
                 }
               }
             }
@@ -132,7 +408,8 @@
         "parameters": [
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "example": "community-mainnet-42"
             },
             "in": "path",
             "name": "communityId",
@@ -203,6 +480,19 @@
                       "type": "string",
                       "nullable": true
                     }
+                  },
+                  "example": {
+                    "id": "apl_01HZ9K3XB7E4F2WQMN8VDTG1R",
+                    "membershipId": "mbsh_01HZ9K3XB7E4F2WQMN8VDTG1R",
+                    "memberId": "mbr_01HZ9K3XB7E4F2WQMN8VDTG1R",
+                    "wallet": "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
+                    "communityId": "community-mainnet-42",
+                    "memberStatement": "I believe my suspension was applied in error. I have not violated any community rules.",
+                    "status": "pending",
+                    "submittedAt": "2026-07-28T12:00:00.000Z",
+                    "reviewerId": null,
+                    "reviewedAt": null,
+                    "reviewerRationale": null
                   }
                 }
               }
@@ -249,6 +539,12 @@
                         }
                       ]
                     }
+                  },
+                  "example": {
+                    "error": "VALIDATION_ERROR",
+                    "code": "VALIDATION_ERROR",
+                    "message": "Member is not currently suspended",
+                    "statusCode": 400
                   }
                 }
               }
@@ -295,6 +591,12 @@
                         }
                       ]
                     }
+                  },
+                  "example": {
+                    "error": "UNAUTHORIZED",
+                    "code": "UNAUTHORIZED",
+                    "message": "Missing or invalid API key",
+                    "statusCode": 401
                   }
                 }
               }
@@ -341,6 +643,12 @@
                         }
                       ]
                     }
+                  },
+                  "example": {
+                    "error": "FORBIDDEN",
+                    "code": "FORBIDDEN",
+                    "message": "Requester wallet does not match the member wallet",
+                    "statusCode": 403
                   }
                 }
               }
@@ -387,6 +695,12 @@
                         }
                       ]
                     }
+                  },
+                  "example": {
+                    "error": "NOT_FOUND",
+                    "code": "NOT_FOUND",
+                    "message": "Member not found",
+                    "statusCode": 404
                   }
                 }
               }
@@ -433,6 +747,12 @@
                         }
                       ]
                     }
+                  },
+                  "example": {
+                    "error": "CONFLICT",
+                    "code": "CONFLICT",
+                    "message": "A pending appeal already exists for this member",
+                    "statusCode": 409
                   }
                 }
               }
@@ -484,7 +804,8 @@
           },
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "example": "community-mainnet-42"
             },
             "in": "path",
             "name": "communityId",
@@ -580,6 +901,29 @@
                         }
                       }
                     }
+                  },
+                  "example": {
+                    "appeals": [
+                      {
+                        "id": "apl_01HZ9K3XB7E4F2WQMN8VDTG1R",
+                        "membershipId": "mbsh_01HZ9K3XB7E4F2WQMN8VDTG1R",
+                        "memberId": "mbr_01HZ9K3XB7E4F2WQMN8VDTG1R",
+                        "wallet": "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
+                        "communityId": "community-mainnet-42",
+                        "memberStatement": "I believe my suspension was applied in error.",
+                        "status": "pending",
+                        "submittedAt": "2026-07-28T12:00:00.000Z",
+                        "reviewerId": null,
+                        "reviewedAt": null,
+                        "reviewerRationale": null
+                      }
+                    ],
+                    "pagination": {
+                      "page": 1,
+                      "limit": 20,
+                      "total": 1,
+                      "totalPages": 1
+                    }
                   }
                 }
               }
@@ -626,6 +970,12 @@
                         }
                       ]
                     }
+                  },
+                  "example": {
+                    "error": "UNAUTHORIZED",
+                    "code": "UNAUTHORIZED",
+                    "message": "Missing or invalid API key",
+                    "statusCode": 401
                   }
                 }
               }
@@ -672,6 +1022,12 @@
                         }
                       ]
                     }
+                  },
+                  "example": {
+                    "error": "FORBIDDEN",
+                    "code": "FORBIDDEN",
+                    "message": "Requester is not a community admin",
+                    "statusCode": 403
                   }
                 }
               }
@@ -701,13 +1057,19 @@
                     "enum": [
                       "approved",
                       "denied"
-                    ]
+                    ],
+                    "example": "approved"
                   },
                   "rationale": {
                     "type": "string",
                     "minLength": 1,
-                    "description": "Required reviewer rationale recorded in audit_events"
+                    "description": "Required reviewer rationale recorded in audit_events",
+                    "example": "Reviewed evidence; suspension was applied in error. Member is reinstated."
                   }
+                },
+                "example": {
+                  "decision": "approved",
+                  "rationale": "Reviewed evidence; suspension was applied in error. Member is reinstated."
                 }
               }
             }
@@ -717,7 +1079,8 @@
         "parameters": [
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "example": "community-mainnet-42"
             },
             "in": "path",
             "name": "communityId",
@@ -725,7 +1088,8 @@
           },
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "example": "apl_01HZ9K3XB7E4F2WQMN8VDTG1R"
             },
             "in": "path",
             "name": "appealId",
@@ -786,6 +1150,19 @@
                       "type": "string",
                       "nullable": true
                     }
+                  },
+                  "example": {
+                    "id": "apl_01HZ9K3XB7E4F2WQMN8VDTG1R",
+                    "membershipId": "mbsh_01HZ9K3XB7E4F2WQMN8VDTG1R",
+                    "memberId": "mbr_01HZ9K3XB7E4F2WQMN8VDTG1R",
+                    "wallet": "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
+                    "communityId": "community-mainnet-42",
+                    "memberStatement": "I believe my suspension was applied in error.",
+                    "status": "approved",
+                    "submittedAt": "2026-07-28T12:00:00.000Z",
+                    "reviewerId": "mbr_02HZ9K3XB7E4F2WQMN8VDTG2S",
+                    "reviewedAt": "2026-07-28T14:00:00.000Z",
+                    "reviewerRationale": "Reviewed evidence; suspension was applied in error. Member is reinstated."
                   }
                 }
               }
@@ -832,6 +1209,12 @@
                         }
                       ]
                     }
+                  },
+                  "example": {
+                    "error": "VALIDATION_ERROR",
+                    "code": "VALIDATION_ERROR",
+                    "message": "rationale is required",
+                    "statusCode": 400
                   }
                 }
               }
@@ -878,6 +1261,12 @@
                         }
                       ]
                     }
+                  },
+                  "example": {
+                    "error": "UNAUTHORIZED",
+                    "code": "UNAUTHORIZED",
+                    "message": "Missing or invalid API key",
+                    "statusCode": 401
                   }
                 }
               }
@@ -924,6 +1313,12 @@
                         }
                       ]
                     }
+                  },
+                  "example": {
+                    "error": "FORBIDDEN",
+                    "code": "FORBIDDEN",
+                    "message": "Requester is not a community admin",
+                    "statusCode": 403
                   }
                 }
               }
@@ -970,6 +1365,12 @@
                         }
                       ]
                     }
+                  },
+                  "example": {
+                    "error": "NOT_FOUND",
+                    "code": "NOT_FOUND",
+                    "message": "Appeal not found",
+                    "statusCode": 404
                   }
                 }
               }
@@ -998,19 +1399,33 @@
                 "properties": {
                   "name": {
                     "type": "string",
-                    "description": "Unique rule name within the resource"
+                    "description": "Unique rule name within the resource",
+                    "example": "require-active-membership"
                   },
                   "description": {
                     "type": "string",
-                    "description": "Human-readable description"
+                    "description": "Human-readable description",
+                    "example": "Grants access only to wallets with active membership"
                   },
                   "resource": {
                     "type": "string",
-                    "description": "Resource the rule governs"
+                    "description": "Resource the rule governs",
+                    "example": "channel:announcements"
                   },
                   "ast": {
                     "type": "object",
                     "additionalProperties": true
+                  }
+                },
+                "example": {
+                  "name": "require-active-membership",
+                  "description": "Grants access only to wallets with active membership",
+                  "resource": "channel:announcements",
+                  "ast": {
+                    "type": "MEMBERSHIP_STATE",
+                    "states": [
+                      "active"
+                    ]
                   }
                 }
               }
@@ -1021,7 +1436,8 @@
         "parameters": [
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "example": "community-mainnet-42"
             },
             "in": "path",
             "name": "communityId",
@@ -1061,7 +1477,21 @@
                       "additionalProperties": true
                     }
                   },
-                  "description": "Rule created"
+                  "description": "Rule created",
+                  "example": {
+                    "id": "rule_01HZ9K3XB7E4F2WQMN8VDTG1R",
+                    "name": "require-active-membership",
+                    "description": "Grants access only to wallets with active membership",
+                    "communityId": "community-mainnet-42",
+                    "resource": "channel:announcements",
+                    "active": true,
+                    "ast": {
+                      "type": "MEMBERSHIP_STATE",
+                      "states": [
+                        "active"
+                      ]
+                    }
+                  }
                 }
               }
             }
@@ -1107,6 +1537,12 @@
                         }
                       ]
                     }
+                  },
+                  "example": {
+                    "error": "VALIDATION_ERROR",
+                    "code": "VALIDATION_ERROR",
+                    "message": "Missing required field: ast",
+                    "statusCode": 400
                   }
                 }
               }
@@ -1172,6 +1608,12 @@
                         }
                       ]
                     }
+                  },
+                  "example": {
+                    "error": "CONFLICT",
+                    "code": "CONFLICT",
+                    "message": "A rule named require-active-membership already exists for channel:announcements",
+                    "statusCode": 409
                   }
                 }
               }
@@ -1233,7 +1675,8 @@
         "parameters": [
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "example": "channel:announcements"
             },
             "in": "query",
             "name": "resource",
@@ -1255,7 +1698,8 @@
           },
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "example": "community-mainnet-42"
             },
             "in": "path",
             "name": "communityId",
@@ -1306,6 +1750,24 @@
                         }
                       }
                     }
+                  },
+                  "example": {
+                    "rules": [
+                      {
+                        "id": "rule_01HZ9K3XB7E4F2WQMN8VDTG1R",
+                        "name": "require-active-membership",
+                        "description": "Grants access only to wallets with active membership",
+                        "communityId": "community-mainnet-42",
+                        "resource": "channel:announcements",
+                        "active": true,
+                        "ast": {
+                          "type": "MEMBERSHIP_STATE",
+                          "states": [
+                            "active"
+                          ]
+                        }
+                      }
+                    ]
                   }
                 }
               }
@@ -1388,7 +1850,8 @@
         "parameters": [
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "example": "community-mainnet-42"
             },
             "in": "path",
             "name": "communityId",
@@ -1397,7 +1860,8 @@
           },
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "example": "rule_01HZ9K3XB7E4F2WQMN8VDTG1R"
             },
             "in": "path",
             "name": "ruleId",
@@ -1437,7 +1901,21 @@
                       "additionalProperties": true
                     }
                   },
-                  "description": "The governance rule"
+                  "description": "The governance rule",
+                  "example": {
+                    "id": "rule_01HZ9K3XB7E4F2WQMN8VDTG1R",
+                    "name": "require-active-membership",
+                    "description": "Grants access only to wallets with active membership",
+                    "communityId": "community-mainnet-42",
+                    "resource": "channel:announcements",
+                    "active": true,
+                    "ast": {
+                      "type": "MEMBERSHIP_STATE",
+                      "states": [
+                        "active"
+                      ]
+                    }
+                  }
                 }
               }
             }
@@ -1502,6 +1980,12 @@
                         }
                       ]
                     }
+                  },
+                  "example": {
+                    "error": "NOT_FOUND",
+                    "code": "NOT_FOUND",
+                    "message": "Governance rule not found",
+                    "statusCode": 404
                   }
                 }
               }
@@ -1567,10 +2051,12 @@
                 "type": "object",
                 "properties": {
                   "name": {
-                    "type": "string"
+                    "type": "string",
+                    "example": "require-active-or-contributor"
                   },
                   "description": {
-                    "type": "string"
+                    "type": "string",
+                    "example": "Grants access to active members and contributors"
                   },
                   "ast": {
                     "type": "object",
@@ -1578,8 +2064,13 @@
                   },
                   "active": {
                     "type": "boolean",
-                    "description": "Activate/deactivate the rule"
+                    "description": "Activate/deactivate the rule",
+                    "example": true
                   }
+                },
+                "example": {
+                  "description": "Grants access to active members and contributors",
+                  "active": true
                 }
               }
             }
@@ -1588,7 +2079,8 @@
         "parameters": [
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "example": "community-mainnet-42"
             },
             "in": "path",
             "name": "communityId",
@@ -1597,7 +2089,8 @@
           },
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "example": "rule_01HZ9K3XB7E4F2WQMN8VDTG1R"
             },
             "in": "path",
             "name": "ruleId",
@@ -1637,7 +2130,21 @@
                       "additionalProperties": true
                     }
                   },
-                  "description": "Updated rule"
+                  "description": "Updated rule",
+                  "example": {
+                    "id": "rule_01HZ9K3XB7E4F2WQMN8VDTG1R",
+                    "name": "require-active-membership",
+                    "description": "Grants access to active members and contributors",
+                    "communityId": "community-mainnet-42",
+                    "resource": "channel:announcements",
+                    "active": true,
+                    "ast": {
+                      "type": "MEMBERSHIP_STATE",
+                      "states": [
+                        "active"
+                      ]
+                    }
+                  }
                 }
               }
             }
@@ -1683,6 +2190,12 @@
                         }
                       ]
                     }
+                  },
+                  "example": {
+                    "error": "VALIDATION_ERROR",
+                    "code": "VALIDATION_ERROR",
+                    "message": "Invalid AST structure",
+                    "statusCode": 400
                   }
                 }
               }
@@ -1748,6 +2261,12 @@
                         }
                       ]
                     }
+                  },
+                  "example": {
+                    "error": "NOT_FOUND",
+                    "code": "NOT_FOUND",
+                    "message": "Governance rule not found",
+                    "statusCode": 404
                   }
                 }
               }
@@ -1960,8 +2479,12 @@
                     "type": "string",
                     "format": "date-time",
                     "nullable": true,
-                    "description": "Optional ISO 8601 expiry for the request"
+                    "description": "Optional ISO 8601 expiry for the request",
+                    "example": "2026-08-04T12:00:00.000Z"
                   }
+                },
+                "example": {
+                  "expiresAt": "2026-08-04T12:00:00.000Z"
                 }
               }
             }
@@ -1970,7 +2493,8 @@
         "parameters": [
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "example": "community-mainnet-42"
             },
             "in": "path",
             "name": "communityId",
@@ -1979,7 +2503,8 @@
           },
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "example": "rule_01HZ9K3XB7E4F2WQMN8VDTG1R"
             },
             "in": "path",
             "name": "ruleId",
@@ -1995,7 +2520,16 @@
                 "schema": {
                   "description": "Approval request created",
                   "type": "object",
-                  "additionalProperties": true
+                  "additionalProperties": true,
+                  "example": {
+                    "id": "apr_01HZ9K3XB7E4F2WQMN8VDTG1R",
+                    "ruleId": "rule_01HZ9K3XB7E4F2WQMN8VDTG1R",
+                    "communityId": "community-mainnet-42",
+                    "requester": "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
+                    "status": "open",
+                    "expiresAt": "2026-08-04T12:00:00.000Z",
+                    "createdAt": "2026-07-28T12:00:00.000Z"
+                  }
                 }
               }
             }
@@ -2041,6 +2575,12 @@
                         }
                       ]
                     }
+                  },
+                  "example": {
+                    "error": "VALIDATION_ERROR",
+                    "code": "VALIDATION_ERROR",
+                    "message": "Missing requester wallet",
+                    "statusCode": 400
                   }
                 }
               }
@@ -2087,6 +2627,12 @@
                         }
                       ]
                     }
+                  },
+                  "example": {
+                    "error": "NOT_FOUND",
+                    "code": "NOT_FOUND",
+                    "message": "Governance rule not found",
+                    "statusCode": 404
                   }
                 }
               }
@@ -2164,16 +2710,23 @@
                       "member",
                       "contributor"
                     ],
-                    "description": "Role the approver is acting as"
+                    "description": "Role the approver is acting as",
+                    "example": "admin"
                   },
                   "approved": {
                     "type": "boolean",
-                    "description": "true to approve, false to reject"
+                    "description": "true to approve, false to reject",
+                    "example": true
                   },
                   "signature": {
                     "type": "string",
-                    "description": "Optional cryptographic signature"
+                    "description": "Optional cryptographic signature",
+                    "example": "0x..."
                   }
+                },
+                "example": {
+                  "approverRole": "admin",
+                  "approved": true
                 }
               }
             }
@@ -2183,7 +2736,8 @@
         "parameters": [
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "example": "community-mainnet-42"
             },
             "in": "path",
             "name": "communityId",
@@ -2192,7 +2746,8 @@
           },
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "example": "apr_01HZ9K3XB7E4F2WQMN8VDTG1R"
             },
             "in": "path",
             "name": "requestId",
@@ -2208,7 +2763,15 @@
                 "schema": {
                   "description": "Approval recorded",
                   "type": "object",
-                  "additionalProperties": true
+                  "additionalProperties": true,
+                  "example": {
+                    "id": "apv_01HZ9K3XB7E4F2WQMN8VDTG1R",
+                    "requestId": "apr_01HZ9K3XB7E4F2WQMN8VDTG1R",
+                    "approverWallet": "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
+                    "approverRole": "admin",
+                    "approved": true,
+                    "createdAt": "2026-07-28T12:05:00.000Z"
+                  }
                 }
               }
             }
@@ -2254,6 +2817,12 @@
                         }
                       ]
                     }
+                  },
+                  "example": {
+                    "error": "VALIDATION_ERROR",
+                    "code": "VALIDATION_ERROR",
+                    "message": "approverRole is required",
+                    "statusCode": 400
                   }
                 }
               }
@@ -2300,6 +2869,12 @@
                         }
                       ]
                     }
+                  },
+                  "example": {
+                    "error": "CONFLICT",
+                    "code": "CONFLICT",
+                    "message": "Approver already submitted for this request",
+                    "statusCode": 409
                   }
                 }
               }
@@ -2361,7 +2936,8 @@
         "parameters": [
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "example": "community-mainnet-42"
             },
             "in": "path",
             "name": "communityId",
@@ -2370,7 +2946,8 @@
           },
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "example": "apr_01HZ9K3XB7E4F2WQMN8VDTG1R"
             },
             "in": "path",
             "name": "requestId",
@@ -2397,6 +2974,18 @@
                         "additionalProperties": true
                       }
                     }
+                  },
+                  "example": {
+                    "approvals": [
+                      {
+                        "id": "apv_01HZ9K3XB7E4F2WQMN8VDTG1R",
+                        "requestId": "apr_01HZ9K3XB7E4F2WQMN8VDTG1R",
+                        "approverWallet": "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
+                        "approverRole": "admin",
+                        "approved": true,
+                        "createdAt": "2026-07-28T12:05:00.000Z"
+                      }
+                    ]
                   }
                 }
               }
@@ -3822,75 +4411,546 @@
     },
     "/v1/auth/nonce": {
       "post": {
+        "summary": "Generate a SIWE nonce",
+        "tags": [
+          "Auth"
+        ],
+        "description": "Issues a one-time 32-byte hex nonce valid for 5 minutes. Pass this nonce in the SIWE message you present for signing, then submit the signed message to `POST /v1/auth/verify`.",
         "responses": {
           "200": {
-            "description": "Default Response"
+            "description": "Nonce issued",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Nonce issued",
+                  "type": "object",
+                  "required": [
+                    "nonce"
+                  ],
+                  "properties": {
+                    "nonce": {
+                      "type": "string",
+                      "description": "One-time hex nonce, expires in 5 minutes",
+                      "example": "a3f8c2e1b7d94f6a0e5b3d2c9a1f4e7b"
+                    }
+                  },
+                  "example": {
+                    "nonce": "a3f8c2e1b7d94f6a0e5b3d2c9a1f4e7b"
+                  }
+                }
+              }
+            }
           }
         }
       }
     },
     "/v1/auth/verify": {
       "post": {
+        "summary": "Verify a SIWE signature and issue a session token",
+        "tags": [
+          "Auth"
+        ],
+        "description": "Validates the signed EIP-4361 (Sign-In With Ethereum) message and nonce. On success, returns a bearer token valid for 2 hours. Include the token in the `Authorization: Bearer <token>` header on subsequent requests.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "message",
+                  "signature"
+                ],
+                "properties": {
+                  "message": {
+                    "type": "string",
+                    "description": "EIP-4361 SIWE message string",
+                    "example": "localhost wants you to sign in with your Ethereum account:\n0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045\n\nSign in to GuildPass\n\nURI: http://localhost:3000\nVersion: 1\nChain ID: 1\nNonce: a3f8c2e1b7d94f6a0e5b3d2c9a1f4e7b\nIssued At: 2026-07-28T12:00:00Z"
+                  },
+                  "signature": {
+                    "type": "string",
+                    "description": "Hex-encoded ECDSA signature over the SIWE message",
+                    "example": "0x4a8f2c1d3e7b6a9f5c2e0d8b1a4f3e7c9d5b2a8e1c4f6b3a7d9e2c5f8a1b4e7c0d3f6a9b2e5c8f1a4b7d0e3f6a9c2d5e8f1b4a7c0d3f6a92e"
+                  }
+                },
+                "example": {
+                  "message": "localhost wants you to sign in with your Ethereum account:\n0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045\n\nSign in to GuildPass\n\nURI: http://localhost:3000\nVersion: 1\nChain ID: 1\nNonce: a3f8c2e1b7d94f6a0e5b3d2c9a1f4e7b\nIssued At: 2026-07-28T12:00:00Z",
+                  "signature": "0x4a8f2c1d3e7b6a9f5c2e0d8b1a4f3e7c9d5b2a8e1c4f6b3a7d9e2c5f8a1b4e7c0d3f6a9b2e5c8f1a4b7d0e3f6a9c2d5e8f1b4a7c0d3f6a92e"
+                }
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
-            "description": "Default Response"
+            "description": "Session token issued — valid for 2 hours",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Session token issued — valid for 2 hours",
+                  "type": "object",
+                  "required": [
+                    "token",
+                    "expiresAt",
+                    "walletAddress"
+                  ],
+                  "properties": {
+                    "token": {
+                      "type": "string",
+                      "description": "Bearer token to include in the Authorization header",
+                      "example": "7e3f1a9b4c2d6e8f0a1b3c5d7e9f2a4b"
+                    },
+                    "expiresAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "ISO 8601 timestamp when the session expires",
+                      "example": "2026-07-28T14:00:00.000Z"
+                    },
+                    "walletAddress": {
+                      "type": "string",
+                      "description": "Checksummed wallet address extracted from the SIWE message",
+                      "example": "0xd8da6bf26964af9d7eed9e03e53415d37aa96045"
+                    }
+                  },
+                  "example": {
+                    "token": "7e3f1a9b4c2d6e8f0a1b3c5d7e9f2a4b",
+                    "expiresAt": "2026-07-28T14:00:00.000Z",
+                    "walletAddress": "0xd8da6bf26964af9d7eed9e03e53415d37aa96045"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid SIWE message, expired nonce, or signature mismatch",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Invalid SIWE message, expired nonce, or signature mismatch",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "example": "VALIDATION_ERROR"
+                    },
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_ERROR"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Nonce has expired"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "example": 400
+                    }
+                  },
+                  "example": {
+                    "error": "VALIDATION_ERROR",
+                    "code": "VALIDATION_ERROR",
+                    "message": "Nonce has expired",
+                    "statusCode": 400
+                  }
+                }
+              }
+            }
           }
         }
       }
     },
     "/v1/wallets/{primaryWallet}/challenges": {
       "post": {
+        "summary": "Generate a wallet-link challenge",
+        "tags": [
+          "Wallets"
+        ],
+        "description": "Creates a one-time challenge that the secondary wallet must sign to prove ownership before it can be linked to the primary wallet.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "secondaryWallet"
+                ],
+                "properties": {
+                  "secondaryWallet": {
+                    "type": "string",
+                    "pattern": "^0x[0-9a-fA-F]{40}$",
+                    "description": "Secondary EVM wallet address to link",
+                    "example": "0xAbCd1234567890AbCd1234567890AbCd12345678"
+                  }
+                },
+                "example": {
+                  "secondaryWallet": "0xAbCd1234567890AbCd1234567890AbCd12345678"
+                }
+              }
+            }
+          },
+          "required": true
+        },
         "parameters": [
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "pattern": "^0x[0-9a-fA-F]{40}$",
+              "example": "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045"
             },
             "in": "path",
             "name": "primaryWallet",
-            "required": true
+            "required": true,
+            "description": "Primary EVM wallet address"
           }
         ],
         "responses": {
           "200": {
-            "description": "Default Response"
+            "description": "Challenge generated — pass to POST /v1/wallets/:primaryWallet/link",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Challenge generated — pass to POST /v1/wallets/:primaryWallet/link",
+                  "type": "object",
+                  "properties": {
+                    "challenge": {
+                      "type": "string",
+                      "description": "Opaque challenge string to sign",
+                      "example": "guildpass-link:0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045:0xAbCd1234567890AbCd1234567890AbCd12345678:1722168000000"
+                    },
+                    "expiresAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "example": "2026-07-28T12:10:00.000Z"
+                    }
+                  },
+                  "example": {
+                    "challenge": "guildpass-link:0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045:0xAbCd1234567890AbCd1234567890AbCd12345678:1722168000000",
+                    "expiresAt": "2026-07-28T12:10:00.000Z"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid wallet address or wallets are already linked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Invalid wallet address or wallets are already linked",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "example": "VALIDATION_ERROR"
+                    },
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_ERROR"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Invalid wallet address"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "example": 400
+                    }
+                  },
+                  "example": {
+                    "error": "VALIDATION_ERROR",
+                    "code": "VALIDATION_ERROR",
+                    "message": "Invalid wallet address",
+                    "statusCode": 400
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Wallets are already linked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Wallets are already linked",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "example": "CONFLICT"
+                    },
+                    "code": {
+                      "type": "string",
+                      "example": "CONFLICT"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Wallets are already linked"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "example": 409
+                    }
+                  },
+                  "example": {
+                    "error": "CONFLICT",
+                    "code": "CONFLICT",
+                    "message": "Wallets are already linked",
+                    "statusCode": 409
+                  }
+                }
+              }
+            }
           }
         }
       }
     },
     "/v1/wallets/{primaryWallet}/link": {
       "post": {
+        "summary": "Link a secondary wallet to a primary wallet",
+        "tags": [
+          "Wallets"
+        ],
+        "description": "Completes the wallet-link flow by submitting the challenge (from `POST /v1/wallets/:primaryWallet/challenges`) and the secondary wallet's signature over that challenge.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "challenge",
+                  "signature"
+                ],
+                "properties": {
+                  "challenge": {
+                    "type": "object",
+                    "description": "Challenge object returned by POST /v1/wallets/:primaryWallet/challenges",
+                    "example": {
+                      "challenge": "guildpass-link:0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045:0xAbCd1234567890AbCd1234567890AbCd12345678:1722168000000",
+                      "expiresAt": "2026-07-28T12:10:00.000Z"
+                    }
+                  },
+                  "signature": {
+                    "type": "string",
+                    "description": "Hex-encoded ECDSA signature of the challenge by the secondary wallet",
+                    "example": "0x9b3c2a1e4f7d6b8a5c0e2f9d1b4a7c3e6f8b2d5a1c4e7f0b3d6a9c2e5f8b1d4a7c0e3f6a9b2c5e8f1b4d7a0c3f6a9b2e5c8f1a4b7d0e3f6a92e"
+                  }
+                },
+                "example": {
+                  "challenge": {
+                    "challenge": "guildpass-link:0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045:0xAbCd1234567890AbCd1234567890AbCd12345678:1722168000000",
+                    "expiresAt": "2026-07-28T12:10:00.000Z"
+                  },
+                  "signature": "0x9b3c2a1e4f7d6b8a5c0e2f9d1b4a7c3e6f8b2d5a1c4e7f0b3d6a9c2e5f8b1d4a7c0e3f6a9b2c5e8f1b4d7a0c3f6a9b2e5c8f1a4b7d0e3f6a92e"
+                }
+              }
+            }
+          },
+          "required": true
+        },
         "parameters": [
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "pattern": "^0x[0-9a-fA-F]{40}$",
+              "example": "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045"
             },
             "in": "path",
             "name": "primaryWallet",
-            "required": true
+            "required": true,
+            "description": "Primary EVM wallet address"
           }
         ],
         "responses": {
           "200": {
-            "description": "Default Response"
+            "description": "Wallets successfully linked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Wallets successfully linked",
+                  "type": "object",
+                  "properties": {
+                    "primaryWallet": {
+                      "type": "string",
+                      "example": "0xd8da6bf26964af9d7eed9e03e53415d37aa96045"
+                    },
+                    "secondaryWallet": {
+                      "type": "string",
+                      "example": "0xabcd1234567890abcd1234567890abcd12345678"
+                    },
+                    "linkedAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "example": "2026-07-28T12:05:00.000Z"
+                    }
+                  },
+                  "example": {
+                    "primaryWallet": "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
+                    "secondaryWallet": "0xabcd1234567890abcd1234567890abcd12345678",
+                    "linkedAt": "2026-07-28T12:05:00.000Z"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid or expired challenge, or signature mismatch",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Invalid or expired challenge, or signature mismatch",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "example": "VALIDATION_ERROR"
+                    },
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_ERROR"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Challenge has expired"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "example": 400
+                    }
+                  },
+                  "example": {
+                    "error": "VALIDATION_ERROR",
+                    "code": "VALIDATION_ERROR",
+                    "message": "Challenge has expired",
+                    "statusCode": 400
+                  }
+                }
+              }
+            }
           }
         }
       }
     },
     "/v1/wallets/{primaryWallet}/linked": {
       "get": {
+        "summary": "List wallets linked to a primary wallet",
+        "tags": [
+          "Wallets"
+        ],
+        "description": "Returns all secondary wallet addresses that have been successfully linked to the given primary wallet.",
         "parameters": [
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "pattern": "^0x[0-9a-fA-F]{40}$",
+              "example": "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045"
             },
             "in": "path",
             "name": "primaryWallet",
-            "required": true
+            "required": true,
+            "description": "Primary EVM wallet address"
           }
         ],
         "responses": {
           "200": {
-            "description": "Default Response"
+            "description": "Linked wallets for the primary address",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Linked wallets for the primary address",
+                  "type": "object",
+                  "required": [
+                    "primaryWallet",
+                    "linkedWallets"
+                  ],
+                  "properties": {
+                    "primaryWallet": {
+                      "type": "string",
+                      "example": "0xd8da6bf26964af9d7eed9e03e53415d37aa96045"
+                    },
+                    "linkedWallets": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "example": [
+                        "0xabcd1234567890abcd1234567890abcd12345678"
+                      ]
+                    }
+                  },
+                  "example": {
+                    "primaryWallet": "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
+                    "linkedWallets": [
+                      "0xabcd1234567890abcd1234567890abcd12345678"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Primary wallet not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Primary wallet not found",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "example": "NOT_FOUND"
+                    },
+                    "code": {
+                      "type": "string",
+                      "example": "NOT_FOUND"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Wallet not found"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "example": 404
+                    }
+                  },
+                  "example": {
+                    "error": "NOT_FOUND",
+                    "code": "NOT_FOUND",
+                    "message": "Wallet not found",
+                    "statusCode": 404
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -3943,7 +5003,8 @@
         "parameters": [
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "example": "community-mainnet-42"
             },
             "in": "path",
             "name": "communityId",
@@ -3998,6 +5059,30 @@
                         }
                       }
                     }
+                  },
+                  "example": {
+                    "roles": [
+                      {
+                        "name": "admin",
+                        "description": "Administrator with full permissions",
+                        "implies": [
+                          "contributor",
+                          "member"
+                        ]
+                      },
+                      {
+                        "name": "contributor",
+                        "description": "Contributor with write permissions",
+                        "implies": [
+                          "member"
+                        ]
+                      },
+                      {
+                        "name": "member",
+                        "description": "Standard member with basic permissions",
+                        "implies": []
+                      }
+                    ]
                   }
                 }
               }
@@ -4044,6 +5129,12 @@
                         }
                       ]
                     }
+                  },
+                  "example": {
+                    "error": "NOT_FOUND",
+                    "code": "NOT_FOUND",
+                    "message": "Community not found",
+                    "statusCode": 404
                   }
                 }
               }
@@ -4107,7 +5198,8 @@
         "parameters": [
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "example": "community-mainnet-42"
             },
             "in": "path",
             "name": "communityId",
@@ -4168,6 +5260,21 @@
                         }
                       }
                     }
+                  },
+                  "example": {
+                    "wallet": "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
+                    "communities": [
+                      {
+                        "communityId": "community-mainnet-42",
+                        "state": "active",
+                        "expiresAt": null
+                      },
+                      {
+                        "communityId": "community-testnet-7",
+                        "state": "expired",
+                        "expiresAt": "2026-06-01T00:00:00.000Z"
+                      }
+                    ]
                   }
                 }
               }
@@ -4214,6 +5321,12 @@
                         }
                       ]
                     }
+                  },
+                  "example": {
+                    "error": "NOT_FOUND",
+                    "code": "NOT_FOUND",
+                    "message": "Wallet not found",
+                    "statusCode": 404
                   }
                 }
               }
@@ -4250,7 +5363,8 @@
         "parameters": [
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "example": "community-mainnet-42"
             },
             "in": "path",
             "name": "communityId",
@@ -4334,6 +5448,24 @@
                         ]
                       }
                     }
+                  },
+                  "example": {
+                    "wallet": "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
+                    "communityId": "community-mainnet-42",
+                    "profile": {
+                      "id": "mbr_01HZ9K3XB7E4F2WQMN8VDTG1R",
+                      "displayName": "alice.eth",
+                      "bio": "Core contributor",
+                      "avatarUrl": null
+                    },
+                    "membership": {
+                      "state": "active",
+                      "expiresAt": null
+                    },
+                    "roles": [
+                      "admin",
+                      "member"
+                    ]
                   }
                 }
               }
@@ -4380,6 +5512,12 @@
                         }
                       ]
                     }
+                  },
+                  "example": {
+                    "error": "VALIDATION_ERROR",
+                    "code": "VALIDATION_ERROR",
+                    "message": "Invalid wallet format",
+                    "statusCode": 400
                   }
                 }
               }
@@ -4426,6 +5564,12 @@
                         }
                       ]
                     }
+                  },
+                  "example": {
+                    "error": "NOT_FOUND",
+                    "code": "NOT_FOUND",
+                    "message": "Member not found",
+                    "statusCode": 404
                   }
                 }
               }
@@ -4476,8 +5620,12 @@
                       "member",
                       "contributor"
                     ],
-                    "description": "Role to assign"
+                    "description": "Role to assign",
+                    "example": "contributor"
                   }
+                },
+                "example": {
+                  "role": "contributor"
                 }
               }
             }
@@ -4487,7 +5635,8 @@
         "parameters": [
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "example": "community-mainnet-42"
             },
             "in": "path",
             "name": "communityId",
@@ -4546,6 +5695,14 @@
                     "message": {
                       "type": "string"
                     }
+                  },
+                  "example": {
+                    "communityId": "community-mainnet-42",
+                    "wallet": "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
+                    "role": "contributor",
+                    "assigned": true,
+                    "removed": false,
+                    "message": "Role contributor assigned to member"
                   }
                 }
               }
@@ -4592,6 +5749,12 @@
                         }
                       ]
                     }
+                  },
+                  "example": {
+                    "error": "VALIDATION_ERROR",
+                    "code": "INVALID_ROLE",
+                    "message": "Unrecognized role",
+                    "statusCode": 400
                   }
                 }
               }
@@ -4648,7 +5811,8 @@
         "parameters": [
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "example": "community-mainnet-42"
             },
             "in": "path",
             "name": "communityId",
@@ -4672,7 +5836,8 @@
                 "admin",
                 "member",
                 "contributor"
-              ]
+              ],
+              "example": "contributor"
             },
             "in": "path",
             "name": "role",
@@ -4721,6 +5886,14 @@
                     "message": {
                       "type": "string"
                     }
+                  },
+                  "example": {
+                    "communityId": "community-mainnet-42",
+                    "wallet": "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
+                    "role": "contributor",
+                    "assigned": false,
+                    "removed": true,
+                    "message": "Role contributor removed from member"
                   }
                 }
               }
@@ -4767,6 +5940,12 @@
                         }
                       ]
                     }
+                  },
+                  "example": {
+                    "error": "VALIDATION_ERROR",
+                    "code": "INVALID_WALLET",
+                    "message": "Invalid wallet format",
+                    "statusCode": 400
                   }
                 }
               }
@@ -4832,8 +6011,12 @@
                   "label": {
                     "type": "string",
                     "minLength": 1,
-                    "description": "Badge label to assign"
+                    "description": "Badge label to assign",
+                    "example": "early-contributor"
                   }
+                },
+                "example": {
+                  "label": "early-contributor"
                 }
               }
             }
@@ -4843,7 +6026,8 @@
         "parameters": [
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "example": "community-mainnet-42"
             },
             "in": "path",
             "name": "communityId",
@@ -4917,6 +6101,19 @@
                     "message": {
                       "type": "string"
                     }
+                  },
+                  "example": {
+                    "communityId": "community-mainnet-42",
+                    "wallet": "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
+                    "badge": {
+                      "id": "bdg_01HZ9K3XB7E4F2WQMN8VDTG1R",
+                      "memberId": "mbr_01HZ9K3XB7E4F2WQMN8VDTG1R",
+                      "label": "early-contributor",
+                      "issuedAt": "2026-07-28T12:00:00.000Z"
+                    },
+                    "assigned": true,
+                    "removed": false,
+                    "message": "Badge early-contributor assigned"
                   }
                 }
               }
@@ -4963,6 +6160,12 @@
                         }
                       ]
                     }
+                  },
+                  "example": {
+                    "error": "VALIDATION_ERROR",
+                    "code": "VALIDATION_ERROR",
+                    "message": "Missing required field: label",
+                    "statusCode": 400
                   }
                 }
               }
@@ -5028,6 +6231,12 @@
                         }
                       ]
                     }
+                  },
+                  "example": {
+                    "error": "NOT_FOUND",
+                    "code": "NOT_FOUND",
+                    "message": "Member not found",
+                    "statusCode": 404
                   }
                 }
               }
@@ -5063,7 +6272,8 @@
         "parameters": [
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "example": "community-mainnet-42"
             },
             "in": "path",
             "name": "communityId",
@@ -5130,6 +6340,18 @@
                         }
                       }
                     }
+                  },
+                  "example": {
+                    "communityId": "community-mainnet-42",
+                    "wallet": "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
+                    "badges": [
+                      {
+                        "id": "bdg_01HZ9K3XB7E4F2WQMN8VDTG1R",
+                        "memberId": "mbr_01HZ9K3XB7E4F2WQMN8VDTG1R",
+                        "label": "early-contributor",
+                        "issuedAt": "2026-07-28T12:00:00.000Z"
+                      }
+                    ]
                   }
                 }
               }
@@ -5176,6 +6398,12 @@
                         }
                       ]
                     }
+                  },
+                  "example": {
+                    "error": "VALIDATION_ERROR",
+                    "code": "UNKNOWN_COMMUNITY",
+                    "message": "Unknown communityId",
+                    "statusCode": 400
                   }
                 }
               }
@@ -5222,6 +6450,12 @@
                         }
                       ]
                     }
+                  },
+                  "example": {
+                    "error": "NOT_FOUND",
+                    "code": "NOT_FOUND",
+                    "message": "Member not found",
+                    "statusCode": 404
                   }
                 }
               }
@@ -5259,7 +6493,8 @@
         "parameters": [
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "example": "community-mainnet-42"
             },
             "in": "path",
             "name": "communityId",
@@ -5278,7 +6513,8 @@
           },
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "example": "bdg_01HZ9K3XB7E4F2WQMN8VDTG1R"
             },
             "in": "path",
             "name": "badgeId",
@@ -5318,6 +6554,13 @@
                     "message": {
                       "type": "string"
                     }
+                  },
+                  "example": {
+                    "communityId": "community-mainnet-42",
+                    "wallet": "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
+                    "assigned": false,
+                    "removed": true,
+                    "message": "Badge revoked"
                   }
                 }
               }
@@ -5364,6 +6607,12 @@
                         }
                       ]
                     }
+                  },
+                  "example": {
+                    "error": "VALIDATION_ERROR",
+                    "code": "INVALID_WALLET",
+                    "message": "Invalid wallet format",
+                    "statusCode": 400
                   }
                 }
               }
@@ -5429,6 +6678,12 @@
                         }
                       ]
                     }
+                  },
+                  "example": {
+                    "error": "NOT_FOUND",
+                    "code": "NOT_FOUND",
+                    "message": "Member not found",
+                    "statusCode": 404
                   }
                 }
               }
@@ -5480,7 +6735,8 @@
                   },
                   "resource": {
                     "type": "string",
-                    "description": "Resource identifier"
+                    "description": "Resource identifier",
+                    "example": "channel:announcements"
                   },
                   "effect": {
                     "type": "string",
@@ -5488,19 +6744,29 @@
                       "ALLOW",
                       "DENY"
                     ],
-                    "description": "Override effect"
+                    "description": "Override effect",
+                    "example": "DENY"
                   },
                   "reason": {
                     "type": "string",
                     "description": "Human-readable reason for the override",
-                    "nullable": true
+                    "nullable": true,
+                    "example": "Temporary ban pending investigation"
                   },
                   "expiresAt": {
                     "type": "string",
                     "format": "date-time",
                     "description": "Optional ISO 8601 expiry timestamp",
-                    "nullable": true
+                    "nullable": true,
+                    "example": "2026-08-28T00:00:00.000Z"
                   }
+                },
+                "example": {
+                  "wallet": "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
+                  "resource": "channel:announcements",
+                  "effect": "DENY",
+                  "reason": "Temporary ban pending investigation",
+                  "expiresAt": "2026-08-28T00:00:00.000Z"
                 }
               }
             }
@@ -5510,7 +6776,8 @@
         "parameters": [
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "example": "community-mainnet-42"
             },
             "in": "path",
             "name": "communityId",
@@ -5562,6 +6829,15 @@
                     "message": {
                       "type": "string"
                     }
+                  },
+                  "example": {
+                    "communityId": "community-mainnet-42",
+                    "wallet": "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
+                    "resource": "channel:announcements",
+                    "effect": "DENY",
+                    "created": true,
+                    "removed": false,
+                    "message": "Access override created"
                   }
                 }
               }
@@ -5608,6 +6884,12 @@
                         }
                       ]
                     }
+                  },
+                  "example": {
+                    "error": "VALIDATION_ERROR",
+                    "code": "VALIDATION_ERROR",
+                    "message": "Missing required fields: wallet, resource, effect",
+                    "statusCode": 400
                   }
                 }
               }
@@ -5661,7 +6943,8 @@
         "parameters": [
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "example": "community-mainnet-42"
             },
             "in": "path",
             "name": "communityId",
@@ -5732,6 +7015,20 @@
                         }
                       }
                     }
+                  },
+                  "example": {
+                    "communityId": "community-mainnet-42",
+                    "overrides": [
+                      {
+                        "wallet": "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
+                        "resource": "channel:announcements",
+                        "effect": "DENY",
+                        "reason": "Temporary ban pending investigation",
+                        "expiresAt": "2026-08-28T00:00:00.000Z",
+                        "expired": false,
+                        "createdAt": "2026-07-28T12:00:00.000Z"
+                      }
+                    ]
                   }
                 }
               }
@@ -5787,7 +7084,8 @@
         "parameters": [
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "example": "community-mainnet-42"
             },
             "in": "path",
             "name": "communityId",
@@ -5806,7 +7104,8 @@
           },
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "example": "channel:announcements"
             },
             "in": "path",
             "name": "resource",
@@ -5858,6 +7157,15 @@
                     "message": {
                       "type": "string"
                     }
+                  },
+                  "example": {
+                    "communityId": "community-mainnet-42",
+                    "wallet": "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
+                    "resource": "channel:announcements",
+                    "effect": "DENY",
+                    "created": false,
+                    "removed": true,
+                    "message": "Access override revoked"
                   }
                 }
               }
@@ -5925,18 +7233,26 @@
                   "wallet": {
                     "type": "string",
                     "pattern": "^0x[0-9a-fA-F]{40}$",
-                    "description": "EVM-compatible wallet address (checksummed or lowercase)"
+                    "description": "EVM-compatible wallet address (checksummed or lowercase)",
+                    "example": "0xd8da6bf26964af9d7eed9e03e53415d37aa96045"
                   },
                   "communityId": {
                     "type": "string",
                     "minLength": 1,
-                    "description": "Community identifier"
+                    "description": "Community identifier",
+                    "example": "community-mainnet-42"
                   },
                   "resource": {
                     "type": "string",
                     "minLength": 1,
-                    "description": "Resource identifier"
+                    "description": "Resource identifier",
+                    "example": "channel:announcements"
                   }
+                },
+                "example": {
+                  "wallet": "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
+                  "communityId": "community-mainnet-42",
+                  "resource": "channel:announcements"
                 }
               }
             }
@@ -5995,6 +7311,21 @@
                       "type": "string",
                       "nullable": true
                     }
+                  },
+                  "example": {
+                    "allowed": true,
+                    "code": "ALLOW",
+                    "reasons": [
+                      {
+                        "code": "ROLE_MATCH",
+                        "message": "Wallet holds the 'member' role"
+                      }
+                    ],
+                    "effectiveRoles": [
+                      "admin",
+                      "member"
+                    ],
+                    "membershipState": "active"
                   }
                 }
               }
@@ -6044,6 +7375,12 @@
                           ]
                         }
                       }
+                    }
+                  },
+                  "example": {
+                    "error": {
+                      "code": "VALIDATION_ERROR",
+                      "message": "Invalid wallet address format"
                     }
                   }
                 }
@@ -6111,6 +7448,15 @@
                         }
                       }
                     }
+                  },
+                  "example": {
+                    "error": {
+                      "code": "RATE_LIMITED",
+                      "message": "Rate limit exceeded. Retry after 30 seconds.",
+                      "details": {
+                        "retryAfter": 30
+                      }
+                    }
                   }
                 }
               }
@@ -6152,6 +7498,12 @@
                           ]
                         }
                       }
+                    }
+                  },
+                  "example": {
+                    "error": {
+                      "code": "INTERNAL_ERROR",
+                      "message": "Internal server error"
                     }
                   }
                 }
@@ -6221,7 +7573,8 @@
           },
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "example": "community-mainnet-42"
             },
             "in": "path",
             "name": "communityId",
@@ -6304,6 +7657,33 @@
                         }
                       }
                     }
+                  },
+                  "example": {
+                    "communityId": "community-mainnet-42",
+                    "members": [
+                      {
+                        "wallet": "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
+                        "displayName": "alice.eth",
+                        "state": "active",
+                        "roles": [
+                          "admin",
+                          "member"
+                        ]
+                      },
+                      {
+                        "wallet": "0xabcd1234567890abcd1234567890abcd12345678",
+                        "displayName": null,
+                        "state": "active",
+                        "roles": [
+                          "member"
+                        ]
+                      }
+                    ],
+                    "pagination": {
+                      "limit": 50,
+                      "hasMore": false,
+                      "nextCursor": null
+                    }
                   }
                 }
               }
@@ -6350,6 +7730,12 @@
                         }
                       ]
                     }
+                  },
+                  "example": {
+                    "error": "VALIDATION_ERROR",
+                    "code": "VALIDATION_ERROR",
+                    "message": "Invalid query parameters",
+                    "statusCode": 400
                   }
                 }
               }
@@ -6419,7 +7805,8 @@
           },
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "example": "community-mainnet-42"
             },
             "in": "path",
             "name": "communityId",
@@ -6507,6 +7894,26 @@
                         }
                       }
                     }
+                  },
+                  "example": {
+                    "events": [
+                      {
+                        "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                        "originalEventId": "f0e1d2c3-b4a5-6789-0fed-cba987654321",
+                        "eventType": "membership.updated",
+                        "entityId": "mbr_01HZ9K3XB7E4F2WQMN8VDTG1R",
+                        "entityType": "membership",
+                        "communityId": "community-mainnet-42",
+                        "payload": {
+                          "state": "suspended"
+                        },
+                        "failureReason": "Webhook endpoint returned 503",
+                        "retryCount": 3,
+                        "status": "pending",
+                        "createdAt": "2026-07-28T12:00:00.000Z",
+                        "resolvedAt": null
+                      }
+                    ]
                   }
                 }
               }
@@ -6562,7 +7969,8 @@
         "parameters": [
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "example": "community-mainnet-42"
             },
             "in": "path",
             "name": "communityId",
@@ -6572,7 +7980,8 @@
           {
             "schema": {
               "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
             },
             "in": "path",
             "name": "id",
@@ -6597,6 +8006,9 @@
                       "format": "uuid",
                       "description": "ID of the newly created pending outbox event"
                     }
+                  },
+                  "example": {
+                    "newEventId": "b2c3d4e5-f6a7-8901-bcde-f12345678901"
                   }
                 }
               }
@@ -6662,6 +8074,12 @@
                         }
                       ]
                     }
+                  },
+                  "example": {
+                    "error": "NOT_FOUND",
+                    "code": "NOT_FOUND",
+                    "message": "Dead-letter event not found",
+                    "statusCode": 404
                   }
                 }
               }
@@ -6731,7 +8149,8 @@
           },
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "example": "community-mainnet-42"
             },
             "in": "path",
             "name": "communityId",
@@ -6819,6 +8238,26 @@
                         }
                       }
                     }
+                  },
+                  "example": {
+                    "events": [
+                      {
+                        "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                        "originalEventId": "f0e1d2c3-b4a5-6789-0fed-cba987654321",
+                        "eventType": "membership.updated",
+                        "entityId": "mbr_01HZ9K3XB7E4F2WQMN8VDTG1R",
+                        "entityType": "membership",
+                        "communityId": "community-mainnet-42",
+                        "payload": {
+                          "state": "suspended"
+                        },
+                        "failureReason": "Webhook endpoint returned 503",
+                        "retryCount": 3,
+                        "status": "pending",
+                        "createdAt": "2026-07-28T12:00:00.000Z",
+                        "resolvedAt": null
+                      }
+                    ]
                   }
                 }
               }
@@ -6874,7 +8313,8 @@
         "parameters": [
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "example": "community-mainnet-42"
             },
             "in": "path",
             "name": "communityId",
@@ -6884,7 +8324,8 @@
           {
             "schema": {
               "type": "string",
-              "format": "uuid"
+              "format": "uuid",
+              "example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
             },
             "in": "path",
             "name": "id",
@@ -6909,6 +8350,9 @@
                       "format": "uuid",
                       "description": "ID of the newly created pending outbox event"
                     }
+                  },
+                  "example": {
+                    "newEventId": "b2c3d4e5-f6a7-8901-bcde-f12345678901"
                   }
                 }
               }
@@ -6974,6 +8418,12 @@
                         }
                       ]
                     }
+                  },
+                  "example": {
+                    "error": "NOT_FOUND",
+                    "code": "NOT_FOUND",
+                    "message": "Dead-letter event not found",
+                    "statusCode": 404
                   }
                 }
               }
@@ -7048,7 +8498,8 @@
         "parameters": [
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "example": "0xd8da6bf26964af9d7eed9e03e53415d37aa96045"
             },
             "in": "query",
             "name": "actorWallet",
@@ -7075,7 +8526,8 @@
           },
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "example": "channel:announcements"
             },
             "in": "query",
             "name": "resource",
@@ -7085,7 +8537,8 @@
           {
             "schema": {
               "type": "string",
-              "format": "date-time"
+              "format": "date-time",
+              "example": "2026-07-01T00:00:00.000Z"
             },
             "in": "query",
             "name": "from",
@@ -7095,7 +8548,8 @@
           {
             "schema": {
               "type": "string",
-              "format": "date-time"
+              "format": "date-time",
+              "example": "2026-07-31T23:59:59.000Z"
             },
             "in": "query",
             "name": "to",
@@ -7127,7 +8581,8 @@
           },
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "example": "community-mainnet-42"
             },
             "in": "path",
             "name": "communityId",
@@ -7265,6 +8720,38 @@
                         }
                       }
                     }
+                  },
+                  "example": {
+                    "events": [
+                      {
+                        "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+                        "eventType": "ACCESS_CHECK",
+                        "walletId": "wlt_01HZ9K3XB7E4F2WQMN8VDTG1R",
+                        "communityId": "community-mainnet-42",
+                        "resource": "channel:announcements",
+                        "policyRule": "ROLE_MATCH",
+                        "decision": "ALLOW",
+                        "reasonCode": "ACTIVE_MEMBER",
+                        "beforeState": null,
+                        "afterState": null,
+                        "correlationId": "req-abc123",
+                        "chainId": 1,
+                        "txHash": null,
+                        "blockNumber": null,
+                        "logIndex": null,
+                        "membershipStateVersion": "v1",
+                        "roleStateVersion": "v2",
+                        "recordHash": "sha256:abc123",
+                        "previousRecordHash": null,
+                        "createdAt": "2026-07-28T12:00:00.000Z"
+                      }
+                    ],
+                    "pagination": {
+                      "page": 1,
+                      "limit": 20,
+                      "total": 1,
+                      "totalPages": 1
+                    }
                   }
                 }
               }
@@ -7311,6 +8798,12 @@
                         }
                       ]
                     }
+                  },
+                  "example": {
+                    "error": "VALIDATION_ERROR",
+                    "code": "VALIDATION_ERROR",
+                    "message": "Invalid from date format",
+                    "statusCode": 400
                   }
                 }
               }
@@ -7375,16 +8868,28 @@
                 "properties": {
                   "resourceId": {
                     "type": "string",
-                    "description": "Resource identifier"
+                    "description": "Resource identifier",
+                    "example": "channel:announcements"
                   },
                   "name": {
                     "type": "string",
-                    "description": "Human-readable name"
+                    "description": "Human-readable name",
+                    "example": "Announcements Channel"
                   },
                   "metadata": {
                     "type": "object",
                     "additionalProperties": true,
-                    "nullable": true
+                    "nullable": true,
+                    "example": {
+                      "discordChannelId": "123456789"
+                    }
+                  }
+                },
+                "example": {
+                  "resourceId": "channel:announcements",
+                  "name": "Announcements Channel",
+                  "metadata": {
+                    "discordChannelId": "123456789"
                   }
                 }
               }
@@ -7395,7 +8900,8 @@
         "parameters": [
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "example": "community-mainnet-42"
             },
             "in": "path",
             "name": "communityId",
@@ -7439,6 +8945,16 @@
                     "created": {
                       "type": "boolean"
                     }
+                  },
+                  "example": {
+                    "communityId": "community-mainnet-42",
+                    "resourceId": "channel:announcements",
+                    "name": "Announcements Channel",
+                    "metadata": {
+                      "discordChannelId": "123456789"
+                    },
+                    "archived": false,
+                    "created": true
                   }
                 }
               }
@@ -7485,6 +9001,12 @@
                         }
                       ]
                     }
+                  },
+                  "example": {
+                    "error": "VALIDATION_ERROR",
+                    "code": "VALIDATION_ERROR",
+                    "message": "Missing required field: name",
+                    "statusCode": 400
                   }
                 }
               }
@@ -7531,6 +9053,12 @@
                         }
                       ]
                     }
+                  },
+                  "example": {
+                    "error": "UNAUTHORIZED",
+                    "code": "UNAUTHORIZED",
+                    "message": "Missing or invalid API key",
+                    "statusCode": 401
                   }
                 }
               }
@@ -7577,6 +9105,12 @@
                         }
                       ]
                     }
+                  },
+                  "example": {
+                    "error": "FORBIDDEN",
+                    "code": "FORBIDDEN",
+                    "message": "Requester is not a community admin",
+                    "statusCode": 403
                   }
                 }
               }
@@ -7592,7 +9126,8 @@
         "parameters": [
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "example": "community-mainnet-42"
             },
             "in": "path",
             "name": "communityId",
@@ -7644,6 +9179,25 @@
                         }
                       }
                     }
+                  },
+                  "example": {
+                    "communityId": "community-mainnet-42",
+                    "resources": [
+                      {
+                        "resourceId": "channel:announcements",
+                        "name": "Announcements Channel",
+                        "metadata": {
+                          "discordChannelId": "123456789"
+                        },
+                        "archived": false
+                      },
+                      {
+                        "resourceId": "channel:general",
+                        "name": "General Chat",
+                        "metadata": null,
+                        "archived": false
+                      }
+                    ]
                   }
                 }
               }
@@ -7690,6 +9244,12 @@
                         }
                       ]
                     }
+                  },
+                  "example": {
+                    "error": "VALIDATION_ERROR",
+                    "code": "VALIDATION_ERROR",
+                    "message": "Invalid communityId",
+                    "statusCode": 400
                   }
                 }
               }
@@ -7736,6 +9296,12 @@
                         }
                       ]
                     }
+                  },
+                  "example": {
+                    "error": "UNAUTHORIZED",
+                    "code": "UNAUTHORIZED",
+                    "message": "Missing or invalid API key",
+                    "statusCode": 401
                   }
                 }
               }
@@ -7782,6 +9348,12 @@
                         }
                       ]
                     }
+                  },
+                  "example": {
+                    "error": "FORBIDDEN",
+                    "code": "FORBIDDEN",
+                    "message": "Requester is not a community admin",
+                    "statusCode": 403
                   }
                 }
               }
@@ -7804,13 +9376,17 @@
                 "properties": {
                   "name": {
                     "type": "string",
-                    "description": "New human-readable name"
+                    "description": "New human-readable name",
+                    "example": "Official Announcements"
                   },
                   "metadata": {
                     "type": "object",
                     "additionalProperties": true,
                     "nullable": true
                   }
+                },
+                "example": {
+                  "name": "Official Announcements"
                 }
               }
             }
@@ -7819,7 +9395,8 @@
         "parameters": [
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "example": "community-mainnet-42"
             },
             "in": "path",
             "name": "communityId",
@@ -7828,7 +9405,8 @@
           },
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "example": "channel:announcements"
             },
             "in": "path",
             "name": "resourceId",
@@ -7868,6 +9446,15 @@
                     "archived": {
                       "type": "boolean"
                     }
+                  },
+                  "example": {
+                    "communityId": "community-mainnet-42",
+                    "resourceId": "channel:announcements",
+                    "name": "Official Announcements",
+                    "metadata": {
+                      "discordChannelId": "123456789"
+                    },
+                    "archived": false
                   }
                 }
               }
@@ -7914,6 +9501,12 @@
                         }
                       ]
                     }
+                  },
+                  "example": {
+                    "error": "VALIDATION_ERROR",
+                    "code": "VALIDATION_ERROR",
+                    "message": "Nothing to update",
+                    "statusCode": 400
                   }
                 }
               }
@@ -7960,6 +9553,12 @@
                         }
                       ]
                     }
+                  },
+                  "example": {
+                    "error": "UNAUTHORIZED",
+                    "code": "UNAUTHORIZED",
+                    "message": "Missing or invalid API key",
+                    "statusCode": 401
                   }
                 }
               }
@@ -8006,6 +9605,12 @@
                         }
                       ]
                     }
+                  },
+                  "example": {
+                    "error": "FORBIDDEN",
+                    "code": "FORBIDDEN",
+                    "message": "Requester is not a community admin",
+                    "statusCode": 403
                   }
                 }
               }
@@ -8052,6 +9657,12 @@
                         }
                       ]
                     }
+                  },
+                  "example": {
+                    "error": "NOT_FOUND",
+                    "code": "NOT_FOUND",
+                    "message": "Resource not found",
+                    "statusCode": 404
                   }
                 }
               }
@@ -8067,7 +9678,8 @@
         "parameters": [
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "example": "community-mainnet-42"
             },
             "in": "path",
             "name": "communityId",
@@ -8076,7 +9688,8 @@
           },
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "example": "channel:announcements"
             },
             "in": "path",
             "name": "resourceId",
@@ -8107,6 +9720,11 @@
                     "archived": {
                       "type": "boolean"
                     }
+                  },
+                  "example": {
+                    "communityId": "community-mainnet-42",
+                    "resourceId": "channel:announcements",
+                    "archived": true
                   }
                 }
               }
@@ -8153,6 +9771,12 @@
                         }
                       ]
                     }
+                  },
+                  "example": {
+                    "error": "VALIDATION_ERROR",
+                    "code": "VALIDATION_ERROR",
+                    "message": "Invalid resourceId",
+                    "statusCode": 400
                   }
                 }
               }
@@ -8199,6 +9823,12 @@
                         }
                       ]
                     }
+                  },
+                  "example": {
+                    "error": "UNAUTHORIZED",
+                    "code": "UNAUTHORIZED",
+                    "message": "Missing or invalid API key",
+                    "statusCode": 401
                   }
                 }
               }
@@ -8245,6 +9875,12 @@
                         }
                       ]
                     }
+                  },
+                  "example": {
+                    "error": "FORBIDDEN",
+                    "code": "FORBIDDEN",
+                    "message": "Requester is not a community admin",
+                    "statusCode": 403
                   }
                 }
               }
@@ -8291,6 +9927,12 @@
                         }
                       ]
                     }
+                  },
+                  "example": {
+                    "error": "NOT_FOUND",
+                    "code": "NOT_FOUND",
+                    "message": "Resource not found",
+                    "statusCode": 404
                   }
                 }
               }
@@ -8301,55 +9943,464 @@
     },
     "/v1/communities/{communityId}/constitutional-rulesets": {
       "post": {
+        "summary": "Create a new versioned constitutional rule set",
+        "tags": [
+          "Constitutional Rules"
+        ],
+        "description": "Creates an immutable, versioned rule set that constrains all role mutations, policy updates, and override actions within the community. The new version becomes active immediately; previous versions are archived.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "rules"
+                ],
+                "properties": {
+                  "rules": {
+                    "type": "array",
+                    "description": "Array of constitutional rule objects",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "example": [
+                      {
+                        "type": "COOLDOWN",
+                        "action": "ROLE_ASSIGNMENT",
+                        "durationMs": 86400000
+                      }
+                    ]
+                  },
+                  "description": {
+                    "type": "string",
+                    "description": "Human-readable description of this rule set version",
+                    "example": "Adds a 24-hour cooldown between consecutive role assignments"
+                  }
+                },
+                "example": {
+                  "rules": [
+                    {
+                      "type": "COOLDOWN",
+                      "action": "ROLE_ASSIGNMENT",
+                      "durationMs": 86400000
+                    }
+                  ],
+                  "description": "Adds a 24-hour cooldown between consecutive role assignments"
+                }
+              }
+            }
+          },
+          "required": true
+        },
         "parameters": [
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "example": "community-mainnet-42"
             },
             "in": "path",
             "name": "communityId",
-            "required": true
+            "required": true,
+            "description": "Community identifier"
           }
         ],
         "responses": {
-          "200": {
-            "description": "Default Response"
+          "201": {
+            "description": "Rule set version created and activated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Rule set version created and activated",
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "example": "crs_01HZ9K3XB7E4F2WQMN8VDTG1R"
+                    },
+                    "communityId": {
+                      "type": "string",
+                      "example": "community-mainnet-42"
+                    },
+                    "version": {
+                      "type": "integer",
+                      "example": 3
+                    },
+                    "description": {
+                      "type": "string",
+                      "example": "Adds a 24-hour cooldown between consecutive role assignments"
+                    },
+                    "createdBy": {
+                      "type": "string",
+                      "example": "0xd8da6bf26964af9d7eed9e03e53415d37aa96045"
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "example": "2026-07-28T12:00:00.000Z"
+                    }
+                  },
+                  "example": {
+                    "id": "crs_01HZ9K3XB7E4F2WQMN8VDTG1R",
+                    "communityId": "community-mainnet-42",
+                    "version": 3,
+                    "description": "Adds a 24-hour cooldown between consecutive role assignments",
+                    "createdBy": "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
+                    "createdAt": "2026-07-28T12:00:00.000Z"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing rules array or invalid rule definition",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Missing rules array or invalid rule definition",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "example": "VALIDATION_ERROR"
+                    },
+                    "code": {
+                      "type": "string",
+                      "example": "VALIDATION_ERROR"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Missing required field: rules array"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "example": 400
+                    }
+                  },
+                  "example": {
+                    "error": "VALIDATION_ERROR",
+                    "code": "VALIDATION_ERROR",
+                    "message": "Missing required field: rules array",
+                    "statusCode": 400
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Unauthorized",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "example": "UNAUTHORIZED"
+                    },
+                    "code": {
+                      "type": "string",
+                      "example": "UNAUTHORIZED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Missing or invalid API key"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "example": 401
+                    }
+                  },
+                  "example": {
+                    "error": "UNAUTHORIZED",
+                    "code": "UNAUTHORIZED",
+                    "message": "Missing or invalid API key",
+                    "statusCode": 401
+                  }
+                }
+              }
+            }
           }
         }
       },
       "get": {
+        "summary": "List all constitutional rule set versions for a community",
+        "tags": [
+          "Constitutional Rules"
+        ],
+        "description": "Returns every version of the community constitutional rule set in descending order (newest first). The active version is the first entry.",
         "parameters": [
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "example": "community-mainnet-42"
             },
             "in": "path",
             "name": "communityId",
-            "required": true
+            "required": true,
+            "description": "Community identifier"
           }
         ],
         "responses": {
           "200": {
-            "description": "Default Response"
+            "description": "All rule set versions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "All rule set versions",
+                  "type": "object",
+                  "required": [
+                    "communityId",
+                    "versions"
+                  ],
+                  "properties": {
+                    "communityId": {
+                      "type": "string",
+                      "example": "community-mainnet-42"
+                    },
+                    "versions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "version": {
+                            "type": "integer"
+                          },
+                          "description": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "createdBy": {
+                            "type": "string"
+                          },
+                          "createdAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        }
+                      },
+                      "example": [
+                        {
+                          "id": "crs_01HZ9K3XB7E4F2WQMN8VDTG1R",
+                          "version": 3,
+                          "description": "Adds a 24-hour cooldown",
+                          "createdBy": "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
+                          "createdAt": "2026-07-28T12:00:00.000Z"
+                        },
+                        {
+                          "id": "crs_01HZ8B2WA6D3E1VPLN7UCSH0Q",
+                          "version": 2,
+                          "description": null,
+                          "createdBy": "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
+                          "createdAt": "2026-06-15T09:00:00.000Z"
+                        }
+                      ]
+                    }
+                  },
+                  "example": {
+                    "communityId": "community-mainnet-42",
+                    "versions": [
+                      {
+                        "id": "crs_01HZ9K3XB7E4F2WQMN8VDTG1R",
+                        "version": 3,
+                        "description": "Adds a 24-hour cooldown",
+                        "createdBy": "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
+                        "createdAt": "2026-07-28T12:00:00.000Z"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Unauthorized",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "example": "UNAUTHORIZED"
+                    },
+                    "code": {
+                      "type": "string",
+                      "example": "UNAUTHORIZED"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "Missing or invalid API key"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "example": 401
+                    }
+                  },
+                  "example": {
+                    "error": "UNAUTHORIZED",
+                    "code": "UNAUTHORIZED",
+                    "message": "Missing or invalid API key",
+                    "statusCode": 401
+                  }
+                }
+              }
+            }
           }
         }
       }
     },
     "/v1/communities/{communityId}/constitutional-rulesets/active": {
       "get": {
+        "summary": "Get the currently active constitutional rule set",
+        "tags": [
+          "Constitutional Rules"
+        ],
+        "description": "Returns the highest-version rule set that is currently enforced for this community. Returns 404 when no rule set has been created yet.",
         "parameters": [
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "example": "community-mainnet-42"
             },
             "in": "path",
             "name": "communityId",
-            "required": true
+            "required": true,
+            "description": "Community identifier"
           }
         ],
         "responses": {
           "200": {
-            "description": "Default Response"
+            "description": "Active constitutional rule set",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "Active constitutional rule set",
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "example": "crs_01HZ9K3XB7E4F2WQMN8VDTG1R"
+                    },
+                    "communityId": {
+                      "type": "string",
+                      "example": "community-mainnet-42"
+                    },
+                    "version": {
+                      "type": "integer",
+                      "example": 3
+                    },
+                    "rules": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      },
+                      "example": [
+                        {
+                          "type": "COOLDOWN",
+                          "action": "ROLE_ASSIGNMENT",
+                          "durationMs": 86400000
+                        }
+                      ]
+                    },
+                    "description": {
+                      "type": "string",
+                      "nullable": true,
+                      "example": "Adds a 24-hour cooldown between consecutive role assignments"
+                    },
+                    "createdBy": {
+                      "type": "string",
+                      "example": "0xd8da6bf26964af9d7eed9e03e53415d37aa96045"
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "example": "2026-07-28T12:00:00.000Z"
+                    }
+                  },
+                  "example": {
+                    "id": "crs_01HZ9K3XB7E4F2WQMN8VDTG1R",
+                    "communityId": "community-mainnet-42",
+                    "version": 3,
+                    "rules": [
+                      {
+                        "type": "COOLDOWN",
+                        "action": "ROLE_ASSIGNMENT",
+                        "durationMs": 86400000
+                      }
+                    ],
+                    "description": "Adds a 24-hour cooldown between consecutive role assignments",
+                    "createdBy": "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
+                    "createdAt": "2026-07-28T12:00:00.000Z"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No active constitutional rule set found for this community",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "description": "No active constitutional rule set found for this community",
+                  "type": "object",
+                  "required": [
+                    "error",
+                    "code",
+                    "message",
+                    "statusCode"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "example": "NOT_FOUND"
+                    },
+                    "code": {
+                      "type": "string",
+                      "example": "NOT_FOUND"
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "No active constitutional rule set found for this community"
+                    },
+                    "statusCode": {
+                      "type": "integer",
+                      "example": 404
+                    }
+                  },
+                  "example": {
+                    "error": "NOT_FOUND",
+                    "code": "NOT_FOUND",
+                    "message": "No active constitutional rule set found for this community",
+                    "statusCode": 404
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -8373,7 +10424,22 @@
                   "ruleTree": {
                     "type": "object",
                     "description": "Versioned, serializable rule tree AST",
-                    "additionalProperties": true
+                    "additionalProperties": true,
+                    "example": {
+                      "type": "AND",
+                      "children": [
+                        {
+                          "type": "MEMBERSHIP_STATE",
+                          "states": [
+                            "active"
+                          ]
+                        },
+                        {
+                          "type": "ROLE",
+                          "role": "member"
+                        }
+                      ]
+                    }
                   },
                   "requiredPermissions": {
                     "type": "array",
@@ -8382,8 +10448,31 @@
                     "items": {
                       "type": "string",
                       "pattern": "^[a-z][a-z0-9_-]*(?::[a-z][a-z0-9_-]*)+$"
-                    }
+                    },
+                    "example": [
+                      "content:read"
+                    ]
                   }
+                },
+                "example": {
+                  "ruleTree": {
+                    "type": "AND",
+                    "children": [
+                      {
+                        "type": "MEMBERSHIP_STATE",
+                        "states": [
+                          "active"
+                        ]
+                      },
+                      {
+                        "type": "ROLE",
+                        "role": "member"
+                      }
+                    ]
+                  },
+                  "requiredPermissions": [
+                    "content:read"
+                  ]
                 }
               }
             }
@@ -8393,7 +10482,8 @@
         "parameters": [
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "example": "community-mainnet-42"
             },
             "in": "path",
             "name": "communityId",
@@ -8402,7 +10492,8 @@
           },
           {
             "schema": {
-              "type": "string"
+              "type": "string",
+              "example": "channel:announcements"
             },
             "in": "path",
             "name": "resource",
@@ -8460,6 +10551,31 @@
                         }
                       }
                     }
+                  },
+                  "example": {
+                    "success": true,
+                    "policy": {
+                      "id": "pol_01HZ9K3XB7E4F2WQMN8VDTG1R",
+                      "communityId": "community-mainnet-42",
+                      "resource": "channel:announcements",
+                      "ruleType": "COMPOSABLE",
+                      "params": {
+                        "ruleTree": {
+                          "type": "AND",
+                          "children": [
+                            {
+                              "type": "MEMBERSHIP_STATE",
+                              "states": [
+                                "active"
+                              ]
+                            }
+                          ]
+                        }
+                      },
+                      "requiredPermissions": [
+                        "content:read"
+                      ]
+                    }
                   }
                 }
               }
@@ -8506,6 +10622,12 @@
                         }
                       ]
                     }
+                  },
+                  "example": {
+                    "error": "VALIDATION_ERROR",
+                    "code": "VALIDATION_ERROR",
+                    "message": "Invalid rule tree AST",
+                    "statusCode": 400
                   }
                 }
               }
@@ -8552,6 +10674,12 @@
                         }
                       ]
                     }
+                  },
+                  "example": {
+                    "error": "UNAUTHORIZED",
+                    "code": "UNAUTHORIZED",
+                    "message": "Missing or invalid API key",
+                    "statusCode": 401
                   }
                 }
               }
@@ -8598,6 +10726,12 @@
                         }
                       ]
                     }
+                  },
+                  "example": {
+                    "error": "FORBIDDEN",
+                    "code": "FORBIDDEN",
+                    "message": "Requester is not a community admin",
+                    "statusCode": 403
                   }
                 }
               }
