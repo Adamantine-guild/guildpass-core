@@ -13,6 +13,7 @@ import { CustomRoleService } from "./services/customRoleService";
 import { registerSuspensionAppealRoutes } from "./routes/suspensionAppealRoutes";
 import { registerEventRoutes } from "./routes/eventRoutes";
 import { EventService } from "./services/eventService";
+import { registerRewardRoutes } from "./routes/rewardRoutes";
 import {
   getModerationService,
   ModerationError,
@@ -200,6 +201,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       memberService.isCommunityAdmin(communityId, requesterWallet),
     getRequesterWallet,
   });
+  registerRewardRoutes(app, { db: prisma, getRequesterWallet });
 
   // Idempotency-Key support for mutating routes (issue #184). Opt-in per
   // request via the `Idempotency-Key` header; applied to role assignment,

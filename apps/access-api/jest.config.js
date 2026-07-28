@@ -22,8 +22,8 @@ module.exports = {
     '^@guildpass/policy-engine$': '<rootDir>/../../packages/policy-engine/dist/src',
     '^@guildpass/governance-engine$': '<rootDir>/../../packages/governance-engine/dist/src',
     '^@guildpass/contribution-engine$': '<rootDir>/../../packages/contribution-engine/dist/src',
+    '^@guildpass/reward-engine$': '<rootDir>/../../packages/reward-engine/dist/src',
   },
 };
-
 
 

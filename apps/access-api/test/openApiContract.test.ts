@@ -469,6 +469,7 @@ describe('OpenAPI Contract Tests — docs/openapi.json', () => {
         '/v1/communities/{communityId}/events/{eventId}',
         '/v1/communities/{communityId}/events/{eventId}/attend',
         '/v1/communities/{communityId}/members/{wallet}/attendance',
+        '/v1/members/{wallet}/rewards',
         '/v1/communities/{communityId}/members',
         '/v1/communities/{communityId}/dead-letter-events',
         '/v1/communities/{communityId}/dead-letter-events/{id}/retry',
