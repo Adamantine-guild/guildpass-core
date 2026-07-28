@@ -2431,3 +2431,59 @@ export const decideSuspensionAppealSchema = {
     },
   },
 } as const;
+
+// ---------------------------------------------------------------------------
+// GET /v1/communities/:communityId/members/:wallet/score
+// ---------------------------------------------------------------------------
+
+export const getContributionScoreSchema = {
+  summary: "Get contribution score for a member",
+  tags: ["Contribution Scoring"],
+  params: {
+    type: "object",
+    required: ["communityId", "wallet"],
+    properties: {
+      communityId: { type: "string", description: "Community identifier" },
+      wallet: walletAddressSchema,
+    },
+  },
+  response: {
+    200: {
+      description: "Contribution score for the member",
+      type: "object",
+      required: ["wallet", "communityId", "totalScore", "breakdown"],
+      properties: {
+        wallet: walletAddressSchema,
+        communityId: { type: "string" },
+        totalScore: { type: "number", description: "Aggregated contribution score" },
+        breakdown: {
+          type: "object",
+          additionalProperties: { type: "number" },
+          description: "Per-signal point breakdown",
+        },
+        history: {
+          type: "array",
+          description: "Recent recomputation history (most recent first)",
+          items: {
+            type: "object",
+            required: ["totalScore", "breakdown", "createdAt"],
+            properties: {
+              totalScore: { type: "number" },
+              breakdown: {
+                type: "object",
+                additionalProperties: { type: "number" },
+              },
+              explanations: {
+                type: "object",
+                additionalProperties: { type: "string" },
+              },
+              triggerEventId: { type: "string", nullable: true },
+              createdAt: { type: "string", format: "date-time" },
+            },
+          },
+        },
+      },
+    },
+    404: { description: "Member not found", ...errorSchema },
+  },
+} as const;

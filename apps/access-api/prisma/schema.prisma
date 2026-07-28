@@ -592,16 +592,41 @@ model Approval {
 }
 
 model ContributionScore {
-  id         String   @id @default(uuid())
-  walletId   String
+  id          String   @id @default(uuid())
+  walletId    String
   communityId String
-  totalScore Int      @default(0)
-  breakdown  Json?
-  updatedAt  DateTime @updatedAt
+  totalScore  Int      @default(0)
+  breakdown   Json?
+  updatedAt   DateTime @updatedAt
+
+  events      ContributionEvent[]
 
   @@unique([walletId, communityId])
   @@index([communityId])
   @@index([totalScore])
+}
+
+// Per-recompute audit log. Each row captures one full recomputation cycle
+// so scores are traceable back to the exact signal contributions and the
+// triggering event.  The latest row for a (walletId, communityId) pair is
+// the current authoritative snapshot; older rows form an append-only
+// history useful for debugging, dispute resolution, and trend analysis.
+model ContributionEvent {
+  id          String   @id @default(uuid())
+  walletId    String
+  communityId String
+  totalScore  Int
+  breakdown   Json
+  explanations Json?
+  // The outbox event that triggered this recomputation (nullable for
+  // manual/admin recomputes or backfills).
+  triggerEventId String?
+  createdAt   DateTime @default(now())
+
+  @@index([walletId, communityId])
+  @@index([communityId])
+  @@index([createdAt])
+  @@index([triggerEventId])
 }
 
 // --- Webhook Delivery (outbox handler) ---

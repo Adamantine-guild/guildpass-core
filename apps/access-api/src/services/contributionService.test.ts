@@ -4,12 +4,12 @@ function createMockPrisma(overrides: Record<string, any> = {}) {
   return {
     wallet: {
       findUnique: jest.fn().mockResolvedValue(
-        overrides.wallet ?? { id: 'wallet-1', address: '0xabc123' },
+        'wallet' in overrides ? overrides.wallet : { id: 'wallet-1', address: '0xabc123' },
       ),
     },
     member: {
       findFirst: jest.fn().mockResolvedValue(
-        overrides.member ?? {
+        'member' in overrides ? overrides.member : {
           id: 'member-1',
           walletId: 'wallet-1',
           communityId: 'community-1',
@@ -30,6 +30,9 @@ function createMockPrisma(overrides: Record<string, any> = {}) {
           breakdown: { tenure: 10, badge_count: 12 },
         },
       ),
+    },
+    contributionEvent: {
+      create: jest.fn().mockResolvedValue({}),
     },
   } as any;
 }
