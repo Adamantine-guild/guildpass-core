@@ -625,6 +625,13 @@ export const revokeBadgeSchema = {
 // ---------------------------------------------------------------------------
 // POST /v1/access/check
 // ---------------------------------------------------------------------------
+
+export interface AccessCheckBody {
+  wallet: string;
+  communityId: string;
+  resource: string;
+}
+
 export const accessCheckSchema = {
   summary: "Check whether a wallet has access to a resource in a community",
   tags: ["Access"],
