@@ -854,7 +854,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   // POST /v1/communities/:communityId/members/:wallet/roles — assign a role to a member
   app.post('/v1/communities/:communityId/members/:wallet/roles', { schema: assignMemberRoleSchema, preHandler: [authenticateApiKey, requireSiweSession, idempotencyPreHandler], onSend: [idempotencyOnSend] }, async (request: FastifyRequest, reply: FastifyReply) => {
     const { communityId, wallet } = request.params as { communityId: string; wallet: string };
-    const body = request.body as { role?: string };
+    const body = request.body as { role?: string; expiresAt?: string | null };
     const role = body.role;
     const requesterWallet = resolveRequesterWallet(request);
 
@@ -877,6 +877,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
         communityId,
         targetWallet: wallet as import('@guildpass/shared-types').WalletAddress,
         role: role as import('@guildpass/shared-types').Role,
+        expiresAt: body.expiresAt,
       });
       return reply.status(200).send(result);
     } catch (error) {
