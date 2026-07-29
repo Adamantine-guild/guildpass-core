@@ -621,12 +621,15 @@ model ContributionEvent {
   // The outbox event that triggered this recomputation (nullable for
   // manual/admin recomputes or backfills).
   triggerEventId String?
+  contributionScoreId String?
+  contributionScore   ContributionScore? @relation(fields: [contributionScoreId], references: [id])
   createdAt   DateTime @default(now())
 
   @@index([walletId, communityId])
   @@index([communityId])
   @@index([createdAt])
   @@index([triggerEventId])
+  @@index([contributionScoreId])
 }
 
 // --- Webhook Delivery (outbox handler) ---

@@ -97,7 +97,7 @@ export async function recomputeAndPersist(
   const ctx = await buildSignalContext(prisma, normalised, communityId);
   const score = engine.computeScore(ctx);
 
-  await prisma.contributionScore.upsert({
+  const scoreRow = await prisma.contributionScore.upsert({
     where: {
       walletId_communityId: {
         walletId: normalised,
@@ -125,6 +125,7 @@ export async function recomputeAndPersist(
       breakdown: score.breakdown,
       explanations: score.explanations,
       triggerEventId: triggerEventId ?? null,
+      contributionScore: { connect: { id: scoreRow.id } },
     },
   });
 
