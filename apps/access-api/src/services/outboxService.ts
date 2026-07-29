@@ -1,3 +1,6 @@
+import { Prisma } from "@prisma/client";
+import type { PrismaClient } from "@prisma/client";
+import type { OutboxEventType, OutboxDispatchResult } from "@guildpass/shared-types";
 import { randomUUID } from "node:crypto";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import type {

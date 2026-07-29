@@ -100,6 +100,8 @@ export async function applyContractEvent(
   // logs from different chains do not collide in downstream correlation/audit systems.
   const correlationId = `${chainId}_${txHash || 'unknown'}_${event.logIndex ?? 0}_${Date.now()}`;
 
+  await transaction(async (tx: any) => {
+    // Idempotency check: If transactionHash and logIndex are provided, check if already processed.
   // Access-affecting writes must be atomic.
   await prisma.$transaction(async (tx) => {
     // Idempotency: (chainId, txHash, logIndex) — ProcessedEvent unique key (#273).
