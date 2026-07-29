@@ -102,7 +102,7 @@ The GuildPass Access API follows a strict versioning and compatibility contract 
 | GET | `/v1/memberships/:wallet` | Membership status summary by wallet |
 | GET | `/v1/members/:wallet` | Member profile (with membership and roles) |
 | POST | `/v1/access/check` | Access decision for `{ wallet, communityId, resource }` (schema-validated; per-IP/API-key and per-wallet rate limits return `429` + `Retry-After`) |
-| GET | `/v1/communities/:communityId/members` | Admin member listing (cursor pagination: `limit` default 50 / max 200, `cursor`, optional `role` / `status`) |
+| GET | `/v1/communities/:communityId/members` | Admin member listing (offset pagination: `page` default 1, `pageSize` default 25 / max 100, `sort` `joinedAt`\|`role`, optional `role` / `status`) |
 
 Responses include `allowed`/`denied` plus human-readable and machine-readable reasons.
 

@@ -134,29 +134,41 @@ async function buildTestApp(
 
   app.get("/v1/communities/:communityId/members", async (request, reply) => {
     const { communityId } = request.params as { communityId: string };
-    // Mirror production Zod bounds (#236): default 50, max 200 → 400 when exceeded.
+    // The integration test app doesn't enforce auth; service unit tests do.
+    // This mirrors the real route's offset pagination + sort validation (#259).
     const query = request.query as {
       role?: string;
       status?: string;
-      limit?: string;
-      cursor?: string;
+      page?: string;
+      pageSize?: string;
+      sort?: string;
     };
-    if (query.limit !== undefined) {
-      const n = Number(query.limit);
-      if (!Number.isInteger(n) || n < 1 || n > 200) {
-        return reply.status(400).send({
-          error: {
-            code: "VALIDATION_ERROR",
-            message: "Invalid query parameters: limit must be an integer from 1 to 200",
-          },
-        });
-      }
+    const page = query.page !== undefined ? Number(query.page) : 1;
+    const pageSize = query.pageSize !== undefined ? Number(query.pageSize) : 25;
+    const sort = (query.sort ?? "joinedAt") as "joinedAt" | "role";
+
+    if (!Number.isInteger(page) || page < 1) {
+      return reply
+        .status(400)
+        .send(apiError({ statusCode: 400, code: "VALIDATION_ERROR", message: "page must be >= 1" }));
     }
-    const limit = query.limit ? Number(query.limit) : 50;
-    return mockService.listMembersForAdmin(communityId, query.role, {
-      limit,
-      cursor: query.cursor,
+    if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100) {
+      return reply
+        .status(400)
+        .send(apiError({ statusCode: 400, code: "VALIDATION_ERROR", message: "pageSize must be between 1 and 100" }));
+    }
+    if (sort !== "joinedAt" && sort !== "role") {
+      return reply
+        .status(400)
+        .send(apiError({ statusCode: 400, code: "VALIDATION_ERROR", message: "invalid sort" }));
+    }
+
+    return mockService.listMembersForAdmin(communityId, {
+      role: query.role,
       status: query.status,
+      page,
+      pageSize,
+      sort,
     });
   });
 
@@ -437,15 +449,8 @@ describe("POST /v1/access/check", () => {
 });
 
 describe("GET /v1/communities/:communityId/members", () => {
-  test("uses default page size of 50 when limit is omitted", async () => {
-    const mockData = {
-      communityId: "community-1",
-      members: [
-        { wallet: "0x1", displayName: null, state: "active", roles: ["member"] },
-        { wallet: "0x2", displayName: null, state: "active", roles: ["admin"] },
-      ],
-      pagination: { limit: 50, hasMore: false, nextCursor: null },
-    };
+  test("returns the paginated envelope for a community (defaults)", async () => {
+    const mockData = API_CONTRACT.communityMembers.successResponse;
     const mock = createMockMemberService({
       listMembersForAdmin: jest.fn().mockResolvedValue(mockData),
     });
@@ -457,99 +462,121 @@ describe("GET /v1/communities/:communityId/members", () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(response.json().pagination).toEqual({
-      limit: 50,
-      hasMore: false,
+    const body = response.json();
+    expect(body.data).toHaveLength(2);
+    expect(body).toMatchObject({
+      total: 2,
+      page: 1,
+      pageSize: 25,
       nextCursor: null,
     });
-    expect(mock.listMembersForAdmin).toHaveBeenCalledWith(
-      "community-1",
-      undefined,
-      { limit: 50, cursor: undefined, status: undefined },
-    );
+    expect(mock.listMembersForAdmin).toHaveBeenCalledWith("community-1", {
+      role: undefined,
+      status: undefined,
+      page: 1,
+      pageSize: 25,
+      sort: "joinedAt",
+    });
 
     await app.close();
   });
 
-  test("accepts custom page size and role/status filters", async () => {
+  test("forwards role, page, pageSize and sort query params", async () => {
     const mock = createMockMemberService({
       listMembersForAdmin: jest.fn().mockResolvedValue({
-        communityId: "community-1",
-        members: [],
-        pagination: { limit: 10, hasMore: false, nextCursor: null },
+        data: [],
+        total: 0,
+        page: 2,
+        pageSize: 10,
+        nextCursor: null,
       }),
     });
     const app = await buildTestApp(mock);
 
     const response = await app.inject({
-      method: "GET",
-      url: "/v1/communities/community-1/members?role=admin&status=active&limit=10",
+      method: API_CONTRACT.communityMembers.method,
+      url: "/v1/communities/community-1/members?role=admin&page=2&pageSize=10&sort=role",
     });
 
     expect(response.statusCode).toBe(200);
-    expect(mock.listMembersForAdmin).toHaveBeenCalledWith("community-1", "admin", {
-      limit: 10,
-      cursor: undefined,
-      status: "active",
+    expect(mock.listMembersForAdmin).toHaveBeenCalledWith("community-1", {
+      role: "admin",
+      status: undefined,
+      page: 2,
+      pageSize: 10,
+      sort: "role",
     });
 
     await app.close();
   });
 
-  test("returns 400 when limit exceeds max page size of 200", async () => {
+  test("rejects out-of-range pagination with 400 and does not hit the service", async () => {
     const mock = createMockMemberService({
       listMembersForAdmin: jest.fn(),
     });
     const app = await buildTestApp(mock);
 
-    const response = await app.inject({
+    const pageZero = await app.inject({
       method: "GET",
-      url: "/v1/communities/community-1/members?limit=201",
+      url: "/v1/communities/community-1/members?page=0",
     });
+    expect(pageZero.statusCode).toBe(400);
 
-    expect(response.statusCode).toBe(400);
+    const pageSizeTooLarge = await app.inject({
+      method: "GET",
+      url: "/v1/communities/community-1/members?pageSize=200",
+    });
+    expect(pageSizeTooLarge.statusCode).toBe(400);
+
     expect(mock.listMembersForAdmin).not.toHaveBeenCalled();
 
     await app.close();
   });
 
-  test("continues across two pages via nextCursor", async () => {
+  test("walks two pages by incrementing page", async () => {
     const listMembersForAdmin = jest
       .fn()
       .mockResolvedValueOnce({
-        communityId: "community-1",
-        members: [{ wallet: "0x1", displayName: null, state: "active", roles: [] }],
-        pagination: { limit: 1, hasMore: true, nextCursor: "member-1" },
+        data: [
+          { wallet: "0x1", displayName: null, state: "active", roles: [], joinedAt: "2026-01-01T00:00:00.000Z" },
+        ],
+        total: 2,
+        page: 1,
+        pageSize: 1,
+        nextCursor: null,
       })
       .mockResolvedValueOnce({
-        communityId: "community-1",
-        members: [{ wallet: "0x2", displayName: null, state: "active", roles: [] }],
-        pagination: { limit: 1, hasMore: false, nextCursor: null },
+        data: [
+          { wallet: "0x2", displayName: null, state: "active", roles: [], joinedAt: "2026-01-02T00:00:00.000Z" },
+        ],
+        total: 2,
+        page: 2,
+        pageSize: 1,
+        nextCursor: null,
       });
     const mock = createMockMemberService({ listMembersForAdmin });
     const app = await buildTestApp(mock);
 
     const page1 = await app.inject({
       method: "GET",
-      url: "/v1/communities/community-1/members?limit=1",
+      url: "/v1/communities/community-1/members?pageSize=1",
     });
     expect(page1.statusCode).toBe(200);
-    expect(page1.json().pagination.nextCursor).toBe("member-1");
+    expect(page1.json().total).toBe(2);
+    expect(page1.json().data[0].wallet).toBe("0x1");
 
     const page2 = await app.inject({
       method: "GET",
-      url: `/v1/communities/community-1/members?limit=1&cursor=${page1.json().pagination.nextCursor}`,
+      url: "/v1/communities/community-1/members?pageSize=1&page=2",
     });
     expect(page2.statusCode).toBe(200);
-    expect(page2.json().pagination).toEqual({
-      limit: 1,
-      hasMore: false,
-      nextCursor: null,
-    });
-    expect(listMembersForAdmin).toHaveBeenNthCalledWith(2, "community-1", undefined, {
-      limit: 1,
-      cursor: "member-1",
+    expect(page2.json().data[0].wallet).toBe("0x2");
+    expect(listMembersForAdmin).toHaveBeenNthCalledWith(2, "community-1", {
+      role: undefined,
       status: undefined,
+      page: 2,
+      pageSize: 1,
+      sort: "joinedAt",
     });
 
     await app.close();

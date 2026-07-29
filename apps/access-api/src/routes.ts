@@ -124,20 +124,21 @@ function getRequesterWallet(request: FastifyRequest): string {
   return "";
 }
 
-/** Max page size for GET /v1/communities/:communityId/members (issue #236). */
-export const MEMBERS_LIST_MAX_LIMIT = 200;
-export const MEMBERS_LIST_DEFAULT_LIMIT = 50;
+/** Page size bounds for GET /v1/communities/:communityId/members (issue #259). */
+export const MEMBERS_LIST_MAX_PAGE_SIZE = 100;
+export const MEMBERS_LIST_DEFAULT_PAGE_SIZE = 25;
 
 const memberListQuerySchema = z.object({
   role: z.enum(["admin", "member", "contributor"]).optional(),
   status: z.enum(["invited", "active", "expired", "suspended"]).optional(),
-  limit: z.coerce
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce
     .number()
     .int()
     .min(1)
-    .max(MEMBERS_LIST_MAX_LIMIT)
-    .default(MEMBERS_LIST_DEFAULT_LIMIT),
-  cursor: z.string().min(1).optional(),
+    .max(MEMBERS_LIST_MAX_PAGE_SIZE)
+    .default(MEMBERS_LIST_DEFAULT_PAGE_SIZE),
+  sort: z.enum(["joinedAt", "role"]).default("joinedAt"),
 });
 
 function sendRoleMutationError(reply: FastifyReply, error: unknown) {
@@ -1215,7 +1216,9 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     return memberService.isCommunityAdmin(communityId, requesterWallet);
   }
 
-  // GET /v1/communities/:communityId/members — cursor-paginated admin listing (#236)
+  // GET /v1/communities/:communityId/members — offset-paginated, sortable admin
+  // listing (#259). Returns the shared { data, total, page, pageSize,
+  // nextCursor } envelope; supersedes the cursor-based listing from #236.
   app.get(
     "/v1/communities/:communityId/members",
     {
@@ -1235,17 +1238,19 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
             ),
           );
       }
-      const { role, status, limit, cursor } = parsedQuery.data;
+      const { role, status, page, pageSize, sort } = parsedQuery.data;
       const requesterWallet = getRequesterWallet(request);
       try {
         if (!(await requireCommunityAdmin(communityId, requesterWallet))) {
           return reply.status(403).send(forbidden("Forbidden"));
         }
-        const result = await memberService.listMembersForAdmin(
-          communityId,
+        const result = await memberService.listMembersForAdmin(communityId, {
           role,
-          { limit, cursor, status },
-        );
+          status,
+          page,
+          pageSize,
+          sort,
+        });
         return reply.status(200).send(result);
       } catch (error) {
         if (error instanceof MemberServiceError) {

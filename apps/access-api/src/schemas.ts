@@ -1008,30 +1008,36 @@ export const listCommunityMembersSchema = {
         enum: membershipStateEnum,
         description: "Filter members by membership status",
       },
-      limit: {
+      page: {
         type: "integer",
         minimum: 1,
-        maximum: 200,
-        default: 50,
-        description:
-          "Page size (default 50, maximum 200). Requests above 200 return 400.",
+        default: 1,
+        description: "1-based page number. Values below 1 return 400.",
       },
-      cursor: {
-        type: "string",
-        minLength: 1,
+      pageSize: {
+        type: "integer",
+        minimum: 1,
+        maximum: 100,
+        default: 25,
         description:
-          "Opaque cursor from a previous response's pagination.nextCursor",
+          "Page size (default 25, maximum 100). Requests above 100 return 400.",
+      },
+      sort: {
+        type: "string",
+        enum: ["joinedAt", "role"],
+        default: "joinedAt",
+        description:
+          "Sort field. A stable id ASC tiebreaker is always applied so pages never overlap.",
       },
     },
   },
   response: {
     200: {
-      description: "Cursor-paginated member list",
+      description: "Offset-paginated member list",
       type: "object",
-      required: ["communityId", "members", "pagination"],
+      required: ["data", "total", "page", "pageSize", "nextCursor"],
       properties: {
-        communityId: { type: "string" },
-        members: {
+        data: {
           type: "array",
           items: {
             type: "object",
@@ -1043,48 +1049,48 @@ export const listCommunityMembersSchema = {
                 type: "array",
                 items: { type: "string", enum: roleEnum },
               },
+              joinedAt: { type: "string", format: "date-time" },
             },
           },
         },
-        pagination: {
-          type: "object",
-          required: ["limit", "hasMore", "nextCursor"],
-          properties: {
-            limit: { type: "integer" },
-            hasMore: { type: "boolean" },
-            nextCursor: {
-              type: "string",
-              nullable: true,
-              description: "Pass as ?cursor= on the next request when hasMore",
-            },
-          },
+        total: {
+          type: "integer",
+          description: "Total members matching the filters, across all pages",
+        },
+        page: { type: "integer" },
+        pageSize: { type: "integer" },
+        nextCursor: {
+          type: "string",
+          nullable: true,
+          description:
+            "Always null in offset mode; reserved for a future move to cursor pagination",
         },
       },
       example: {
-        communityId: "community-mainnet-42",
-        members: [
+        data: [
           {
             wallet: "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
             displayName: "alice.eth",
             state: "active",
             roles: ["admin", "member"],
+            joinedAt: "2026-01-01T00:00:00.000Z",
           },
           {
             wallet: "0xabcd1234567890abcd1234567890abcd12345678",
             displayName: null,
             state: "active",
             roles: ["member"],
+            joinedAt: "2026-01-02T00:00:00.000Z",
           },
         ],
-        pagination: {
-          limit: 50,
-          hasMore: false,
-          nextCursor: null,
-        },
+        total: 2,
+        page: 1,
+        pageSize: 25,
+        nextCursor: null,
       },
     },
     400: {
-      description: "Invalid query parameters (e.g. limit above 200)",
+      description: "Invalid query parameters (e.g. pageSize above 100)",
       ...errorSchema,
       example: {
         error: "VALIDATION_ERROR",

@@ -233,16 +233,14 @@ const fixtures = {
     membershipState: 'active',
   },
   communityMembers200: {
-    communityId: COMMUNITY,
-    members: [
-      { wallet: '0x1111111111111111111111111111111111111111', displayName: 'Alice', state: 'active', roles: ['admin'] },
-      { wallet: '0x2222222222222222222222222222222222222222', displayName: 'Bob', state: 'active', roles: ['member'] },
+    data: [
+      { wallet: '0x1111111111111111111111111111111111111111', displayName: 'Alice', state: 'active', roles: ['admin'], joinedAt: '2026-01-01T00:00:00.000Z' },
+      { wallet: '0x2222222222222222222222222222222222222222', displayName: 'Bob', state: 'active', roles: ['member'], joinedAt: '2026-01-02T00:00:00.000Z' },
     ],
-    pagination: {
-      limit: 20,
-      hasMore: false,
-      nextCursor: null,
-    }
+    total: 2,
+    page: 1,
+    pageSize: 25,
+    nextCursor: null,
   },
   deadLetterEvents200: {
     events: [

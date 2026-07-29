@@ -19,7 +19,7 @@ import {
   WalletAddress,
   RoleDefinition,
   DelegatedGrant,
-  MembershipState,
+  PaginatedResponse,
 } from "@guildpass/shared-types";
 import {
   createDefaultEngine,
@@ -765,6 +765,140 @@ export function getMemberService(
     throw { statusCode: 403, message: "Not authorized" };
   }
 
+  // --- Offset-paginated + sorted member listing for admins (#259) ---
+  // Returns the shared PaginatedResponse envelope: { data, total, page,
+  // pageSize, nextCursor }. `nextCursor` stays null in offset mode and is
+  // reserved for a future migration to cursor-based pagination.
+  async function listMembersForAdmin(
+    communityId: string,
+    options: {
+      role?: Role;
+      status?: string;
+      page?: number;
+      pageSize?: number;
+      sort?: "joinedAt" | "role";
+    } = {},
+  ): Promise<
+    PaginatedResponse<{
+      wallet: string;
+      displayName: string | null;
+      state: string;
+      roles: string[];
+      joinedAt: string;
+    }>
+  > {
+    const { role, status, page = 1, pageSize = 25, sort = "joinedAt" } = options;
+
+    // Validate explicitly: reject out-of-range values with 400 instead of
+    // clamping silently, so admins get honest feedback.
+    if (pageSize < 1 || pageSize > 100) {
+      throw new MemberServiceError("pageSize must be between 1 and 100", 400);
+    }
+    if (page < 1) {
+      throw new MemberServiceError("page must be >= 1", 400);
+    }
+
+    const safePageSize = pageSize;
+    const skip = (page - 1) * safePageSize;
+
+    // Build Prisma where clause
+    const where: Prisma.MemberWhereInput = { communityId };
+
+    // Role filter (via roles relation)
+    if (role) {
+      where.roles = {
+        some: {
+          role,
+          active: true,
+        },
+      };
+    }
+
+    // Status filter. This mirrors getNormalizedMembershipState() — the same
+    // rule that produces the `state` field below — but expressed as SQL so the
+    // filter is applied *before* skip/take. Filtering in JS after the page was
+    // fetched (the previous behaviour) silently returned short pages.
+    if (status) {
+      const now = new Date();
+      switch (status) {
+        case "active":
+          where.membership = {
+            state: "active",
+            OR: [{ expiresAt: null }, { expiresAt: { gte: now } }],
+          };
+          break;
+        case "suspended":
+          where.membership = { state: "suspended" };
+          break;
+        case "expired":
+          // Either explicitly expired, or past its expiry while still marked active.
+          where.membership = {
+            OR: [{ state: "expired" }, { expiresAt: { lt: now } }],
+          };
+          break;
+        case "invited":
+          where.OR = [{ membership: { is: null } }, { membership: { state: "invited" } }];
+          break;
+        default:
+          // ignore unknown status
+          break;
+      }
+    }
+
+    // Ordering always appends `id ASC` as a tiebreaker so pagination stays
+    // stable: `role` is not unique, so without the secondary sort the same
+    // rows could drift across pages. `joinedAt` maps to the member's createdAt.
+    const orderBy: Prisma.MemberOrderByWithRelationInput[] =
+      sort === "role"
+        ? [{ roles: { _count: "desc" } }, { id: "asc" }]
+        : [{ createdAt: "asc" }, { id: "asc" }];
+
+    // Run findMany and count in parallel. The COUNT(*) adds a second query and
+    // some latency for large communities, but it is required to return an
+    // honest `total` — we deliberately avoid approximations or caching here.
+    const [members, total] = await Promise.all([
+      prismaClient.member.findMany({
+        where,
+        include: {
+          wallet: true,
+          membership: true,
+          roles: {
+            where: { active: true },
+          },
+          profile: true,
+        },
+        orderBy,
+        skip,
+        take: safePageSize,
+      }),
+      prismaClient.member.count({ where }),
+    ]);
+
+    const data = members.map((m: any) => {
+      const activeRoles = m.roles
+        .filter((r: any) => r.active)
+        .map((r: any) => r.role);
+      return {
+        wallet: m.wallet.address,
+        displayName: m.profile?.displayName ?? null,
+        state: getNormalizedMembershipState(
+          m.membership?.state ?? "invited",
+          m.membership?.expiresAt,
+        ),
+        roles: activeRoles,
+        joinedAt: m.createdAt.toISOString(),
+      };
+    });
+
+    return {
+      data,
+      total,
+      page,
+      pageSize: safePageSize,
+      nextCursor: null, // reserved for a future migration to cursor pagination
+    };
+  }
+
   return {
     async getMembershipsByWallet(wallet: string, communityId?: string) {
       const cacheKey = communityId
@@ -864,59 +998,17 @@ export function getMemberService(
 
     checkAccess,
 
-    async listMembersForAdmin(
+    listMembersForAdmin(
       communityId: string,
-      role?: Role,
-      pagination: {
-        limit?: number;
-        cursor?: string;
-        status?: MembershipState;
+      options: {
+        role?: Role;
+        status?: string;
+        page?: number;
+        pageSize?: number;
+        sort?: "joinedAt" | "role";
       } = {},
     ) {
-      const limit = Math.min(Math.max(pagination.limit ?? 50, 1), 200);
-      const members = await prismaClient.member.findMany({
-        where: {
-          communityId,
-          ...(role ? { roles: { some: { role, active: true } } } : {}),
-        },
-        include: { wallet: true, membership: true, roles: true, profile: true },
-        orderBy: { id: "asc" },
-        take: limit + 1,
-        ...(pagination.cursor
-          ? { cursor: { id: pagination.cursor }, skip: 1 }
-          : {}),
-      });
-      const page = members.slice(0, limit);
-      const list = page
-        .map((m: any) => {
-          const activeRoles = m.roles
-            .filter((r: any) => r.active)
-            .map((r: any) => r.role);
-          return {
-            id: m.id as string,
-            wallet: m.wallet.address,
-            displayName: m.profile?.displayName ?? null,
-            state: getNormalizedMembershipState(
-              m.membership?.state ?? "invited",
-              m.membership?.expiresAt,
-            ),
-            roles: activeRoles,
-          };
-        })
-        .filter((item: any) => (role ? item.roles.includes(role) : true))
-        .filter((item: any) =>
-          pagination.status ? item.state === pagination.status : true,
-        );
-      const hasMore = members.length > limit;
-      return {
-        communityId,
-        members: list.map(({ id: _id, ...rest }) => rest),
-        pagination: {
-          limit,
-          hasMore,
-          nextCursor: hasMore ? page[page.length - 1]?.id ?? null : null,
-        },
-      };
+      return listMembersForAdmin(communityId, options);
     },
 
     async assignMemberRole(

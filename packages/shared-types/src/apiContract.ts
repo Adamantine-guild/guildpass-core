@@ -78,29 +78,29 @@ export const API_CONTRACT = {
     pathTemplate: '/v1/communities/:communityId/members',
     samplePath: '/v1/communities/community-1/members',
     samplePathWithRole: '/v1/communities/community-1/members?role=admin',
-    samplePathWithPagination: '/v1/communities/community-1/members?limit=1&cursor=member-1',
+    samplePathWithPagination: '/v1/communities/community-1/members?page=2&pageSize=1&sort=joinedAt',
     successStatus: 200,
     successResponse: {
-      communityId: "community-1",
-      members: [
+      data: [
         {
           wallet: "0x1111111111111111111111111111111111111111",
           displayName: "Alice",
           state: "active",
           roles: ["admin"],
+          joinedAt: "2026-01-01T00:00:00.000Z",
         },
         {
           wallet: "0x2222222222222222222222222222222222222222",
           displayName: "Bob",
           state: "active",
           roles: ["member"],
+          joinedAt: "2026-01-02T00:00:00.000Z",
         },
       ],
-      pagination: {
-        limit: 50,
-        hasMore: false,
-        nextCursor: null,
-      },
+      total: 2,
+      page: 1,
+      pageSize: 25,
+      nextCursor: null,
     },
     errorResponse: {
       404: {
