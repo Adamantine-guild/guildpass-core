@@ -6,6 +6,18 @@ export const VALID_ROLES = ["admin", "member", "contributor"] as const;
 
 export type Role = (typeof VALID_ROLES)[number];
 
+/**
+ * A namespaced governance capability. Applications may extend the built-in
+ * catalogue while retaining the `resource:action` shape.
+ */
+export type Permission =
+  | "resource:create"
+  | "resource:archive"
+  | "member:remove"
+  | "member:role:manage"
+  | "policy:manage"
+  | `${string}:${string}`;
+
 // --- Role Hierarchy & Delegation Types ---
 export interface RoleDefinition {
   id: string;
@@ -14,6 +26,7 @@ export interface RoleDefinition {
   description?: string | null;
   parentRoleId?: string | null;
   builtInRole?: Role | null;
+  permissions?: Permission[];
   createdAt: string;
   updatedAt: string;
 }
@@ -24,7 +37,7 @@ export interface DelegatedGrant {
   granterWalletId: string;
   granteeWalletId: string;
   roles: string[];
-  scope?: Record<string, any> | null;
+  scope?: Record<string, unknown> | null;
   expiresAt?: string | null;
   revokedAt?: string | null;
   revokedBy?: string | null;
@@ -215,6 +228,11 @@ export interface AccessPolicy {
   resource: string;
   ruleType: PolicyRuleType;
   params?: AccessPolicyParams;
+  /**
+   * All listed permissions are required in addition to the legacy rule.
+   * Omit this field to retain the original role-only behaviour.
+   */
+  requiredPermissions?: Permission[];
 }
 
 export type AccessOverrideEffect = "ALLOW" | "DENY";
@@ -346,6 +364,8 @@ export interface RoleContext {
   resource?: string;
   overrides?: AccessOverride[];
   memberSince?: string | Date | null;
+  /** Optional pre-resolved permissions, useful for remote policy consumers. */
+  permissions?: Permission[];
 }
 
 export interface PolicyEngine {
@@ -366,8 +386,8 @@ export type AuditEventDto = {
   policyRule?: string | null;
   decision?: string | null;
   reasonCode?: string | null;
-  beforeState?: any | null;
-  afterState?: any | null;
+  beforeState?: Record<string, unknown> | null;
+  afterState?: Record<string, unknown> | null;
   createdAt?: string; // ISO datetime
 };
 
@@ -389,6 +409,7 @@ export type OutboxEventType =
   | "MEMBERSHIP_SUSPENDED"
   | "MEMBERSHIP_UNSUSPENDED"
   | "MEMBERSHIP_REINSTATED"
+  | "MEMBERSHIP_UNSUSPEND_REQUESTED"
   | "MEMBERSHIP_DELETED"
   | "ROLE_ASSIGNED"
   | "ROLE_REMOVED"
@@ -403,12 +424,38 @@ export type OutboxEventType =
   | "ACCESS_OVERRIDE_UPDATED"
   | "ACCESS_OVERRIDE_REVOKED"
   | "MEMBER_ATTENDED"
+  | "EVENT_CREATED"
+  | "EVENT_UPDATED"
+  | "EVENT_DELETED"
+  | "EVENT_ATTENDANCE_RECORDED"
   | "BADGE_ASSIGNED"
   | "BADGE_REVOKED"
   | "CONSTITUTIONAL_RULESET_CREATED"
   | (string & {});
 
 export type OutboxEventStatus = "pending" | "delivered" | "failed";
+
+export type AttendanceMethod = "manual" | "qr" | "signed_message";
+
+export interface CommunityEventDto {
+  id: string;
+  communityId: string;
+  title: string;
+  description?: string | null;
+  startsAt: string;
+  endsAt: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface EventAttendanceDto {
+  id: string;
+  eventId: string;
+  wallet: WalletAddress | string;
+  checkedInAt: string;
+  method: AttendanceMethod;
+  event?: CommunityEventDto;
+}
 
 export interface OutboxEventDto {
   id?: string;
@@ -463,3 +510,4 @@ export interface DeadLetterEventDto {
 }
 
 export * from "./apiContract";
+export * from "./permissions";

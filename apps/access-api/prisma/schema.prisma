@@ -5,18 +5,25 @@ datasource db {
 }
 
 model Community {
-  id          String            @id
-  name        String
-  members     Member[]
-  policies    AccessPolicy[]
-  resources   Resource[]
-  overrides   AccessOverride[]
-  rules       GovernanceRule[]
+  id                     String                   @id
+  name                   String
+  chainConfigId          String?
+  chainConfig            ChainConfig?             @relation(fields: [chainConfigId], references: [id])
+  members                Member[]
+  policies               AccessPolicy[]
+  resources              Resource[]
+  overrides              AccessOverride[]
+  communityContracts     CommunityContract[]
+  roleDefinitions        RoleDefinition[]
+  rolePermissions        RolePermission[]
+  delegatedGrants        DelegatedGrant[]
+  governanceRules        GovernanceRule[]
   constitutionalRuleSets ConstitutionalRuleSet[]
-  delegatedGrants DelegatedGrant[]
-  roleDefinitions RoleDefinition[]
-  contracts   CommunityContract[]
-  createdAt   DateTime          @default(now())
+  suspensionAppeals      SuspensionAppeal[]
+  events                 Event[]
+  createdAt              DateTime                 @default(now())
+
+  @@index([chainConfigId])
 }
 
 model CommunityContract {
@@ -47,6 +54,7 @@ model Wallet {
   secondaryChallenges   Challenge[] @relation("challengeSecondaryWallet")
   delegatedGrantsAsGranter DelegatedGrant[] @relation("DelegatedGrantGranter")
   delegatedGrantsAsGrantee DelegatedGrant[] @relation("DelegatedGrantGrantee")
+  eventAttendances      EventAttendance[]
 }
 
 // --- Wallet Linking Models ---
@@ -105,6 +113,7 @@ model Member {
   roles            RoleAssignment[]
   badges           Badge[]
   appeals          Appeal[]
+  suspensionAppeals SuspensionAppeal[]
   createdAt        DateTime          @default(now())
 
   @@unique([communityId, walletId])
@@ -120,8 +129,14 @@ enum MembershipState {
 model Membership {
   id            String           @id @default(cuid())
   memberId      String           @unique
-  activeTokenId String?          @unique
+  tokenId       Int?
+  chainId       Int?
+  state         MembershipState
+  expiresAt     DateTime?
+  renewedAt     DateTime?
+  createdAt     DateTime         @default(now())
   member        Member           @relation(fields: [memberId], references: [id])
+  activeTokenId String?          @unique
   activeToken   MembershipToken? @relation("ActiveToken", fields: [activeTokenId], references: [id])
 }
 
@@ -140,8 +155,9 @@ model MembershipToken {
 
   @@unique([chainId, contractAddress, tokenId])
   @@index([state, expiresAt])
-  @@index([memberId])
-  @@index([chainId, contractAddress])
+  @@unique([chainId, tokenId])
+  @@index([tokenId])
+  @@index([chainId])
 }
 
 enum Role {
@@ -171,9 +187,24 @@ model RoleDefinition {
 
   community Community @relation(fields: [communityId], references: [id])
   roleAssignments RoleAssignment[]
+  permissions RolePermission[]
 
   @@unique([communityId, name])
   @@index([parentRoleId])
+}
+
+model RolePermission {
+  id           String         @id @default(cuid())
+  roleId       String
+  communityId  String
+  permission   String
+  createdAt    DateTime       @default(now())
+  role         RoleDefinition @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  community    Community      @relation(fields: [communityId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permission])
+  @@index([communityId, permission])
+  @@map("role_permissions")
 }
 
 // Delegated grant: granter gives permissions to grantee with scope and expiry
@@ -250,6 +281,7 @@ model AccessPolicy {
   resource    String
   ruleType    String
   params      Json?
+  requiredPermissions String[] @default([])
   community   Community @relation(fields: [communityId], references: [id])
 
   @@unique([communityId, resource])
@@ -410,7 +442,6 @@ model OutboxEvent {
   // An unused index is a permanent write-path cost with no read-side
   // benefit here, so neither was added.
   @@index([status, nextRetryAt])
-  @@index([correlationId])
 }
 
 // --- Client-Facing Request Idempotency (Issue #184) ---
@@ -451,12 +482,30 @@ enum IdempotencyKeyStatus {
   completed
 }
 
+// --- Multi-chain Membership Indexing ---
+
+model ChainConfig {
+  id                   String   @id @default(cuid())
+  chainId              Int
+  name                 String?
+  rpcUrl               String
+  membershipNftAddress String
+  enabled              Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  communities Community[]
+
+  @@unique([chainId, membershipNftAddress])
+  @@index([chainId])
+  @@index([enabled])
+}
+
 // --- Chain Indexer Reorg Safety & Idempotency ---
 
 model ProcessedEvent {
   id              String   @id @default(uuid())
-  chainId         Int      @default(31337)
-  contractAddress String   @default("0x0000000000000000000000000000000000000000")
+  chainId         Int
   transactionHash String
   logIndex        Int
   blockHash       String
@@ -464,16 +513,22 @@ model ProcessedEvent {
   eventType       String
   processedAt     DateTime @default(now())
 
-  @@unique([chainId, contractAddress, transactionHash, logIndex])
+  @@unique([chainId, transactionHash, logIndex])
+  @@index([chainId, blockNumber])
   @@index([blockHash])
   @@index([blockNumber])
 }
 
 model IndexerState {
-  id               String   @id @default("singleton")
+  id               String   @id
+  chainId          Int
+  contractAddress  String
   lastBlockNumber  Int
   lastBlockHash    String
   updatedAt        DateTime @updatedAt
+
+  @@unique([chainId, contractAddress])
+  @@index([chainId])
 }
 
 model GovernanceRule {
@@ -636,6 +691,39 @@ model Appeal {
   member       Member       @relation(fields: [memberId], references: [id])
 }
 
+/// Suspension appeal workflow (#249).
+/// State machine: pending → approved | denied (terminal). One pending appeal
+/// per suspended membership. Access remains denied while status is pending
+/// (and until on-chain unsuspend is ingested after approval).
+enum SuspensionAppealStatus {
+  pending
+  approved
+  denied
+}
+
+model SuspensionAppeal {
+  id                String                 @id @default(cuid())
+  membershipId      String
+  memberId          String
+  wallet            String
+  communityId       String
+  memberStatement   String
+  status            SuspensionAppealStatus @default(pending)
+  submittedAt       DateTime               @default(now())
+  reviewerId        String?
+  reviewedAt        DateTime?
+  reviewerRationale String?
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+
+  member            Member                 @relation(fields: [memberId], references: [id])
+  community         Community              @relation(fields: [communityId], references: [id])
+
+  @@index([communityId, status, submittedAt])
+  @@index([memberId, status])
+  @@index([wallet, communityId])
+}
+
 model IndexerCheckpoint {
   chainId                  Int
   contractAddress          String   @default("0x0000000000000000000000000000000000000000")
@@ -695,6 +783,38 @@ model StreakRewardHistory {
   @@unique([walletId, communityId, ruleId])
 }
 
+model RewardLedger {
+  id            String   @id @default(uuid())
+  walletId      String
+  communityId   String
+  rewardType    String
+  amount        Int?
+  metadata      Json?
+  ruleId        String?
+  sourceEventId String
+  grantedAt     DateTime @default(now())
+
+  @@unique([walletId, communityId, rewardType, sourceEventId])
+  @@index([walletId, communityId, grantedAt])
+  @@map("reward_ledger")
+}
+
+model RewardStreakState {
+  id              String   @id @default(uuid())
+  walletId        String
+  communityId     String
+  period          String
+  currentStreak   Int      @default(0)
+  longestStreak   Int      @default(0)
+  lastPeriodKey   String?
+  lastActivityAt  DateTime
+  updatedAt       DateTime @updatedAt
+
+  @@unique([walletId, communityId, period])
+  @@index([walletId, communityId])
+  @@map("reward_streak_state")
+}
+
 model AttendanceRecord {
   id          String   @id @default(uuid())
   walletId    String
@@ -706,6 +826,42 @@ model AttendanceRecord {
 
   @@unique([walletId, eventId, source])
   @@index([communityId])
+}
+
+enum AttendanceMethod {
+  manual
+  qr
+  signed_message
+}
+
+model Event {
+  id          String            @id @default(uuid())
+  communityId String
+  title       String
+  description String?
+  startsAt    DateTime
+  endsAt      DateTime
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  community   Community         @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  attendance  EventAttendance[]
+
+  @@index([communityId, startsAt])
+  @@map("events")
+}
+
+model EventAttendance {
+  id          String           @id @default(uuid())
+  eventId     String
+  walletId    String
+  checkedInAt DateTime         @default(now())
+  method      AttendanceMethod
+  event       Event            @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  wallet      Wallet           @relation(fields: [walletId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, walletId])
+  @@index([walletId, checkedInAt])
+  @@map("event_attendance")
 }
 
 model ContractAdmin {
@@ -743,9 +899,3 @@ model ConstitutionalRuleSet {
   @@index([communityId])
   @@index([communityId, active])
 }
-
-
-
-
-
-

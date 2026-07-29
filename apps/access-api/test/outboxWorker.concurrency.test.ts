@@ -1,12 +1,11 @@
 /**
  * outboxWorker.concurrency.test.ts
  *
- * The core acceptance test for issue #94 (distributed locking for
- * multi-instance outbox worker deployments): runs two independent
- * `createOutboxWorker` instances against the *same real Postgres database*
- * and asserts the guarantees a mocked Prisma client cannot exercise —
- * `SELECT ... FOR UPDATE SKIP LOCKED` row-level locking only means anything
- * against a real database's lock manager.
+ * Acceptance coverage for multi-instance outbox coordination (issues #94 /
+ * #269): runs two independent `createOutboxWorker` instances against the
+ * *same real Postgres database* and asserts the guarantees a mocked Prisma
+ * client cannot exercise — `SELECT ... FOR UPDATE SKIP LOCKED` row-level
+ * locking only means anything against a real database's lock manager.
  *
  * Requires DATABASE_URL to point at a real Postgres instance with the
  * current schema applied (see INTEGRATION_TEST_GUIDE.md), matching the

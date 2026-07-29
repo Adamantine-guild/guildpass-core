@@ -44,7 +44,8 @@ import {
   getOutboxBacklogDepth,
   markOutboxDelivered,
   markOutboxFailed,
-  pruneDeliveredOutboxEvents,
+  DEFAULT_OUTBOX_RETENTION_MS,
+  pruneOutboxEvents,
 } from "../services/outboxService";
 import { recordDeadLetter } from "../services/deadLetterService";
 import { metrics } from "../observability/metrics";
@@ -91,6 +92,7 @@ export type OutboxEventHandler = (event: {
   communityId: string | null;
   payload: any;
   createdAt: Date;
+  correlationId?: string | null;
 }) => Promise<void>;
 
 /**
@@ -100,7 +102,8 @@ const defaultHandler: OutboxEventHandler = async (event) => {
   // eslint-disable-next-line no-console
   console.log(
     `[outboxWorker] Delivered event ${event.id} (${event.eventType})` +
-      ` community=${event.communityId ?? "N/A"}`,
+      ` community=${event.communityId ?? "N/A"}` +
+      ` correlationId=${event.correlationId ?? "N/A"}`,
   );
 };
 
@@ -155,6 +158,12 @@ export interface OutboxWorkerOptions {
    * config.ts's outboxWorkerClaimLeaseMs). Default: 60 000.
    */
   claimLeaseMs?: number;
+
+  /**
+   * How long delivered events are retained before automatic pruning.
+   * Defaults to seven days.
+   */
+  pruneRetentionMs?: number;
 }
 
 export interface OutboxWorkerShard {
@@ -264,17 +273,22 @@ export async function processOutboxBatch(
         communityId: event.communityId,
         payload: event.payload,
         createdAt: event.createdAt,
+        correlationId: event.correlationId ?? null,
       });
 
       await markOutboxDelivered(db as any, event.id);
       delivered++;
-      metrics.outboxEventsDeliveredTotal.inc({ event_type: eventType });
+      metrics.outboxEventsDeliveredTotal.inc({
+        event_type: eventType,
+        worker_id: workerId,
+      });
     } catch (err: any) {
       const errorMessage =
         err?.message ?? "Unknown delivery error";
       // eslint-disable-next-line no-console
       console.error(
-        `[outboxWorker] Failed to deliver event ${event.id}:`,
+        `[outboxWorker] Failed to deliver event ${event.id}` +
+          ` correlationId=${event.correlationId ?? "N/A"}:`,
         errorMessage,
       );
 
@@ -283,7 +297,10 @@ export async function processOutboxBatch(
         failed++;
 
         if (permanentlyFailed) {
-          metrics.outboxEventsFailedTotal.inc({ event_type: eventType });
+          metrics.outboxEventsFailedTotal.inc({
+            event_type: eventType,
+            worker_id: workerId,
+          });
           try {
             await recordDeadLetter(db as any, {
               id: event.id,
@@ -358,7 +375,10 @@ function createShard(
 
       adaptiveBatch.recordIteration(result.delivered);
 
-      metrics.outboxWorkerBatchSize.set({ shard: String(id) }, adaptiveBatch.size);
+      metrics.outboxWorkerBatchSize.set(
+        { shard: String(id), worker_id: workerId },
+        adaptiveBatch.size,
+      );
 
       if (result.processed > 0) {
         // eslint-disable-next-line no-console
@@ -370,10 +390,12 @@ function createShard(
         );
       }
 
-      // Periodically prune delivered events older than 7 days.
+      // Periodically prune only delivered events past the retention window.
       try {
-        const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-        await pruneDeliveredOutboxEvents(prisma as any, sevenDaysAgo);
+        await pruneOutboxEvents(
+          prisma as any,
+          options.pruneRetentionMs ?? DEFAULT_OUTBOX_RETENTION_MS,
+        );
       } catch {
         // Pruning is best-effort; never crash the worker.
       }

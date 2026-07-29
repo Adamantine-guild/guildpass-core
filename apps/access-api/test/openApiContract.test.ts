@@ -180,6 +180,12 @@ const fixtures = {
     message: 'Validation failed',
     statusCode: 400,
   },
+  accessValidation400: {
+    error: {
+      code: 'VALIDATION_ERROR',
+      message: 'Validation failed',
+    },
+  },
   memberNotFound404: {
     error: 'NOT_FOUND',
     code: 'NOT_FOUND',
@@ -233,10 +239,9 @@ const fixtures = {
       { wallet: '0x2222222222222222222222222222222222222222', displayName: 'Bob', state: 'active', roles: ['member'] },
     ],
     pagination: {
-      page: 1,
       limit: 20,
-      total: 2,
-      totalPages: 1,
+      hasMore: false,
+      nextCursor: null,
     }
   },
   deadLetterEvents200: {
@@ -357,7 +362,7 @@ async function buildContractTestApp(): Promise<FastifyInstance> {
 
   app.post('/v1/access/check', async (req, reply) => {
     const trigger = getTrigger(req);
-    if (trigger === 400) return reply.status(400).send(fixtures.error400);
+    if (trigger === 400) return reply.status(400).send(fixtures.accessValidation400);
     return reply.status(200).send(fixtures.accessAllow200);
   });
 
@@ -460,6 +465,11 @@ describe('OpenAPI Contract Tests — docs/openapi.json', () => {
         '/v1/communities/{communityId}/overrides',
         '/v1/communities/{communityId}/overrides/{wallet}/{resource}',
         '/v1/access/check',
+        '/v1/communities/{communityId}/events',
+        '/v1/communities/{communityId}/events/{eventId}',
+        '/v1/communities/{communityId}/events/{eventId}/attend',
+        '/v1/communities/{communityId}/members/{wallet}/attendance',
+        '/v1/members/{wallet}/rewards',
         '/v1/communities/{communityId}/members',
         '/v1/communities/{communityId}/dead-letter-events',
         '/v1/communities/{communityId}/dead-letter-events/{id}/retry',

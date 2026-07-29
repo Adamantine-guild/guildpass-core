@@ -50,8 +50,17 @@ export async function upsertMembership(
 
   return prisma.membership.upsert({
     where: { memberId },
-    create: { memberId, activeTokenId: token.id },
-    update: { activeTokenId: token.id },
+    create: {
+      memberId,
+      state: data.state,
+      expiresAt: data.expiresAt,
+      activeTokenId: token.id,
+    },
+    update: {
+      state: data.state,
+      expiresAt: data.expiresAt,
+      activeTokenId: token.id,
+    },
   });
 }
 

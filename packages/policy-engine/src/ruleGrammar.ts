@@ -1,7 +1,5 @@
 import type {
   RuleTree,
-  RuleExprNode,
-  RuleASTVersion,
 } from "@guildpass/shared-types";
 
 export interface ValidationOptions {

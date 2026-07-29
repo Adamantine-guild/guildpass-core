@@ -3,8 +3,6 @@
  */
 
 import {
-  ConstitutionalRule,
-  ConstitutionalRuleSet,
   MutationType,
   ConstitutionalEffect,
 } from './types';

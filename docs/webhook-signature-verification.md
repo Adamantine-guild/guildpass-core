@@ -30,6 +30,27 @@ canonical reference implementation of this scheme.
 
 ---
 
+## Signature test vector
+
+Consumers can validate their HMAC implementation against this frozen vector
+(also asserted in `apps/access-api/src/handlers/webhookHandler.test.ts`):
+
+| Field | Value |
+| ----- | ----- |
+| `secret` | `whsec_test_vector_secret` |
+| `timestamp` | `1700000000000` |
+| `nonce` | `00000000-0000-4000-8000-000000000001` |
+| `body` | `{"id":"evt_test","eventType":"MEMBERSHIP_CREATED"}` |
+| **expected signature (hex)** | `36690eab7cf93e708847344e62f285e74c20bb5679e0b829d95967e0f68bdaef` |
+
+Signing string (exact bytes):
+
+```
+1700000000000.00000000-0000-4000-8000-000000000001.{"id":"evt_test","eventType":"MEMBERSHIP_CREATED"}
+```
+
+---
+
 ## Receiver-side verification recipe
 
 A receiving service must perform **three** checks. Skipping any of them

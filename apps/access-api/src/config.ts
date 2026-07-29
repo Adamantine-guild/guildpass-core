@@ -83,6 +83,25 @@ const ConfigSchema = z.object({
     .int()
     .positive()
     .default(5),
+  // Stable identity for this process in claim leases (`claimedBy`) and
+  // Prometheus `worker_id` labels. Defaults to a random UUID per process
+  // start when unset — set explicitly in multi-instance fleets so metrics
+  // and DB claims are attributable to a known pod/hostname.
+  outboxWorkerId: z.preprocess(
+    (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+    z.string().min(1).optional(),
+  ),
+
+  // When true, the process outbox worker also runs createWebhookHandler
+  // (HMAC-signed HTTP delivery to WebhookSubscription rows) after the
+  // contribution-score handler. Default false keeps the historical
+  // contribution-only wiring; enable explicitly in environments that have
+  // registered webhook subscriptions (issue #243).
+  outboxWebhookEnabled: z
+    .string()
+    .optional()
+    .transform((v) => v === 'true')
+    .default('false'),
 
   // Indexer worker
   indexerIntervalMs: z.coerce
@@ -95,23 +114,41 @@ const ConfigSchema = z.object({
     .int()
     .nonnegative()
     .default(12), // e.g., 12 blocks for Ethereum mainnet-like safety
+  /** Alias for indexerFinalityWindow (#273 CONFIRMATION_BLOCKS). */
   indexerConfirmationDepth: z.coerce
     .number()
     .int()
     .nonnegative()
-    .default(12), // Number of confirmations before block is treated as final
-
-  // On-chain reconciliation worker
+    .optional(),
   onChainReconciliationIntervalMs: z.coerce
     .number()
     .int()
     .positive()
-    .default(300_000), // 5 minutes
+    .default(300_000),
   onChainReconciliationSampleSize: z.coerce
     .number()
     .int()
     .positive()
     .default(50),
+  membershipChainConfigs: z
+    .string()
+    .optional()
+    .transform((raw) => {
+      if (!raw?.trim()) return undefined;
+      const parsed = JSON.parse(raw) as Array<{ chainId: number; rpcUrl: string; membershipNftAddress: string; name?: string }>;
+      parsed.forEach((entry, index) => {
+        if (!Number.isInteger(Number(entry.chainId)) || Number(entry.chainId) <= 0) {
+          throw new Error(`MEMBERSHIP_CHAIN_CONFIGS[${index}].chainId must be a positive integer`);
+        }
+        if (!entry.rpcUrl) {
+          throw new Error(`MEMBERSHIP_CHAIN_CONFIGS[${index}].rpcUrl is required`);
+        }
+        if (!/^0x[0-9a-fA-F]{40}$/.test(entry.membershipNftAddress)) {
+          throw new Error(`MEMBERSHIP_CHAIN_CONFIGS[${index}].membershipNftAddress must be an EVM address`);
+        }
+      });
+      return parsed;
+    }),
 
   // Rate limiting
   rateLimitEnabled: z
@@ -163,6 +200,17 @@ const ConfigSchema = z.object({
   apiKey: z
     .string()
     .default("test-api-key"),
+
+  // When true, admin/mutation routes require a verified SIWE session (Bearer
+  // token backed by the Session table) and the requester wallet is resolved
+  // from that session only — client-supplied x-wallet* identity headers are no
+  // longer trusted. Default false preserves the legacy header behaviour so
+  // existing integrators migrate before enforcement is flipped (see #240).
+  siweEnforced: z
+    .string()
+    .optional()
+    .transform((v) => v === 'true')
+    .default('false'),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
@@ -183,11 +231,21 @@ function validateConfig(): Config {
     outboxWorkerClaimLeaseMs: process.env.OUTBOX_WORKER_CLAIM_LEASE_MS,
     outboxWorkerCount: process.env.OUTBOX_WORKER_COUNT,
     outboxWorkerMinBatchSize: process.env.OUTBOX_WORKER_MIN_BATCH_SIZE,
+    outboxWorkerId: process.env.OUTBOX_WORKER_ID,
+    outboxWebhookEnabled: process.env.OUTBOX_WEBHOOK_ENABLED,
     indexerIntervalMs: process.env.INDEXER_INTERVAL_MS,
-    indexerFinalityWindow: process.env.INDEXER_FINALITY_WINDOW,
-    indexerConfirmationDepth: process.env.INDEXER_CONFIRMATION_DEPTH || process.env.INDEXER_FINALITY_WINDOW,
-    onChainReconciliationIntervalMs: process.env.ON_CHAIN_RECONCILIATION_INTERVAL_MS,
-    onChainReconciliationSampleSize: process.env.ON_CHAIN_RECONCILIATION_SAMPLE_SIZE,
+    // Prefer explicit FINALITY_WINDOW; fall back to CONFIRMATION_DEPTH / CONFIRMATION_BLOCKS (#273).
+    indexerFinalityWindow:
+      process.env.INDEXER_FINALITY_WINDOW ??
+      process.env.INDEXER_CONFIRMATION_DEPTH ??
+      process.env.CONFIRMATION_BLOCKS,
+    indexerConfirmationDepth:
+      process.env.INDEXER_CONFIRMATION_DEPTH ?? process.env.CONFIRMATION_BLOCKS,
+    onChainReconciliationIntervalMs:
+      process.env.ON_CHAIN_RECONCILIATION_INTERVAL_MS,
+    onChainReconciliationSampleSize:
+      process.env.ON_CHAIN_RECONCILIATION_SAMPLE_SIZE,
+    membershipChainConfigs: process.env.MEMBERSHIP_CHAIN_CONFIGS,
     rateLimitEnabled: process.env.RATE_LIMIT_ENABLED,
     rateLimitWindowMs: process.env.RATE_LIMIT_WINDOW_MS,
     rateLimitDefaultMax: process.env.RATE_LIMIT_DEFAULT_MAX,
@@ -199,6 +257,7 @@ function validateConfig(): Config {
     trustProxy: process.env.TRUST_PROXY,
     redisUrl: process.env.REDIS_URL,
     apiKey: process.env.API_KEY || "test-api-key",
+    siweEnforced: process.env.SIWE_ENFORCED,
   };
 
   const result = ConfigSchema.safeParse(envVars);

@@ -1,6 +1,15 @@
 import { Prisma } from "@prisma/client";
 import type { PrismaClient } from "@prisma/client";
 import type { OutboxEventType, OutboxDispatchResult } from "@guildpass/shared-types";
+import { randomUUID } from "node:crypto";
+import { Prisma, type PrismaClient } from "@prisma/client";
+import type {
+  OutboxEventType,
+  OutboxEventDto,
+  OutboxDispatchResult,
+  OutboxEventStatus,
+} from "@guildpass/shared-types";
+import { getCorrelationId } from "./requestContext";
 import { metrics } from "../observability/metrics";
 
 // ---------------------------------------------------------------------------
@@ -28,6 +37,7 @@ export type OutboxEventInput = {
   entityType?: string | null;
   communityId?: string | null;
   payload?: Record<string, unknown>;
+  correlationId?: string | null;
 };
 
 // ---------------------------------------------------------------------------
@@ -49,6 +59,7 @@ export type OutboxEventInput = {
 
 const DEFAULT_MAX_RETRIES = 5;
 const BASE_RETRY_DELAY_SECONDS = 10;
+export const DEFAULT_OUTBOX_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
 function computeNextRetryAt(retryCount: number): Date {
   const delaySeconds = BASE_RETRY_DELAY_SECONDS * Math.pow(2, retryCount);
@@ -76,12 +87,15 @@ export async function logOutboxEventTx(
   db: PrismaLikeClient,
   event: OutboxEventInput,
 ): Promise<OutboxDispatchResult> {
+  const correlationId = event.correlationId ?? getCorrelationId() ?? randomUUID();
+
   const created = await db.outboxEvent.create({
     data: {
       eventType: event.eventType,
       entityId: event.entityId ?? null,
       entityType: event.entityType ?? null,
       communityId: event.communityId ?? null,
+      correlationId,
       payload: event.payload ?? {},
       status: "pending",
       retryCount: 0,
@@ -206,6 +220,7 @@ export interface ClaimedOutboxEvent {
   communityId: string | null;
   payload: unknown;
   createdAt: Date;
+  correlationId: string | null;
 }
 
 /**
@@ -259,7 +274,7 @@ export async function claimPendingOutboxEvents(
       LIMIT ${limit}
       FOR UPDATE SKIP LOCKED
     )
-    RETURNING id, "eventType", "entityId", "entityType", "communityId", "payload", "createdAt";
+    RETURNING id, "eventType", "entityId", "entityType", "communityId", "payload", "createdAt", "correlationId";
   `;
 
   return claimed.sort((a, b) => {
@@ -356,11 +371,40 @@ export async function pruneDeliveredOutboxEvents(
   db: PrismaLikeClient,
   olderThan: Date,
 ): Promise<number> {
+  if (Number.isNaN(olderThan.getTime())) {
+    throw new Error("Outbox pruning cutoff must be a valid date");
+  }
+
   const result = await (db as any).outboxEvent.deleteMany({
     where: {
+      // These predicates are deliberately explicit and load-bearing:
+      // pending and failed events must never be removed by retention pruning.
       status: "delivered",
       deliveredAt: { lt: olderThan },
     },
   });
   return result?.count ?? 0;
+}
+
+/**
+ * Prune delivered events whose delivery timestamp is strictly older than the
+ * configured retention duration. The injectable clock makes boundary
+ * behaviour deterministic in tests and operator tooling.
+ */
+export async function pruneOutboxEvents(
+  db: PrismaLikeClient,
+  retentionMs: number = DEFAULT_OUTBOX_RETENTION_MS,
+  now: Date = new Date(),
+): Promise<number> {
+  if (!Number.isFinite(retentionMs) || retentionMs <= 0) {
+    throw new Error("Outbox retention duration must be greater than zero");
+  }
+  if (Number.isNaN(now.getTime())) {
+    throw new Error("Outbox pruning clock must be a valid date");
+  }
+
+  return pruneDeliveredOutboxEvents(
+    db,
+    new Date(now.getTime() - retentionMs),
+  );
 }

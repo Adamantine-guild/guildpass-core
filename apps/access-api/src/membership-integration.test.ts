@@ -19,10 +19,16 @@ import {
   type DecodedMembershipSuspendedEvent,
 } from './services/contractEventHelpers';
 import { createIndexerWorker, type ChainProvider, type BlockInfo } from './workers/indexerWorker';
+import { IndexerWorker } from './workers/indexerWorker';
 
 /**
  * Test Fixtures - Contract events that would be emitted by MembershipNFT
  */
+
+const REORG_COMMUNITY_ID = 'reorg-integration-community';
+const REORG_CHAIN_ID = 31337;
+const REORG_CONTRACT_ADDRESS = '0xReorgIntegrationContract111111111111111111';
+const REORG_STATE_ID = `${REORG_CHAIN_ID}:${REORG_CONTRACT_ADDRESS.toLowerCase()}`;
 
 const testFixtures = {
   // Scenario 1: Active membership with valid expiry
@@ -1202,10 +1208,12 @@ describe('Membership Integration: Contract Events → API Access', () => {
   describe('Resilient Indexing Pipeline: Checkpoints, Reorgs, & Idempotency', () => {
     const chainId = 31337;
     const contractAddress = '0x1111111111111111111111111111111111111111';
+    const stateId = `${chainId}:${contractAddress.toLowerCase()}`;
 
     beforeEach(async () => {
       await prisma.processedEvent.deleteMany({});
       await prisma.blockHeader.deleteMany({});
+      await prisma.indexerState.deleteMany({});
       await prisma.indexerCheckpoint.deleteMany({});
       await prisma.auditEvent.deleteMany({});
       await prisma.deadLetterEvent.deleteMany({});
@@ -1222,11 +1230,12 @@ describe('Membership Integration: Contract Events → API Access', () => {
       await prisma.membership.deleteMany({});
       await prisma.profile.deleteMany({});
       await prisma.member.deleteMany({});
+      await prisma.communityContract.deleteMany({}).catch(() => undefined);
       await prisma.community.deleteMany({});
       await prisma.wallet.deleteMany({});
     });
 
-    test('should persist checkpoint and resume safely across worker restarts', async () => {
+    test('should persist IndexerState and resume safely across worker restarts', async () => {
       const blocks: Record<number, BlockInfo> = {
         100: { number: 100, hash: '0xblock100', parentHash: '0xblock99' },
         101: { number: 101, hash: '0xblock101', parentHash: '0xblock100' },
@@ -1242,14 +1251,11 @@ describe('Membership Integration: Contract Events → API Access', () => {
       const worker1 = createIndexerWorker(mockProvider, 5000, 0, prisma, chainId, 10, contractAddress);
       await worker1.runPass();
 
-      const checkpoint = await prisma.indexerCheckpoint.findUnique({
-        where: { chainId_contractAddress: { chainId, contractAddress } },
-      });
-      expect(checkpoint).toBeDefined();
-      expect(checkpoint?.lastProcessedBlockNumber).toBe(102);
-      expect(checkpoint?.lastProcessedBlockHash).toBe('0xblock102');
+      const state = await prisma.indexerState.findUnique({ where: { id: stateId } });
+      expect(state).toBeDefined();
+      expect(state?.lastBlockNumber).toBe(102);
+      expect(state?.lastBlockHash).toBe('0xblock102');
 
-      // Simulate new block added
       blocks[103] = { number: 103, hash: '0xblock103', parentHash: '0xblock102' };
       const mockProvider2: ChainProvider = {
         getLatestBlockNumber: async () => 103,
@@ -1260,14 +1266,45 @@ describe('Membership Integration: Contract Events → API Access', () => {
       const worker2 = createIndexerWorker(mockProvider2, 5000, 0, prisma, chainId, 10, contractAddress);
       await worker2.runPass();
 
-      const resumedCheckpoint = await prisma.indexerCheckpoint.findUnique({
-        where: { chainId_contractAddress: { chainId, contractAddress } },
-      });
-      expect(resumedCheckpoint?.lastProcessedBlockNumber).toBe(103);
-      expect(resumedCheckpoint?.lastProcessedBlockHash).toBe('0xblock103');
+      const resumed = await prisma.indexerState.findUnique({ where: { id: stateId } });
+      expect(resumed?.lastBlockNumber).toBe(103);
+      expect(resumed?.lastBlockHash).toBe('0xblock103');
     });
 
-    test('should detect reorg via block-hash comparison and reconcile state', async () => {
+    test('should process the same log only once (idempotent redelivery)', async () => {
+      const mintEvent = {
+        type: 'MembershipMinted' as const,
+        to: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        tokenId: 42,
+        communityId: 'idempotency-community',
+        expiresAt: Math.floor(Date.now() / 1000) + 86400,
+        chainId,
+        contractAddress,
+        transactionHash: '0xtx-idempotent',
+        blockHash: '0xblock50',
+        logIndex: 0,
+        blockNumber: 50,
+      };
+
+      await applyContractEvent(prisma, mintEvent as any);
+      await applyContractEvent(prisma, mintEvent as any);
+
+      const tokens = await prisma.membershipToken.findMany({
+        where: { tokenId: 42, chainId, contractAddress },
+      });
+      expect(tokens).toHaveLength(1);
+
+      const processed = await prisma.processedEvent.findMany({
+        where: {
+          chainId,
+          transactionHash: '0xtx-idempotent',
+          logIndex: 0,
+        },
+      });
+      expect(processed).toHaveLength(1);
+    });
+
+    test('should detect reorg via block-hash comparison and reverse then reapply state', async () => {
       const canonicalBlocks: Record<number, BlockInfo> = {
         10: { number: 10, hash: '0xhash10', parentHash: '0xhash9' },
         11: { number: 11, hash: '0xhash11-canonical', parentHash: '0xhash10' },
@@ -1314,7 +1351,12 @@ describe('Membership Integration: Contract Events → API Access', () => {
 
       const provider: ChainProvider = {
         getLatestBlockNumber: async () => 11,
-        getBlock: async (n) => currentBlocks[n] || { number: n, hash: `0xhash${n}`, parentHash: `0xhash${n - 1}` },
+        getBlock: async (n) =>
+          currentBlocks[n] || {
+            number: n,
+            hash: `0xhash${n}`,
+            parentHash: `0xhash${n - 1}`,
+          },
         getLogs: async (from, to) => {
           let res: any[] = [];
           for (let b = from; b <= to; b++) {
@@ -1324,45 +1366,286 @@ describe('Membership Integration: Contract Events → API Access', () => {
         },
       };
 
-      const worker = createIndexerWorker(provider, 5000, 0, prisma, chainId, 10, contractAddress);
+      const worker = createIndexerWorker(
+        provider,
+        5000,
+        0,
+        prisma,
+        chainId,
+        10,
+        contractAddress,
+      );
 
-      // Seed initial checkpoint at block 9 so the indexer scans from block 10
-      await prisma.indexerCheckpoint.create({
+      // Seed IndexerState + LCA header so the first pass starts at block 10.
+      await prisma.blockHeader.create({
+        data: { chainId, blockNumber: 9, blockHash: '0xhash9' },
+      });
+      await prisma.indexerState.create({
         data: {
+          id: stateId,
           chainId,
           contractAddress,
-          lastProcessedBlockNumber: 9,
-          lastProcessedBlock: 9,
-          lastProcessedBlockHash: '0xhash9',
+          lastBlockNumber: 9,
+          lastBlockHash: '0xhash9',
         },
       });
 
-      // Initial pass: processes 10 & 11
       await worker.runPass();
 
-      // Verify token 99 is suspended
-      let token = await prisma.membershipToken.findFirst({ where: { tokenId: 99 } });
+      let token = await prisma.membershipToken.findFirst({
+        where: { tokenId: 99, chainId, contractAddress },
+      });
       expect(token?.state).toBe('suspended');
 
-      // NOW REORG OCCURS: block 11 has hash '0xhash11-canonical' and no suspend event!
+      // Reorg: block 11 is replaced; suspend log disappears.
       currentBlocks[11] = canonicalBlocks[11];
       currentLogs[11] = [];
 
-      // Second pass detects reorg at block 11 (stored hash 0xhash11-orphaned != current 0xhash11-canonical)
       await worker.runPass();
 
-      // The indexer rewinds to LCA (block 10), rolls back token 99 state to active, and updates checkpoint
-      token = await prisma.membershipToken.findFirst({ where: { tokenId: 99 } });
+      token = await prisma.membershipToken.findFirst({
+        where: { tokenId: 99, chainId, contractAddress },
+      });
       expect(token?.state).toBe('active');
 
-      // Third pass re-processes the rewound block range (block 11) using the canonical chain
       await worker.runPass();
 
-      const updatedCheckpoint = await prisma.indexerCheckpoint.findUnique({
-        where: { chainId_contractAddress: { chainId, contractAddress } },
+      const updatedState = await prisma.indexerState.findUnique({
+        where: { id: stateId },
       });
-      expect(updatedCheckpoint?.lastProcessedBlockNumber).toBe(11);
-      expect(updatedCheckpoint?.lastProcessedBlockHash).toBe('0xhash11-canonical');
+      expect(updatedState?.lastBlockNumber).toBe(11);
+      expect(updatedState?.lastBlockHash).toBe('0xhash11-canonical');
+    });
+
+    test('should expose reorg-corrected state through GET /v1/communities/:id/memberships/:wallet API', async () => {
+      const canonicalBlocks: Record<number, BlockInfo> = {
+        10: { number: 10, hash: '0xhash10', parentHash: '0xhash9' },
+        11: { number: 11, hash: '0xhash11-canonical', parentHash: '0xhash10' },
+      };
+
+      const logsBlock10 = [
+        {
+          type: 'MembershipMinted',
+          to: '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+          tokenId: 88,
+          communityId: REORG_COMMUNITY_ID,
+          expiresAt: Math.floor(Date.now() / 1000) + 86400,
+          chainId: REORG_CHAIN_ID,
+          contractAddress: REORG_CONTRACT_ADDRESS,
+          transactionHash: '0xtx-reorg-api-10',
+          blockHash: '0xhash10',
+          logIndex: 0,
+          blockNumber: 10,
+        },
+      ];
+
+      const logsBlock11Orphaned = [
+        {
+          type: 'MembershipSuspended',
+          tokenId: 88,
+          isSuspended: true,
+          chainId: REORG_CHAIN_ID,
+          contractAddress: REORG_CONTRACT_ADDRESS,
+          transactionHash: '0xtx-reorg-api-11-orphaned',
+          blockHash: '0xhash11-orphaned',
+          logIndex: 0,
+          blockNumber: 11,
+        },
+      ];
+
+      const provider: ChainProvider = {
+        getLatestBlockNumber: async () => 11,
+        getBlock: async (n) =>
+          canonicalBlocks[n] || {
+            number: n,
+            hash: `0xhash${n}`,
+            parentHash: `0xhash${n - 1}`,
+          },
+        getLogs: async (from, to) => {
+          let res: any[] = [];
+          for (let b = from; b <= to; b++) {
+            if (b === 10) res.push(...logsBlock10);
+            if (b === 11) res.push(...logsBlock11Orphaned);
+          }
+          return res;
+        },
+      };
+
+      const worker = createIndexerWorker(
+        provider,
+        5000,
+        0,
+        prisma,
+        REORG_CHAIN_ID,
+        10,
+        REORG_CONTRACT_ADDRESS,
+      );
+
+      // Seed IndexerState + LCA header
+      await prisma.blockHeader.create({
+        data: { chainId: REORG_CHAIN_ID, blockNumber: 9, blockHash: '0xhash9' },
+      });
+      await prisma.indexerState.create({
+        data: {
+          id: REORG_STATE_ID,
+          chainId: REORG_CHAIN_ID,
+          contractAddress: REORG_CONTRACT_ADDRESS,
+          lastBlockNumber: 9,
+          lastBlockHash: '0xhash9',
+        },
+      });
+
+      // Create access policy
+      await prisma.accessPolicy.create({
+        data: {
+          communityId: REORG_COMMUNITY_ID,
+          resource: 'dashboard',
+          ruleType: 'MEMBERS_ONLY',
+        },
+      });
+
+      await worker.runPass();
+
+      // After reorg, check via API — should show suspended because orphaned block was applied
+      const reorgApiResponse = await app.inject({
+        method: 'GET',
+        url: `/v1/communities/${REORG_COMMUNITY_ID}/memberships/0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb`,
+      });
+
+      expect(reorgApiResponse.statusCode).toBe(200);
+      const reorgResult = JSON.parse(reorgApiResponse.body);
+      expect(reorgResult.communities[0].state).toBe('suspended');
+
+      // Now simulate reorg: canonical chain has no suspend event
+      canonicalBlocks[11] = { number: 11, hash: '0xhash11-canonical', parentHash: '0xhash10' };
+
+      await worker.runPass();
+
+      // After reorg recovery, check via API — state should be 'active'
+      const recoveredApiResponse = await app.inject({
+        method: 'GET',
+        url: `/v1/communities/${REORG_COMMUNITY_ID}/memberships/0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb`,
+      });
+
+      expect(recoveredApiResponse.statusCode).toBe(200);
+      const recoveredResult = JSON.parse(recoveredApiResponse.body);
+      expect(recoveredResult.communities[0].state).toBe('active');
+
+      // Verify IndexerState reflects canonical chain
+      const finalState = await prisma.indexerState.findUnique({
+        where: { id: REORG_STATE_ID },
+      });
+      expect(finalState?.lastBlockHash).toBe('0xhash11-canonical');
+    });
+
+    test('should apply confirmation depth: skip unconfirmed tip blocks and process after they settle', async () => {
+      const CONFIRMATION_DEPTH = 5;
+      const chainId = 42;
+      const contractAddress = '0xConfirmationDepthTestContract111111111111';
+      const stateId = `${chainId}:${contractAddress.toLowerCase()}`;
+
+      const blocks: Record<number, BlockInfo> = {};
+      for (let n = 0; n <= 20; n++) {
+        blocks[n] = {
+          number: n,
+          hash: `0xblockHash${n}`,
+          parentHash: `0xblockHash${n - 1}`,
+        };
+      }
+
+      let currentLogs: Record<number, any[]> = {};
+      let providerCallCount = 0;
+
+      const provider: ChainProvider = {
+        getLatestBlockNumber: async () => 20,
+        getBlock: async (n) =>
+          blocks[n] || {
+            number: n,
+            hash: `0xblockHash${n}`,
+            parentHash: `0xblockHash${n - 1}`,
+          },
+        getLogs: async (from, to) => {
+          providerCallCount++;
+          let res: any[] = [];
+          for (let b = from; b <= to; b++) {
+            if (currentLogs[b]) res.push(...currentLogs[b]);
+          }
+          return res;
+        },
+      };
+
+      const worker = createIndexerWorker(
+        provider,
+        5000,
+        CONFIRMATION_DEPTH,
+        prisma,
+        chainId,
+        10,
+        contractAddress,
+      );
+
+      // Seed IndexerState at block 0
+      await prisma.blockHeader.create({
+        data: { chainId, blockNumber: 0, blockHash: '0xblockHash0' },
+      });
+      await prisma.indexerState.create({
+        data: {
+          id: stateId,
+          chainId,
+          contractAddress,
+          lastBlockNumber: 0,
+          lastBlockHash: '0xblockHash0',
+        },
+      });
+
+      // Place a log at block 19 (one block above safe window: 20 - 5 = 15)
+      currentLogs[19] = [
+        {
+          type: 'MembershipMinted',
+          to: '0xcccccccccccccccccccccccccccccccccccccccc',
+          tokenId: 55,
+          communityId: 'confirmation-depth-community',
+          expiresAt: Math.floor(Date.now() / 1000) + 86400,
+          chainId,
+          contractAddress,
+          transactionHash: '0xtx-unconfirmed',
+          blockHash: '0xblockHash19',
+          logIndex: 0,
+          blockNumber: 19,
+        },
+      ];
+
+      await worker.runPass();
+
+      // Block 19 is above safe window (15) — should not be processed yet
+      const processedAfterFirstPass = await prisma.processedEvent.count({
+        where: {
+          chainId,
+          transactionHash: '0xtx-unconfirmed',
+        },
+      });
+      expect(processedAfterFirstPass).toBe(0);
+
+      // Now advance to block 50 so safe window = 45
+      provider.getLatestBlockNumber = async () => 50;
+
+      await worker.runPass();
+
+      // Now block 19 is below safe window — should process
+      const processedCount = await prisma.processedEvent.count({
+        where: {
+          chainId,
+          transactionHash: '0xtx-unconfirmed',
+        },
+      });
+      expect(processedCount).toBeGreaterThan(0);
+
+      // Verify membership was created
+      const membership = await prisma.membershipToken.findFirst({
+        where: { tokenId: 55, chainId, contractAddress },
+      });
+      expect(membership).toBeDefined();
+      expect(membership?.state).toBe('active');
     });
   });
 });

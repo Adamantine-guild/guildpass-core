@@ -43,6 +43,7 @@ describe('Moderation Service Tests', () => {
     const membership = await prisma.membership.create({
       data: {
         memberId: member.id,
+        state: 'suspended',
       },
     });
 

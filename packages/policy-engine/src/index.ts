@@ -1,16 +1,11 @@
 import {
   AccessDecision,
   AccessPolicy,
-  AccessOverride,
-  DecisionReason,
   RoleContext,
-  Role,
   RoleDefinition,
   DelegatedGrant,
 } from "@guildpass/shared-types";
-import { resolveEffectiveRoles as originalResolveEffectiveRoles } from "./roles";
 import {
-  PolicyRulePlugin,
   PolicyRulePluginRegistry,
 } from "./types";
 import {
@@ -48,6 +43,7 @@ export {
 } from "./resolution";
 export {
   ValidationProvider,
+  PermissionProvider,
   StaticPolicyProvider,
   ComposablePolicyProvider,
   FallbackProvider,
@@ -63,6 +59,7 @@ export {
 } from "./ruleGrammar";
 export type { ValidationOptions, ValidationResult } from "./ruleGrammar";
 export { evaluateRuleTree } from "./ruleEvaluator";
+export { resolveEffectivePermissions } from "./permissions";
 
 /**
  * Create a default plugin registry with all built-in rules registered
@@ -148,5 +145,3 @@ export function explain(
 // Re-export types
 export type { PolicyRulePlugin } from './types';
 export { PolicyRulePluginRegistry } from './types';
-
-
