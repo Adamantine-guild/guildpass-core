@@ -14,15 +14,13 @@ jest.mock('../src/services/memberService', () => {
   return {
     getMemberService: jest.fn().mockReturnValue({
       getMembershipsByWallet: jest.fn().mockResolvedValue([]),
+      isCommunityAdmin: jest.fn().mockResolvedValue(true),
       listMembersForAdmin: jest.fn().mockResolvedValue({
-        communityId: 'community-1',
-        members: [],
-        pagination: {
-          page: 1,
-          limit: 20,
-          total: 0,
-          totalPages: 0,
-        },
+        data: [],
+        total: 0,
+        page: 1,
+        pageSize: 25,
+        nextCursor: null,
       }),
     }),
   };

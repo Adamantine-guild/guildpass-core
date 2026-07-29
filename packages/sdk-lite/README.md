@@ -85,9 +85,13 @@ try {
 
 `POST /v1/access/check` -> `{ allowed: boolean, code?: string, membershipState?: string }`.
 
-### `client.listCommunityMembers(communityId, { role? })`
+### `client.listCommunityMembers(communityId, { role?, page?, pageSize?, sort? })`
 
-`GET /v1/communities/:communityId/members` -> `{ members }`.
+`GET /v1/communities/:communityId/members` -> `{ data, total, page, pageSize, nextCursor }`.
+
+- `page` (default `1`, ≥ 1) and `pageSize` (default `25`, 1–100) drive offset pagination.
+- `sort` is `joinedAt` (default) or `role`; `id ASC` is always applied as a stable tiebreaker.
+- `nextCursor` is `null` in offset mode, reserved for a future cursor-based migration.
 
 Throws `GuildPassApiError` on any failure path (network, non-2xx, empty body, non-JSON body, JSON parse error).
 

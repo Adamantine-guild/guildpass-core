@@ -7553,23 +7553,38 @@
             "schema": {
               "type": "integer",
               "minimum": 1,
-              "maximum": 200,
-              "default": 50
+              "default": 1
             },
             "in": "query",
-            "name": "limit",
+            "name": "page",
             "required": false,
-            "description": "Page size (default 50, maximum 200). Requests above 200 return 400."
+            "description": "1-based page number. Values below 1 return 400."
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 25
+            },
+            "in": "query",
+            "name": "pageSize",
+            "required": false,
+            "description": "Page size (default 25, maximum 100). Requests above 100 return 400."
           },
           {
             "schema": {
               "type": "string",
-              "minLength": 1
+              "enum": [
+                "joinedAt",
+                "role"
+              ],
+              "default": "joinedAt"
             },
             "in": "query",
-            "name": "cursor",
+            "name": "sort",
             "required": false,
-            "description": "Opaque cursor from a previous response's pagination.nextCursor"
+            "description": "Sort field. A stable id ASC tiebreaker is always applied so pages never overlap."
           },
           {
             "schema": {
@@ -7584,22 +7599,21 @@
         ],
         "responses": {
           "200": {
-            "description": "Cursor-paginated member list",
+            "description": "Offset-paginated member list",
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "Cursor-paginated member list",
+                  "description": "Offset-paginated member list",
                   "type": "object",
                   "required": [
-                    "communityId",
-                    "members",
-                    "pagination"
+                    "data",
+                    "total",
+                    "page",
+                    "pageSize",
+                    "nextCursor"
                   ],
                   "properties": {
-                    "communityId": {
-                      "type": "string"
-                    },
-                    "members": {
+                    "data": {
                       "type": "array",
                       "items": {
                         "type": "object",
@@ -7632,35 +7646,32 @@
                                 "contributor"
                               ]
                             }
+                          },
+                          "joinedAt": {
+                            "type": "string",
+                            "format": "date-time"
                           }
                         }
                       }
                     },
-                    "pagination": {
-                      "type": "object",
-                      "required": [
-                        "limit",
-                        "hasMore",
-                        "nextCursor"
-                      ],
-                      "properties": {
-                        "limit": {
-                          "type": "integer"
-                        },
-                        "hasMore": {
-                          "type": "boolean"
-                        },
-                        "nextCursor": {
-                          "type": "string",
-                          "nullable": true,
-                          "description": "Pass as ?cursor= on the next request when hasMore"
-                        }
-                      }
+                    "total": {
+                      "type": "integer",
+                      "description": "Total members matching the filters, across all pages"
+                    },
+                    "page": {
+                      "type": "integer"
+                    },
+                    "pageSize": {
+                      "type": "integer"
+                    },
+                    "nextCursor": {
+                      "type": "string",
+                      "nullable": true,
+                      "description": "Always null in offset mode; reserved for a future move to cursor pagination"
                     }
                   },
                   "example": {
-                    "communityId": "community-mainnet-42",
-                    "members": [
+                    "data": [
                       {
                         "wallet": "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
                         "displayName": "alice.eth",
@@ -7668,7 +7679,8 @@
                         "roles": [
                           "admin",
                           "member"
-                        ]
+                        ],
+                        "joinedAt": "2026-01-01T00:00:00.000Z"
                       },
                       {
                         "wallet": "0xabcd1234567890abcd1234567890abcd12345678",
@@ -7676,25 +7688,25 @@
                         "state": "active",
                         "roles": [
                           "member"
-                        ]
+                        ],
+                        "joinedAt": "2026-01-02T00:00:00.000Z"
                       }
                     ],
-                    "pagination": {
-                      "limit": 50,
-                      "hasMore": false,
-                      "nextCursor": null
-                    }
+                    "total": 2,
+                    "page": 1,
+                    "pageSize": 25,
+                    "nextCursor": null
                   }
                 }
               }
             }
           },
           "400": {
-            "description": "Invalid query parameters (e.g. limit above 200)",
+            "description": "Invalid query parameters (e.g. pageSize above 100)",
             "content": {
               "application/json": {
                 "schema": {
-                  "description": "Invalid query parameters (e.g. limit above 200)",
+                  "description": "Invalid query parameters (e.g. pageSize above 100)",
                   "type": "object",
                   "required": [
                     "error",

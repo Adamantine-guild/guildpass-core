@@ -520,12 +520,17 @@ describe("getMemberService - Membership State Normalization", () => {
   });
 
   describe("listMembersForAdmin", () => {
-    test("should return members with normalized state", async () => {
+    // Issue #259: offset pagination (page/pageSize) + sort (joinedAt|role),
+    // returning the { data, total, page, pageSize, nextCursor } envelope.
+    test("returns paginated envelope with normalized state and defaults", async () => {
       const pastDate = new Date(Date.now() - 86400000);
       const futureDate = new Date(Date.now() + 86400000);
+      const createdA = new Date("2026-01-01T00:00:00.000Z");
+      const createdB = new Date("2026-01-02T00:00:00.000Z");
       const mockMembers = [
         {
           id: "member-1",
+          createdAt: createdA,
           wallet: { address: "0x1111111111111111" },
           profile: { displayName: "Member 1" },
           membership: {
@@ -536,6 +541,7 @@ describe("getMemberService - Membership State Normalization", () => {
         },
         {
           id: "member-2",
+          createdAt: createdB,
           wallet: { address: "0x2222222222222222" },
           profile: { displayName: "Member 2" },
           membership: {
@@ -547,23 +553,35 @@ describe("getMemberService - Membership State Normalization", () => {
       ];
 
       (mockPrisma.member.findMany as jest.Mock).mockResolvedValue(mockMembers);
+      (mockPrisma.member.count as jest.Mock).mockResolvedValue(2);
 
       const result = await memberService.listMembersForAdmin("community-1");
 
-      expect(result.members).toHaveLength(2);
-      expect(result.members[0].state).toBe("expired");
-      expect(result.members[1].state).toBe("active");
-      expect(result.pagination).toEqual({
-        limit: 50,
-        hasMore: false,
+      expect(result.data).toHaveLength(2);
+      expect(result.data[0].state).toBe("expired");
+      expect(result.data[1].state).toBe("active");
+      expect(result.data[0].joinedAt).toBe(createdA.toISOString());
+      expect(result).toMatchObject({
+        total: 2,
+        page: 1,
+        pageSize: 25,
         nextCursor: null,
       });
+      // Default sort=joinedAt → createdAt asc with id asc tiebreaker; page 1.
+      expect(mockPrisma.member.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+          skip: 0,
+          take: 25,
+        }),
+      );
     });
 
-    test("should filter members by role", async () => {
+    test("filters members by role", async () => {
       const mockMembers = [
         {
           id: "member-1",
+          createdAt: new Date("2026-01-01T00:00:00.000Z"),
           wallet: { address: "0x1111111111111111" },
           profile: { displayName: "Admin" },
           membership: { state: "active" as MembershipState, expiresAt: null },
@@ -572,14 +590,14 @@ describe("getMemberService - Membership State Normalization", () => {
       ];
 
       (mockPrisma.member.findMany as jest.Mock).mockResolvedValue(mockMembers);
+      (mockPrisma.member.count as jest.Mock).mockResolvedValue(1);
 
-      const result = await memberService.listMembersForAdmin(
-        "community-1",
-        "admin",
-      );
+      const result = await memberService.listMembersForAdmin("community-1", {
+        role: "admin",
+      });
 
-      expect(result.members).toHaveLength(1);
-      expect(result.members[0].wallet).toBe("0x1111111111111111");
+      expect(result.data).toHaveLength(1);
+      expect(result.data[0].wallet).toBe("0x1111111111111111");
       expect(mockPrisma.member.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: expect.objectContaining({
@@ -590,103 +608,111 @@ describe("getMemberService - Membership State Normalization", () => {
       );
     });
 
-    test("should filter members by status (active)", async () => {
-      const futureDate = new Date(Date.now() + 86400000);
-      const pastDate = new Date(Date.now() - 86400000);
-      const mockMembers = [
-        {
-          id: "member-1",
-          wallet: { address: "0x1111111111111111" },
-          profile: { displayName: "Active Member" },
-          membership: {
-            state: "active" as MembershipState,
-            expiresAt: futureDate,
-          },
-          roles: [],
-        },
-        {
-          id: "member-2",
-          wallet: { address: "0x2222222222222222" },
-          profile: { displayName: "Expired Member" },
-          membership: {
-            state: "active" as MembershipState,
-            expiresAt: pastDate,
-          },
-          roles: [],
-        },
-      ];
-
-      (mockPrisma.member.findMany as jest.Mock).mockResolvedValue(mockMembers);
-
-      const result = await memberService.listMembersForAdmin(
-        "community-1",
-        undefined,
-        { status: "active" },
-      );
-
-      expect(result.members).toHaveLength(1);
-      expect(result.members[0].wallet).toBe("0x1111111111111111");
-      expect(result.members[0].state).toBe("active");
-    });
-
-    test("should filter members by status (expired)", async () => {
-      const pastDate = new Date(Date.now() - 86400000);
-      const futureDate = new Date(Date.now() + 86400000);
-      const mockMembers = [
-        {
-          id: "member-1",
-          wallet: { address: "0x1111111111111111" },
-          profile: { displayName: "Expired Member" },
-          membership: {
-            state: "active" as MembershipState,
-            expiresAt: pastDate,
-          },
-          roles: [],
-        },
-        {
-          id: "member-2",
-          wallet: { address: "0x2222222222222222" },
-          profile: { displayName: "Active Member" },
-          membership: {
-            state: "active" as MembershipState,
-            expiresAt: futureDate,
-          },
-          roles: [],
-        },
-      ];
-
-      (mockPrisma.member.findMany as jest.Mock).mockResolvedValue(mockMembers);
-
-      const result = await memberService.listMembersForAdmin(
-        "community-1",
-        undefined,
-        { status: "expired" },
-      );
-
-      expect(result.members).toHaveLength(1);
-      expect(result.members[0].wallet).toBe("0x1111111111111111");
-      expect(result.members[0].state).toBe("expired");
-    });
-
-    test("should clamp limit to 200", async () => {
+    test("filters by status in SQL so pagination is not short-changed", async () => {
       (mockPrisma.member.findMany as jest.Mock).mockResolvedValue([]);
+      (mockPrisma.member.count as jest.Mock).mockResolvedValue(0);
 
-      const result = await memberService.listMembersForAdmin(
-        "community-1",
-        undefined,
-        { limit: 500 },
-      );
+      await memberService.listMembersForAdmin("community-1", {
+        status: "active",
+      });
 
       expect(mockPrisma.member.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ take: 201 }),
+        expect.objectContaining({
+          where: expect.objectContaining({
+            communityId: "community-1",
+            membership: {
+              state: "active",
+              OR: [
+                { expiresAt: null },
+                { expiresAt: { gte: expect.any(Date) } },
+              ],
+            },
+          }),
+        }),
       );
-      expect(result.pagination.limit).toBe(200);
     });
 
-    test("should only include active roles", async () => {
+    test("status=expired matches explicit and past-expiry memberships", async () => {
+      (mockPrisma.member.findMany as jest.Mock).mockResolvedValue([]);
+      (mockPrisma.member.count as jest.Mock).mockResolvedValue(0);
+
+      await memberService.listMembersForAdmin("community-1", {
+        status: "expired",
+      });
+
+      expect(mockPrisma.member.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            membership: {
+              OR: [
+                { state: "expired" },
+                { expiresAt: { lt: expect.any(Date) } },
+              ],
+            },
+          }),
+        }),
+      );
+    });
+
+    test("paginates with page/pageSize (skip/take)", async () => {
+      (mockPrisma.member.findMany as jest.Mock).mockResolvedValue([]);
+      (mockPrisma.member.count as jest.Mock).mockResolvedValue(5);
+
+      const result = await memberService.listMembersForAdmin("community-1", {
+        page: 2,
+        pageSize: 10,
+      });
+
+      expect(mockPrisma.member.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          skip: 10,
+          take: 10,
+        }),
+      );
+      expect(result).toMatchObject({
+        total: 5,
+        page: 2,
+        pageSize: 10,
+        nextCursor: null,
+      });
+    });
+
+    test("rejects pageSize > 100 with a 400", async () => {
+      await expect(
+        memberService.listMembersForAdmin("community-1", { pageSize: 200 }),
+      ).rejects.toMatchObject({ statusCode: 400 });
+      expect(mockPrisma.member.findMany).not.toHaveBeenCalled();
+    });
+
+    test("rejects pageSize < 1 with a 400", async () => {
+      await expect(
+        memberService.listMembersForAdmin("community-1", { pageSize: 0 }),
+      ).rejects.toMatchObject({ statusCode: 400 });
+    });
+
+    test("rejects page < 1 with a 400", async () => {
+      await expect(
+        memberService.listMembersForAdmin("community-1", { page: 0 }),
+      ).rejects.toMatchObject({ statusCode: 400 });
+    });
+
+    test("sort=role orders by role count with id ASC tiebreaker", async () => {
+      (mockPrisma.member.findMany as jest.Mock).mockResolvedValue([]);
+
+      await memberService.listMembersForAdmin("community-1", { sort: "role" });
+
+      expect(mockPrisma.member.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          orderBy: [{ roles: { _count: "desc" } }, { id: "asc" }],
+        }),
+      );
+    });
+
+    test("only includes active roles", async () => {
       const mockMembers = [
         {
           id: "member-1",
+          createdAt: new Date("2026-01-01T00:00:00.000Z"),
           wallet: { address: "0x1111111111111111" },
           profile: { displayName: "User" },
           membership: { state: "active" as MembershipState, expiresAt: null },
@@ -701,73 +727,21 @@ describe("getMemberService - Membership State Normalization", () => {
 
       const result = await memberService.listMembersForAdmin("community-1");
 
-      expect(result.members[0].roles).toEqual(["admin"]);
+      expect(result.data[0].roles).toEqual(["admin"]);
     });
 
-    test("should apply default pagination and return end-of-results metadata", async () => {
+    test("empty tail page returns data:[] with the correct total", async () => {
       (mockPrisma.member.findMany as jest.Mock).mockResolvedValue([]);
+      (mockPrisma.member.count as jest.Mock).mockResolvedValue(42);
 
-      const result = await memberService.listMembersForAdmin("community-1");
-
-      expect(mockPrisma.member.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: { communityId: "community-1" },
-          orderBy: { id: "asc" },
-          take: 51,
-        }),
-      );
-      expect(result.pagination).toEqual({
-        limit: 50,
-        hasMore: false,
-        nextCursor: null,
+      const result = await memberService.listMembersForAdmin("community-1", {
+        page: 9999,
+        pageSize: 25,
       });
-    });
 
-    test("should return next cursor when another page exists", async () => {
-      const mockMembers = [
-        {
-          id: "member-1",
-          wallet: { address: "0x111" },
-          profile: null,
-          membership: null,
-          roles: [],
-        },
-        {
-          id: "member-2",
-          wallet: { address: "0x222" },
-          profile: null,
-          membership: null,
-          roles: [],
-        },
-        {
-          id: "member-3",
-          wallet: { address: "0x333" },
-          profile: null,
-          membership: null,
-          roles: [],
-        },
-      ];
-      (mockPrisma.member.findMany as jest.Mock).mockResolvedValue(mockMembers);
-
-      const result = await memberService.listMembersForAdmin(
-        "community-1",
-        undefined,
-        { limit: 2, cursor: "member-0" },
-      );
-
-      expect(mockPrisma.member.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({
-          cursor: { id: "member-0" },
-          skip: 1,
-          take: 3,
-        }),
-      );
-      expect(result.members).toHaveLength(2);
-      expect(result.pagination).toEqual({
-        limit: 2,
-        hasMore: true,
-        nextCursor: "member-2",
-      });
+      expect(result.data).toHaveLength(0);
+      expect(result.total).toBe(42);
+      expect(result.page).toBe(9999);
     });
   });
 

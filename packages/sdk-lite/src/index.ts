@@ -42,12 +42,17 @@ export interface AccessCheckInput {
 }
 
 export interface CommunityMembersResult {
-  members: Array<{
+  data: Array<{
     wallet: string;
-    displayName?: string;
+    displayName?: string | null;
     state: string;
     roles: string[];
+    joinedAt: string;
   }>;
+  total: number;
+  page: number;
+  pageSize: number;
+  nextCursor: string | null;
 }
 
 export interface CommunityRolesResult {
@@ -169,11 +174,21 @@ export class GuildPassClient {
    */
   async listCommunityMembers(
     communityId: string,
-    options: { role?: string } = {},
+    options: {
+      role?: string;
+      page?: number;
+      pageSize?: number;
+      sort?: 'joinedAt' | 'role';
+    } = {},
   ): Promise<CommunityMembersResult> {
-    const query = options.role
-      ? `?role=${encodeURIComponent(options.role)}`
-      : '';
+    const params = new URLSearchParams();
+    if (options.role) params.set('role', options.role);
+    if (options.page !== undefined) params.set('page', String(options.page));
+    if (options.pageSize !== undefined) params.set('pageSize', String(options.pageSize));
+    if (options.sort) params.set('sort', options.sort);
+
+    const query = params.toString() ? `?${params.toString()}` : '';
+
     return this._request<CommunityMembersResult>(
       `/v1/communities/${encodePathSegment(communityId)}/members${query}`,
       { method: 'GET' },

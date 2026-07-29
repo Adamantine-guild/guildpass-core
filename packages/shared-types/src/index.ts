@@ -509,5 +509,22 @@ export interface DeadLetterEventDto {
   resolvedAt?: string | null;
 }
 
+// --- Generic pagination envelope ---
+
+/**
+ * Generic paginated response envelope shared across list endpoints.
+ *
+ * `nextCursor` is reserved for a future migration to cursor-based pagination:
+ * in offset mode it is always `null`, but keeping the field in the contract
+ * means switching to cursors later is not a breaking change for consumers.
+ */
+export interface PaginatedResponse<T> {
+  data: T[];
+  total: number;
+  page: number;
+  pageSize: number;
+  nextCursor: string | null;
+}
+
 export * from "./apiContract";
 export * from "./permissions";
