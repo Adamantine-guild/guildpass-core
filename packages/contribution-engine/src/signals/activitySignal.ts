@@ -28,11 +28,6 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_POINTS_PER_EVENT = 10;
 const DEFAULT_HALF_LIFE_DAYS = 30;
 
-function decayFactor(elapsedDays: number, halfLifeDays: number): number {
-  // 2^(-d / halfLife) — standard exponential decay
-  return Math.pow(2, -elapsedDays / halfLifeDays);
-}
-
 /**
  * ActivitySignal computes a decay-weighted attendance score.
  *
@@ -85,7 +80,6 @@ export class ActivitySignal implements ContributionSignal {
       // Integral of 2^(-t/H) from 0 to T  =  H/ln2 * (1 - 2^(-T/H))
       // Divide by T to get the average.
       const halfLifeLn2 = this.halfLifeDays * Math.LN2;
-      const rawPoints = cappedCount * this.pointsPerEvent;
       avgDecay =
         (halfLifeLn2 / tenureDays) *
         (1 - Math.pow(2, -tenureDays / this.halfLifeDays));
