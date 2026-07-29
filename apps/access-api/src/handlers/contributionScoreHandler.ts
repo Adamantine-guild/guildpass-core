@@ -83,7 +83,7 @@ export function createContributionScoreHandler(
 
     try {
       const db = await getPrisma();
-      await recomputeAndPersist(db, wallet, communityId);
+      await recomputeAndPersist(db, wallet, communityId, event.id);
     } catch (err: any) {
       // Log but don't throw — the score will be recomputed on the next
       // relevant event, and we don't want to stall the outbox worker.

@@ -77,15 +77,18 @@ export class ContributionEngine {
 
 import { TenureSignal } from './signals/tenureSignal';
 import { BadgeSignal } from './signals/badgeSignal';
+import { ActivitySignal } from './signals/activitySignal';
 
 /**
- * Create a ContributionEngine with the two built-in signals registered:
+ * Create a ContributionEngine with the three built-in signals registered:
  * - tenure: points for membership duration
  * - badge_count: points for badge count
+ * - activity: decay-weighted attendance points
  */
 export function createDefaultEngine(): ContributionEngine {
   const engine = new ContributionEngine();
   engine.register(new TenureSignal());
   engine.register(new BadgeSignal());
+  engine.register(new ActivitySignal());
   return engine;
 }

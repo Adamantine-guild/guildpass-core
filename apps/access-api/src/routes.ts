@@ -25,6 +25,7 @@ import {
   getAuditTracesByTxHash,
   getAuditTracesByWallet,
 } from "./services/auditTraceService";
+import { getScore, getScoreHistory } from "./services/contributionService";
 import {
   notFound,
   validationError,
@@ -78,6 +79,7 @@ import {
   updateResourceSchema,
   archiveResourceSchema,
   listResourcesSchema,
+  getContributionScoreSchema,
   AccessCheckBody,
 } from "./schemas";
 import {
@@ -1642,6 +1644,57 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       return reply.status(500).send(internalError('Internal server error'));
     }
   });
+
+  // --- Contribution Score Routes ---
+
+  // GET /v1/communities/:communityId/members/:wallet/score
+  app.get(
+    '/v1/communities/:communityId/members/:wallet/score',
+    { schema: getContributionScoreSchema },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { communityId, wallet } = request.params as {
+        communityId: string;
+        wallet: string;
+      };
+
+      if (!wallet || !/^0x[0-9a-fA-F]{40}$/.test(wallet)) {
+        return reply
+          .status(400)
+          .send(
+            validationErrorWithReason(
+              'INVALID_WALLET',
+              'Invalid wallet format',
+            ),
+          );
+      }
+
+      const community = await prisma.community.findUnique({
+        where: { id: communityId },
+      });
+      if (!community) {
+        return reply
+          .status(404)
+          .send(notFound('Community not found'));
+      }
+
+      const score = await getScore(prisma, wallet, communityId);
+      if (!score) {
+        return reply
+          .status(404)
+          .send(notFound('No contribution score found for this member'));
+      }
+
+      const history = await getScoreHistory(prisma, wallet, communityId, 10);
+
+      return reply.status(200).send({
+        wallet,
+        communityId,
+        totalScore: score.total,
+        breakdown: score.breakdown,
+        history,
+      });
+    },
+  );
 
   // --- Constitutional Rule Set Management Routes ---
 

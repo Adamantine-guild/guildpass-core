@@ -30,9 +30,10 @@ describe('createContributionScoreHandler', () => {
     });
 
     expect(mockRecompute).toHaveBeenCalledWith(
-      expect.anything,
+      expect.anything(),
       '0xabc123',
       'community-1',
+      'evt-1',
     );
   });
 

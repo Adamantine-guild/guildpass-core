@@ -85,17 +85,19 @@ async function buildSignalContext(
 
 /**
  * Recompute the contribution score for a wallet/community pair and persist it.
+ * Also writes a ContributionEvent audit log entry for traceability.
  */
 export async function recomputeAndPersist(
   prisma: PrismaClient,
   wallet: string,
   communityId: string,
+  triggerEventId?: string,
 ): Promise<RecomputeResult> {
   const normalised = normaliseWallet(wallet);
   const ctx = await buildSignalContext(prisma, normalised, communityId);
   const score = engine.computeScore(ctx);
 
-  await prisma.contributionScore.upsert({
+  const scoreRow = await prisma.contributionScore.upsert({
     where: {
       walletId_communityId: {
         walletId: normalised,
@@ -111,6 +113,19 @@ export async function recomputeAndPersist(
     update: {
       totalScore: score.total,
       breakdown: score.breakdown,
+    },
+  });
+
+  // Append audit log entry
+  await prisma.contributionEvent.create({
+    data: {
+      walletId: normalised,
+      communityId,
+      totalScore: score.total,
+      breakdown: score.breakdown,
+      explanations: score.explanations,
+      triggerEventId: triggerEventId ?? null,
+      contributionScore: { connect: { id: scoreRow.id } },
     },
   });
 
@@ -141,4 +156,36 @@ export async function getScore(
     total: record.totalScore,
     breakdown: (record.breakdown as Record<string, number>) ?? {},
   };
+}
+
+/**
+ * Retrieve recent score recomputation history for a wallet/community pair.
+ * Returns the most recent entries first.
+ */
+export async function getScoreHistory(
+  prisma: PrismaClient,
+  wallet: string,
+  communityId: string,
+  limit: number = 20,
+): Promise<Array<{
+  totalScore: number;
+  breakdown: Record<string, number>;
+  explanations?: Record<string, string>;
+  triggerEventId?: string | null;
+  createdAt: Date;
+}>> {
+  const normalised = normaliseWallet(wallet);
+  const events = await prisma.contributionEvent.findMany({
+    where: { walletId: normalised, communityId },
+    orderBy: { createdAt: 'desc' },
+    take: Math.min(limit, 100),
+  });
+
+  return events.map((e) => ({
+    totalScore: e.totalScore,
+    breakdown: (e.breakdown as Record<string, number>) ?? {},
+    explanations: (e.explanations as Record<string, string>) ?? undefined,
+    triggerEventId: e.triggerEventId,
+    createdAt: e.createdAt,
+  }));
 }

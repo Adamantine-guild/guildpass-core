@@ -10797,6 +10797,132 @@
           }
         }
       }
+    },
+    "/v1/communities/{communityId}/members/{wallet}/score": {
+      "get": {
+        "summary": "Get contribution score for a member",
+        "description": "Returns the current contribution score and recent recomputation history for a member within a community. Scores are computed from pluggable signal sources (tenure, badge count, attendance) and updated automatically via the outbox event stream.",
+        "tags": [
+          "Contribution Scoring"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "communityId",
+            "required": true,
+            "description": "Community identifier"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^0x[0-9a-fA-F]{40}$"
+            },
+            "in": "path",
+            "name": "wallet",
+            "required": true,
+            "description": "EVM wallet address"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Contribution score for the member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "wallet",
+                    "communityId",
+                    "totalScore",
+                    "breakdown"
+                  ],
+                  "properties": {
+                    "wallet": {
+                      "type": "string",
+                      "description": "Normalised wallet address"
+                    },
+                    "communityId": {
+                      "type": "string"
+                    },
+                    "totalScore": {
+                      "type": "number",
+                      "description": "Aggregated contribution score across all signals"
+                    },
+                    "breakdown": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "number"
+                      },
+                      "description": "Per-signal point breakdown"
+                    },
+                    "history": {
+                      "type": "array",
+                      "description": "Recent recomputation audit log (most recent first)",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "totalScore",
+                          "breakdown",
+                          "createdAt"
+                        ],
+                        "properties": {
+                          "totalScore": {
+                            "type": "number"
+                          },
+                          "breakdown": {
+                            "type": "object",
+                            "additionalProperties": {
+                              "type": "number"
+                            }
+                          },
+                          "explanations": {
+                            "type": "object",
+                            "additionalProperties": {
+                              "type": "string"
+                            }
+                          },
+                          "triggerEventId": {
+                            "type": "string",
+                            "nullable": true,
+                            "description": "Outbox event ID that triggered this recomputation"
+                          },
+                          "createdAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid wallet format",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Community or member not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "servers": [

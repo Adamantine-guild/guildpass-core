@@ -22,3 +22,5 @@ export { TenureSignal } from './signals/tenureSignal';
 export type { TenureSignalOptions } from './signals/tenureSignal';
 export { BadgeSignal } from './signals/badgeSignal';
 export type { BadgeSignalOptions } from './signals/badgeSignal';
+export { ActivitySignal } from './signals/activitySignal';
+export type { ActivitySignalOptions } from './signals/activitySignal';
