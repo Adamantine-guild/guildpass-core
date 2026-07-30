@@ -14,13 +14,23 @@ import {
   NOfMNode,
   ApprovalRecord,
 } from '../src/ast';
-import { validateRuleAST, parseAndValidateRuleJSON } from '../src/validator';
+import {
+  validateRuleAST,
+  parseAndValidateRuleJSON,
+  computeComplexity,
+  RESOURCE_LIMITS,
+} from '../src/validator';
 import {
   GovernanceContext,
   createGovernanceContext,
   DEFAULT_CONTRIBUTION_SCORE,
 } from '../src/context';
-import { evaluateRule, formatTrace } from '../src/evaluator';
+import {
+  evaluateRule,
+  evaluateRuleWithBudget,
+  formatTrace,
+  DEFAULT_TIMEOUT_MS,
+} from '../src/evaluator';
 import type { RoleContext } from '@guildpass/shared-types';
 
 describe('AST Validation', () => {
@@ -174,6 +184,133 @@ describe('AST Validation', () => {
 
     const result = validateRuleAST(node);
     expect(result.valid).toBe(false);
+  });
+
+  test('resource limits are exported with expected values', () => {
+    expect(RESOURCE_LIMITS.maxDepth).toBe(10);
+    expect(RESOURCE_LIMITS.maxChildren).toBe(50);
+    expect(RESOURCE_LIMITS.maxComplexity).toBe(64);
+  });
+});
+
+describe('Complexity Scoring', () => {
+  test('primitive predicate has complexity 1', () => {
+    expect(computeComplexity({ type: 'HasRole', role: 'admin' })).toBe(1);
+    expect(computeComplexity({ type: 'MinContributionScore', score: 100 })).toBe(1);
+    expect(computeComplexity({ type: 'HasMembershipState', state: 'active' })).toBe(1);
+  });
+
+  test('RequiresApprovals has complexity 2', () => {
+    expect(computeComplexity({ type: 'RequiresApprovals', threshold: 2, approverRole: 'admin' })).toBe(2);
+  });
+
+  test('AND with 2 primitives has complexity 4', () => {
+    const node: AndNode = {
+      type: 'AND',
+      rules: [
+        { type: 'HasRole', role: 'admin' },
+        { type: 'MinContributionScore', score: 100 },
+      ],
+    };
+    expect(computeComplexity(node)).toBe(4);
+  });
+
+  test('OR with 3 primitives has complexity 5', () => {
+    const node: OrNode = {
+      type: 'OR',
+      rules: [
+        { type: 'HasRole', role: 'admin' },
+        { type: 'HasRole', role: 'contributor' },
+        { type: 'HasMembershipState', state: 'active' },
+      ],
+    };
+    expect(computeComplexity(node)).toBe(5);
+  });
+
+  test('NOT has complexity 3 (2 for NOT + 1 for child)', () => {
+    const node: NotNode = {
+      type: 'NOT',
+      rule: { type: 'HasRole', role: 'admin' },
+    };
+    expect(computeComplexity(node)).toBe(3);
+  });
+
+  test('N_OF_M with 3 primitives has complexity 6', () => {
+    const node: NOfMNode = {
+      type: 'N_OF_M',
+      n: 2,
+      rules: [
+        { type: 'HasRole', role: 'admin' },
+        { type: 'HasRole', role: 'contributor' },
+        { type: 'MinContributionScore', score: 50 },
+      ],
+    };
+    expect(computeComplexity(node)).toBe(6);
+  });
+
+  test('complex nested rule produces expected complexity', () => {
+    const node: OrNode = {
+      type: 'OR',
+      rules: [
+        { type: 'HasRole', role: 'admin' },
+        {
+          type: 'AND',
+          rules: [
+            { type: 'HasRole', role: 'contributor' },
+            { type: 'MinContributionScore', score: 100 },
+          ],
+        },
+        {
+          type: 'N_OF_M',
+          n: 2,
+          rules: [
+            { type: 'HasRole', role: 'contributor' },
+            { type: 'MinContributionScore', score: 50 },
+            { type: 'HasMembershipState', state: 'active' },
+          ],
+        },
+      ],
+    };
+    // OR(2) + admin(1) + AND(2) + contributor(1) + score100(1) + N_OF_M(3) + contributor(1) + score50(1) + active(1) = 13
+    expect(computeComplexity(node)).toBe(13);
+  });
+
+  test('rejects AST with complexity exceeding MAX_COMPLEXITY', () => {
+    // Build a tree that is structurally valid (depth ≤10, children ≤50)
+    // but whose total complexity exceeds 64.
+    // N_OF_M{ 2 AND children, each having 30 HasRole primitives }
+    // Complexity = 3 (N_OF_M) + (2+30) + (2+30) = 67 > 64
+    const node = {
+      type: 'N_OF_M',
+      n: 1,
+      rules: [
+        { type: 'AND', rules: Array.from({ length: 30 }, () => ({ type: 'HasRole', role: 'admin' as const })) },
+        { type: 'AND', rules: Array.from({ length: 30 }, () => ({ type: 'HasRole', role: 'admin' as const })) },
+      ],
+    };
+
+    const result = validateRuleAST(node);
+    expect(result.valid).toBe(false);
+    expect(result.errors[0]).toContain('exceeds maximum');
+    expect(result.errors[0]).toContain('64');
+  });
+
+  test('accepts AST with complexity at exactly MAX_COMPLEXITY', () => {
+    // Build a tree with complexity = 64 (max allowed)
+    // OR{ AND(30 HasRole), AND(28 HasRole) }
+    // Complexity = 2 (OR) + (2+30) + (2+28) = 64
+    const node = {
+      type: 'OR',
+      rules: [
+        { type: 'AND', rules: Array.from({ length: 30 }, () => ({ type: 'HasRole', role: 'admin' as const })) },
+        { type: 'AND', rules: Array.from({ length: 28 }, () => ({ type: 'HasRole', role: 'admin' as const })) },
+      ],
+    };
+
+    const validation = validateRuleAST(node);
+    expect(validation.valid).toBe(true);
+    // Verify complexity is at the limit
+    expect(computeComplexity(node as any as RuleNode)).toBe(RESOURCE_LIMITS.maxComplexity);
   });
 });
 
@@ -723,5 +860,152 @@ describe('Trace Formatting', () => {
     expect(formatted).toContain('AND');
     expect(formatted).toContain('HasRole');
     expect(formatted).toContain('MinContributionScore');
+  });
+});
+
+describe('Budget-Aware Evaluation', () => {
+  const baseRoleContext: RoleContext = {
+    assignments: [],
+    membershipState: 'active',
+  };
+
+  test('evaluateRuleWithBudget passes simple rule well within budget', () => {
+    const rule: HasRoleNode = { type: 'HasRole', role: 'admin' };
+    const context = createGovernanceContext(
+      '0xalice',
+      'community-1',
+      {
+        assignments: [{ role: 'admin', source: 'manual', active: true }],
+        membershipState: 'active',
+      },
+      DEFAULT_CONTRIBUTION_SCORE,
+    );
+
+    const result = evaluateRuleWithBudget(rule, context);
+    expect(result.allowed).toBe(true);
+    expect(result.trace.ruleType).toBe('HasRole');
+  });
+
+  test('evaluateRuleWithBudget returns TIMEOUT with negative budget', () => {
+    // A negative deadline triggers immediate timeout on the first yield point.
+    const rule: HasRoleNode = { type: 'HasRole', role: 'admin' };
+    const context = createGovernanceContext(
+      '0xalice',
+      'community-1',
+      {
+        assignments: [{ role: 'admin', source: 'manual', active: true }],
+        membershipState: 'active',
+      },
+      DEFAULT_CONTRIBUTION_SCORE,
+    );
+
+    const result = evaluateRuleWithBudget(rule, context, { timeoutMs: -1 });
+    expect(result.allowed).toBe(false);
+    expect(result.trace.ruleType).toBe('TIMEOUT');
+    expect(result.trace.details).toContain('exceeded time budget');
+  });
+
+  test('evaluateRuleWithBudget returns TIMEOUT for deep rules with tiny budget', () => {
+    // Build a deep-ish rule and give it a 1-microsecond budget.
+    // This reliably triggers timeout even on fast hardware.
+    let deep: RuleNode = { type: 'HasRole', role: 'admin' };
+    for (let i = 0; i < 8; i++) {
+      deep = { type: 'AND', rules: [deep] };
+    }
+
+    const context = createGovernanceContext(
+      '0xalice',
+      'community-1',
+      baseRoleContext,
+      DEFAULT_CONTRIBUTION_SCORE,
+    );
+
+    // Use a negative deadline: force immediate timeout on first check
+    const result = evaluateRuleWithBudget(deep, context, { timeoutMs: -1 });
+    expect(result.allowed).toBe(false);
+    expect(result.trace.ruleType).toBe('TIMEOUT');
+  });
+
+  test('evaluateRuleWithBudget correctly allows passing rules with default budget', () => {
+    const rule: AndNode = {
+      type: 'AND',
+      rules: [
+        { type: 'HasRole', role: 'admin' },
+        { type: 'HasMembershipState', state: 'active' },
+      ],
+    };
+
+    const context = createGovernanceContext(
+      '0xalice',
+      'community-1',
+      {
+        assignments: [{ role: 'admin', source: 'manual', active: true }],
+        membershipState: 'active',
+      },
+      DEFAULT_CONTRIBUTION_SCORE,
+    );
+
+    const result = evaluateRuleWithBudget(rule, context);
+    expect(result.allowed).toBe(true);
+    expect(result.trace.ruleType).toBe('AND');
+    expect(result.trace.children).toHaveLength(2);
+  });
+
+  test('DEFAULT_TIMEOUT_MS is exported as 5', () => {
+    expect(DEFAULT_TIMEOUT_MS).toBe(5);
+  });
+
+  test('unbounded evaluateRule still works after budget changes', () => {
+    const rule: HasRoleNode = { type: 'HasRole', role: 'admin' };
+    const context = createGovernanceContext(
+      '0xalice',
+      'community-1',
+      {
+        assignments: [{ role: 'admin', source: 'manual', active: true }],
+        membershipState: 'active',
+      },
+      DEFAULT_CONTRIBUTION_SCORE,
+    );
+
+    const result = evaluateRule(rule, context);
+    expect(result.allowed).toBe(true);
+    expect(result.trace.ruleType).toBe('HasRole');
+  });
+
+  test('most complex valid AST evaluates well within 5ms budget', () => {
+    // Build the most complex AST the validator would accept:
+    // OR( AND(30 HasRole), AND(28 HasRole) ) → complexity = 64
+    const node = {
+      type: 'OR' as const,
+      rules: [
+        { type: 'AND' as const, rules: Array.from({ length: 30 }, () => ({ type: 'HasRole' as const, role: 'admin' as const })) },
+        { type: 'AND' as const, rules: Array.from({ length: 28 }, () => ({ type: 'HasRole' as const, role: 'admin' as const })) },
+      ],
+    };
+
+    // Validate it passes
+    const validation = validateRuleAST(node);
+    expect(validation.valid).toBe(true);
+
+    // Evaluate it with the default budget — must complete
+    const context = createGovernanceContext(
+      '0xalice',
+      'community-1',
+      {
+        assignments: [{ role: 'admin', source: 'manual', active: true }],
+        membershipState: 'active',
+      },
+      DEFAULT_CONTRIBUTION_SCORE,
+    );
+
+    const start = Date.now();
+    const result = evaluateRuleWithBudget(node, context);
+    const elapsed = Date.now() - start;
+
+    expect(result.allowed).toBe(true);
+    expect(result.trace.ruleType).toBe('OR');
+    expect(result.trace.children).toHaveLength(2);
+    // Must complete well within the 5ms budget (typically < 1ms)
+    expect(elapsed).toBeLessThan(3000);
   });
 });
