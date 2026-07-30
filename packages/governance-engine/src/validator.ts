@@ -7,6 +7,14 @@
 
 import {
   RuleNode,
+  isHasRoleNode,
+  isMinContributionScoreNode,
+  isHasMembershipStateNode,
+  isRequiresApprovalsNode,
+  isAndNode,
+  isOrNode,
+  isNotNode,
+  isNOfMNode,
 } from './ast';
 import { Role, MembershipState } from '@guildpass/shared-types';
 
@@ -41,7 +49,135 @@ const MAX_DEPTH = 10;
 const MAX_CHILDREN = 50;
 
 /**
+ * Maximum total complexity score for a rule AST.
+ * Complexity is a weighted sum of all nodes (see computeComplexity).
+ * This bounds the total evaluation work regardless of nesting depth or breadth,
+ * preventing adversarial ASTs that pass the depth/children limits but contain
+ * an arbitrarily large number of nodes.
+ *
+ * Rationale: a realistic complex rule (e.g. Admin OR (Contributor AND Score ≥100)
+ * OR 2-of-3[Moderator, Score≥50, Active]) has complexity ~10. The limit of 64
+ * allows rules ~6× more complex than any realistic governance rule, while capping
+ * worst-case evaluation work at a small, predictable amount.
+ */
+const MAX_COMPLEXITY = 64;
+
+/**
+ * Resource limits enforced by the validator.
+ * Exported so callers can surface limits in documentation/UI.
+ */
+export const RESOURCE_LIMITS = {
+  maxDepth: MAX_DEPTH,
+  maxChildren: MAX_CHILDREN,
+  maxComplexity: MAX_COMPLEXITY,
+} as const;
+
+/**
+ * Compute the complexity score of a rule AST.
+ *
+ * Scoring:
+ * - Primitive predicates (HasRole, MinContributionScore, HasMembershipState): 1
+ * - RequiresApprovals: 2
+ * - AND / OR combinators: 2 + sum of children complexity
+ * - NOT: 2 + child complexity
+ * - N_OF_M: 3 + sum of children complexity
+ *
+ * The complexity score is a monotonic upper bound on the number of
+ * tree-node visits the evaluator will perform. A score ≤ MAX_COMPLEXITY
+ * guarantees evaluation completes in microseconds on modern hardware.
+ */
+export function computeComplexity(node: RuleNode): number {
+  if (isHasRoleNode(node) || isMinContributionScoreNode(node) || isHasMembershipStateNode(node)) {
+    return 1;
+  }
+  if (isRequiresApprovalsNode(node)) {
+    return 2;
+  }
+  if (isAndNode(node) || isOrNode(node)) {
+    let total = 2;
+    for (const child of node.rules) {
+      total += computeComplexity(child);
+    }
+    return total;
+  }
+  if (isNotNode(node)) {
+    return 2 + computeComplexity(node.rule);
+  }
+  if (isNOfMNode(node)) {
+    let total = 3;
+    for (const child of node.rules) {
+      total += computeComplexity(child);
+    }
+    return total;
+  }
+  return 1;
+}
+
+/**
+ * Estimate complexity of a node without structural validation.
+ * Used as a pre-pass guard to prevent the recursive validator from
+ * traversing pathologically large ASTs (e.g., 50 children at each of
+ * 10 levels → ~10¹⁷ nodes).
+ *
+ * Returns null if the node is not a recognizable AST shape (in which
+ * case structural validation will report the specific error), or a
+ * number if estimation succeeded.  Returns Infinity early if the
+ * complexity already exceeds MAX_COMPLEXITY (no need to compute further).
+ */
+function estimateComplexity(node: unknown): number | null {
+  if (typeof node !== 'object' || node === null) return null;
+  const obj = node as Record<string, unknown>;
+  if (typeof obj.type !== 'string') return null;
+
+  switch (obj.type) {
+    case 'HasRole':
+    case 'MinContributionScore':
+    case 'HasMembershipState':
+      return 1;
+    case 'RequiresApprovals':
+      return 2;
+    case 'AND':
+    case 'OR': {
+      if (!Array.isArray(obj.rules)) return null;
+      let total = 2;
+      for (const child of obj.rules) {
+        const c = estimateComplexity(child);
+        if (c === null) return null;
+        total += c;
+        if (total > MAX_COMPLEXITY) return Infinity;
+      }
+      return total;
+    }
+    case 'NOT': {
+      if (typeof obj.rule !== 'object' || obj.rule === null) return null;
+      const c = estimateComplexity(obj.rule);
+      if (c === null) return null;
+      return 2 + c;
+    }
+    case 'N_OF_M': {
+      if (!Array.isArray(obj.rules)) return null;
+      let total = 3;
+      for (const child of obj.rules) {
+        const c = estimateComplexity(child);
+        if (c === null) return null;
+        total += c;
+        if (total > MAX_COMPLEXITY) return Infinity;
+      }
+      return total;
+    }
+    default:
+      return null;
+  }
+}
+
+/**
  * Validate a complete rule AST
+ *
+ * Two-phase validation:
+ * 1. Pre-pass complexity estimation (root only) — rejects ASTs that would
+ *    require traversing an unreasonably large tree, protecting the recursive
+ *    structural validator from pathologically wide×deep trees.
+ * 2. Recursive structural validation — checks types, properties, bounds.
  */
 export function validateRuleAST(node: unknown, depth: number = 0): ValidationResult {
   const errors: string[] = [];
@@ -52,13 +188,30 @@ export function validateRuleAST(node: unknown, depth: number = 0): ValidationRes
     return { valid: false, errors };
   }
 
-  // Ensure node is an object
+  // Pre-pass complexity guard (root level only).
+  // This prevents the recursive traversal from visiting an unbounded number
+  // of nodes — a tree with MAX_CHILDREN=50 at each of MAX_DEPTH=10 levels
+  // could contain 50¹⁰ ≈ 10¹⁷ nodes, which would never terminate.
+  if (depth === 0) {
+    const estimated = estimateComplexity(node);
+    if (estimated !== null && estimated > MAX_COMPLEXITY) {
+      const display = estimated === Infinity ? `>${MAX_COMPLEXITY}` : String(estimated);
+      return {
+        valid: false,
+        errors: [
+          `AST complexity ${display} exceeds maximum of ${MAX_COMPLEXITY}. ` +
+          `Simplify the rule by reducing nesting, child count, or predicate count.`,
+        ],
+      };
+    }
+  }
+
+  // Structural validation
   if (typeof node !== 'object' || node === null) {
     errors.push('Rule node must be a non-null object');
     return { valid: false, errors };
   }
 
-  // Ensure node has a type property
   if (!('type' in node) || typeof (node as any).type !== 'string') {
     errors.push('Rule node must have a string "type" property');
     return { valid: false, errors };
@@ -66,7 +219,6 @@ export function validateRuleAST(node: unknown, depth: number = 0): ValidationRes
 
   const ruleNode = node as RuleNode;
 
-  // Validate based on node type
   switch (ruleNode.type) {
     case 'HasRole':
       return validateHasRoleNode(ruleNode as any);
@@ -97,6 +249,7 @@ export function validateRuleAST(node: unknown, depth: number = 0): ValidationRes
       return { valid: false, errors };
   }
 }
+
 
 /**
  * Validate HasRole node

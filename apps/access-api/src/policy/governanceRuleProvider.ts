@@ -29,8 +29,9 @@ import {
   ContributionScore,
   ApprovalRecord,
   createGovernanceContext,
-  evaluateRule,
+  evaluateRuleWithBudget,
   DEFAULT_CONTRIBUTION_SCORE,
+  DEFAULT_TIMEOUT_MS,
 } from '@guildpass/governance-engine';
 
 export const DEFAULT_GOVERNANCE_PRIORITY = 500;
@@ -89,7 +90,17 @@ export class GovernanceRuleProvider implements RuleProvider {
 
     const failures: string[] = [];
     for (const rule of this.rules) {
-      const result = evaluateRule(rule.ast, governanceContext);
+      // Evaluate with a hard time budget to prevent livelock
+      const result = evaluateRuleWithBudget(rule.ast, governanceContext, {
+        timeoutMs: DEFAULT_TIMEOUT_MS,
+      });
+      if (result.trace.ruleType === 'TIMEOUT') {
+        return {
+          result: 'DENY',
+          explanation: `Governance rule "${rule.name}" evaluation timed out after ${DEFAULT_TIMEOUT_MS}ms`,
+          code: 'GOVERNANCE_TIMEOUT',
+        };
+      }
       if (!result.allowed) {
         failures.push(`${rule.name}: ${result.trace.details}`);
       }
