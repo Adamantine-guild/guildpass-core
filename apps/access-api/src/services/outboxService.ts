@@ -2,9 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import type {
   OutboxEventType,
-  OutboxEventDto,
   OutboxDispatchResult,
-  OutboxEventStatus,
 } from "@guildpass/shared-types";
 import { getCorrelationId } from "./requestContext";
 import { metrics } from "../observability/metrics";
@@ -211,7 +209,7 @@ const DEFAULT_CLAIM_LEASE_MS = 60_000;
 
 export interface ClaimedOutboxEvent {
   id: string;
-  eventType: string;
+  eventType: OutboxEventType;
   entityId: string | null;
   entityType: string | null;
   communityId: string | null;

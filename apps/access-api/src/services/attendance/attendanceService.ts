@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { PrismaClient, AttendanceRecord } from '@prisma/client';
+import { OUTBOX_EVENT_TYPES } from '@guildpass/shared-types';
 
 export interface IngestedAttendance {
   walletAddress: string;
@@ -114,10 +115,10 @@ export function getAttendanceService(prisma: PrismaClient) {
         },
       });
 
-      // Emit "MEMBER_ATTENDED" outbox event
+      // Emit member-attended outbox event.
       await tx.outboxEvent.create({
         data: {
-          eventType: 'MEMBER_ATTENDED',
+          eventType: OUTBOX_EVENT_TYPES.MEMBER_ATTENDED,
           entityId: record.id,
           entityType: 'AttendanceRecord',
           communityId: record.communityId,

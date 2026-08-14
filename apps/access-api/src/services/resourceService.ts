@@ -1,4 +1,5 @@
 import type { PrismaClient } from '@prisma/client';
+import { OUTBOX_EVENT_TYPES } from '@guildpass/shared-types';
 import { logOutboxEventTx } from './outboxService';
 import { requirePermission } from '../lib/auth/permissions';
 
@@ -182,7 +183,7 @@ export function getResourceService(prisma: PrismaClient) {
           });
 
           await logOutboxEventTx(tx, {
-            eventType: "RESOURCE_UPDATED",
+            eventType: OUTBOX_EVENT_TYPES.RESOURCE_UPDATED,
             entityId: normalizedResourceId,
             entityType: "Resource",
             communityId: normalizedCommunityId,
@@ -217,7 +218,7 @@ export function getResourceService(prisma: PrismaClient) {
         });
 
         await logOutboxEventTx(tx, {
-          eventType: "RESOURCE_CREATED",
+          eventType: OUTBOX_EVENT_TYPES.RESOURCE_CREATED,
           entityId: normalizedResourceId,
           entityType: "Resource",
           communityId: normalizedCommunityId,
@@ -294,7 +295,7 @@ export function getResourceService(prisma: PrismaClient) {
         });
 
         await logOutboxEventTx(tx, {
-          eventType: "RESOURCE_UPDATED",
+          eventType: OUTBOX_EVENT_TYPES.RESOURCE_UPDATED,
           entityId: normalizedResourceId,
           entityType: "Resource",
           communityId: normalizedCommunityId,
@@ -360,7 +361,7 @@ export function getResourceService(prisma: PrismaClient) {
         });
 
         await logOutboxEventTx(tx, {
-          eventType: "RESOURCE_ARCHIVED",
+          eventType: OUTBOX_EVENT_TYPES.RESOURCE_ARCHIVED,
           entityId: normalizedResourceId,
           entityType: "Resource",
           communityId: normalizedCommunityId,
