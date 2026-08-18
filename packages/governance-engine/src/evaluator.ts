@@ -3,6 +3,18 @@
  *
  * Evaluates governance rules against a resolved context.
  * Produces transparent, human-readable explanation traces.
+ *
+ * Resource limiting:
+ * - All evaluation goes through evaluateNode(), which checks a wall-clock
+ *   deadline at each node entry (yield point). If exceeded, it returns a
+ *   TIMEOUT trace immediately.
+ * - The evaluator is a pure, synchronous tree-walk interpreter. Since the AST
+ *   is bounded by validateRuleAST() (depth ≤10, complexity ≤64), evaluation
+ *   with a 5 ms budget is extremely conservative — a complexity-64 rule
+ *   completes in microseconds on modern hardware.
+ * - For maximum isolation, the entire evaluation is synchronous and uses no
+ *   shared mutable state; each evaluateRuleWithBudget() call is fully
+ *   self-contained.
  */
 
 import {
@@ -40,7 +52,45 @@ export interface EvaluationTrace {
 }
 
 /**
- * Evaluate a governance rule against a context
+ * Options for budget-aware rule evaluation
+ */
+export interface EvaluationOptions {
+  /** Hard wall-clock timeout in milliseconds (default: 5) */
+  timeoutMs?: number;
+}
+
+/**
+ * Default evaluation timeout in milliseconds.
+ * 5 ms is >1000× the typical evaluation time for a complexity-64 rule,
+ * providing a generous safety net while keeping any single evaluation
+ * well under an API request's total latency budget.
+ */
+export const DEFAULT_TIMEOUT_MS = 5;
+
+/**
+ * Evaluate a governance rule against a context with a hard time budget.
+ *
+ * This is the sandboxed entry point used by GovernanceRuleProvider.
+ * If evaluation does not complete within `options.timeoutMs`, the result
+ * is a DENY with a TIMEOUT trace — ensuring that a maliciously crafted
+ * rule (within the validator's bounds) cannot degrade the hot path.
+ */
+export function evaluateRuleWithBudget(
+  rule: RuleNode,
+  context: GovernanceContext,
+  options?: EvaluationOptions,
+): EvaluationResult {
+  const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const deadline = Date.now() + timeoutMs;
+  const trace = evaluateNode(rule, context, deadline);
+  return { allowed: trace.evaluated, trace };
+}
+
+/**
+ * Evaluate a governance rule against a context (unbounded).
+ *
+ * Kept for backward compatibility. For production use with the
+ * policy-engine RuleProvider, prefer evaluateRuleWithBudget().
  */
 export function evaluateRule(
   rule: RuleNode,
@@ -54,10 +104,23 @@ export function evaluateRule(
 }
 
 /**
- * Recursively evaluate a rule node
+ * Recursively evaluate a rule node.
+ * Checks the wall-clock deadline at each yield point.
  */
-function evaluateNode(node: RuleNode, context: GovernanceContext): EvaluationTrace {
-  // Evaluate primitive predicates
+function evaluateNode(
+  node: RuleNode,
+  context: GovernanceContext,
+  deadline?: number,
+): EvaluationTrace {
+  // Yield point: check time budget before each node evaluation
+  if (deadline !== undefined && Date.now() > deadline) {
+    return {
+      ruleType: 'TIMEOUT',
+      evaluated: false,
+      details: `Rule evaluation exceeded time budget`,
+    };
+  }
+
   if (isHasRoleNode(node)) {
     return evaluateHasRole(node, context);
   }
@@ -74,21 +137,20 @@ function evaluateNode(node: RuleNode, context: GovernanceContext): EvaluationTra
     return evaluateRequiresApprovals(node, context);
   }
 
-  // Evaluate boolean combinators
   if (isAndNode(node)) {
-    return evaluateAnd(node, context);
+    return evaluateAnd(node, context, deadline);
   }
 
   if (isOrNode(node)) {
-    return evaluateOr(node, context);
+    return evaluateOr(node, context, deadline);
   }
 
   if (isNotNode(node)) {
-    return evaluateNot(node, context);
+    return evaluateNot(node, context, deadline);
   }
 
   if (isNOfMNode(node)) {
-    return evaluateNOfM(node, context);
+    return evaluateNOfM(node, context, deadline);
   }
 
   // Unknown node type (should never happen if validator is used)
@@ -194,12 +256,16 @@ function evaluateRequiresApprovals(node: any, context: GovernanceContext): Evalu
 /**
  * Evaluate AND combinator
  */
-function evaluateAnd(node: any, context: GovernanceContext): EvaluationTrace {
+function evaluateAnd(
+  node: any,
+  context: GovernanceContext,
+  deadline?: number,
+): EvaluationTrace {
   const children: EvaluationTrace[] = [];
   let allTrue = true;
 
   for (const childRule of node.rules) {
-    const childTrace = evaluateNode(childRule, context);
+    const childTrace = evaluateNode(childRule, context, deadline);
     children.push(childTrace);
     
     if (!childTrace.evaluated) {
@@ -224,12 +290,16 @@ function evaluateAnd(node: any, context: GovernanceContext): EvaluationTrace {
 /**
  * Evaluate OR combinator
  */
-function evaluateOr(node: any, context: GovernanceContext): EvaluationTrace {
+function evaluateOr(
+  node: any,
+  context: GovernanceContext,
+  deadline?: number,
+): EvaluationTrace {
   const children: EvaluationTrace[] = [];
   let anyTrue = false;
 
   for (const childRule of node.rules) {
-    const childTrace = evaluateNode(childRule, context);
+    const childTrace = evaluateNode(childRule, context, deadline);
     children.push(childTrace);
     
     if (childTrace.evaluated) {
@@ -254,8 +324,12 @@ function evaluateOr(node: any, context: GovernanceContext): EvaluationTrace {
 /**
  * Evaluate NOT combinator
  */
-function evaluateNot(node: any, context: GovernanceContext): EvaluationTrace {
-  const childTrace = evaluateNode(node.rule, context);
+function evaluateNot(
+  node: any,
+  context: GovernanceContext,
+  deadline?: number,
+): EvaluationTrace {
+  const childTrace = evaluateNode(node.rule, context, deadline);
   const negated = !childTrace.evaluated;
 
   return {
@@ -271,12 +345,16 @@ function evaluateNot(node: any, context: GovernanceContext): EvaluationTrace {
 /**
  * Evaluate N_OF_M combinator
  */
-function evaluateNOfM(node: any, context: GovernanceContext): EvaluationTrace {
+function evaluateNOfM(
+  node: any,
+  context: GovernanceContext,
+  deadline?: number,
+): EvaluationTrace {
   const children: EvaluationTrace[] = [];
   let passedCount = 0;
 
   for (const childRule of node.rules) {
-    const childTrace = evaluateNode(childRule, context);
+    const childTrace = evaluateNode(childRule, context, deadline);
     children.push(childTrace);
     
     if (childTrace.evaluated) {

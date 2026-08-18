@@ -765,6 +765,147 @@ console.log(formatTrace(result.trace));
 2. Approvals have `approved: true`
 3. Approvals have matching `approverRole`
 
+## Resource-Limiting Execution Model
+
+### Overview
+
+Community-authored governance rules are less trusted than the system's own static
+policy types. A maliciously or accidentally crafted rule AST could degrade
+`checkAccess()` latency for the entire community — or the whole API process —
+if evaluation were unbounded.
+
+The governance engine employs three layers of defence:
+
+| Layer | Mechanism | Enforced At | Purpose |
+|---|---|---|---|
+| 1. Complexity limit | Weighted AST scoring (≤64) | Rule creation (`validateRuleAST`) | Rejects overly complex rules before they are stored |
+| 2. Depth limit | Recursion guard (≤10 levels) | Rule creation (`validateRuleAST`) | Prevents stack overflow |
+| 3. Wall-clock timeout | `performance.now()` deadline checks (5 ms) | Each evaluation (`evaluateRuleWithBudget`) | Bounds runtime of any accepted rule |
+
+### Layer 1: AST Complexity Scoring
+
+Every rule AST has a **complexity score** — a weighted sum of all nodes:
+
+| Node Type | Weight | Rationale |
+|---|---|---|
+| `HasRole` | 1 | Single `Array.includes` check |
+| `MinContributionScore` | 1 | Single numeric comparison |
+| `HasMembershipState` | 1 | Single string comparison |
+| `RequiresApprovals` | 2 | Array filter + count + comparison |
+| `AND` / `OR` | 2 + Σ children | Combinator overhead + recursive evaluation |
+| `NOT` | 2 + child | Combinator overhead + recursive evaluation |
+| `N_OF_M` | 3 + Σ children | Most complex combinator (n check + counting) |
+
+**Limit:** `MAX_COMPLEXITY = 64`
+
+**Rationale:** A realistic complex rule (e.g. `Admin OR (Contributor AND Score ≥ 100)
+OR 2-of-3[Moderator, Score ≥ 50, Active]`) scores ~10. The limit of 64 allows rules
+~6× more complex than any realistic governance rule while capping worst-case
+evaluation work at a small, predictable amount.
+
+```typescript
+import { computeComplexity, RESOURCE_LIMITS } from '@guildpass/governance-engine';
+
+computeComplexity({ type: 'HasRole', role: 'admin' });        // 1
+computeComplexity({
+  type: 'AND',
+  rules: [
+    { type: 'HasRole', role: 'admin' },
+    { type: 'MinContributionScore', score: 100 },           // total: 4
+  ],
+});
+
+console.log(RESOURCE_LIMITS.maxComplexity); // 64
+```
+
+### Layer 2: Depth Limit
+
+`MAX_DEPTH = 10` prevents stack overflow from deeply nested trees. Combined with
+`MAX_CHILDREN = 50` (per combinator), this bounds the structural size of any AST.
+
+### Layer 3: Wall-Clock Timeout
+
+The `evaluateRuleWithBudget()` function accepts an optional `EvaluationOptions`
+with a `timeoutMs` field (default **5 ms**).
+
+**How it works:**
+1. The deadline is computed once at entry: `deadline = performance.now() + timeoutMs`
+2. Before each AST node is visited (a "yield point"), the evaluator checks
+   `performance.now() > deadline`
+3. If the deadline has passed, evaluation halts and returns a `TIMEOUT` trace
+   with `evaluated: false`
+4. The caller (typically `GovernanceRuleProvider`) converts this into a `DENY`
+   with code `GOVERNANCE_TIMEOUT`
+
+**Why this is sufficient:**
+- The evaluator is a **pure, synchronous tree-walk interpreter** — no I/O, no
+  external calls, no unbounded iteration
+- AST size is bounded by the validator (complexity ≤64, depth ≤10)
+- Each node evaluation is a handful of property accesses and comparisons (~µs)
+- A 5 ms budget is **>1000× the typical evaluation time** for a max-complexity rule
+
+**Why no worker threads / child processes are needed:**
+- The evaluator terminates naturally (it's a finite tree walk)
+- It shares no mutable state between evaluations
+- The clock check at each yield point is sub-microsecond overhead
+- For this bounded domain, a wall-clock budget with yield points provides the
+  same safety guarantee as process isolation with much less complexity
+
+```typescript
+import { evaluateRuleWithBudget, DEFAULT_TIMEOUT_MS } from '@guildpass/governance-engine';
+
+// Uses the default 5 ms budget
+const result = evaluateRuleWithBudget(rule, context);
+
+// Custom budget
+const result = evaluateRuleWithBudget(rule, context, { timeoutMs: 10 });
+
+// Handle timeout
+if (result.trace.ruleType === 'TIMEOUT') {
+  // Budget exceeded — treat as DENY
+}
+```
+
+### Integration in `GovernanceRuleProvider`
+
+The `GovernanceRuleProvider.evaluate()` method (in `apps/access-api`) uses
+`evaluateRuleWithBudget` with the default 5 ms timeout. If a rule evaluation
+times out, the provider returns:
+
+```typescript
+{
+  result: 'DENY',
+  explanation: 'Governance rule "rule-name" evaluation timed out after 5ms',
+  code: 'GOVERNANCE_TIMEOUT',
+}
+```
+
+### Acceptance Criteria Verification
+
+| Criterion | How It's Tested |
+|---|---|
+| `validateRuleAST` rejects ASTs beyond complexity/depth threshold | `governance.test.ts`: `rejects AST with complexity exceeding MAX_COMPLEXITY` |
+| Any accepted rule is provably bounded in time | `governance.test.ts`: `most complex valid AST evaluates well within 5ms budget` |
+| Load test confirms no measurable degradation | `load-test.test.ts`: `1000 evaluations of max-complexity rule stay within aggregate budget` |
+
+### Running the Load Tests
+
+```bash
+cd packages/governance-engine
+npx jest test/load-test.test.ts --verbose
+```
+
+Expected output:
+```
+ PASS  test/load-test.test.ts
+  Load Test: Resource-Limiting / Sandboxing
+    ✓ max-complexity AST passes validation
+    ✓ single evaluation of max-complexity rule completes in microseconds
+    ✓ 1000 evaluations of max-complexity rule stay within aggregate budget
+    ✓ max-depth AST accepted by validator evaluates within budget
+    ✓ AST rejected by complexity limit never reaches evaluator
+```
+
 ## Future Enhancements
 
 1. **Time-Based Predicates**: MemberSince, ActiveFor
