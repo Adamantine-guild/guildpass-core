@@ -20,21 +20,26 @@
  */
 
 import type { PrismaClient } from '@prisma/client';
+import {
+  OUTBOX_EVENT_TYPES,
+  type OutboxEventType,
+} from '@guildpass/shared-types';
 import { recomputeAndPersist } from '../services/contributionService';
+import { getPrisma as getPrismaSingleton } from '../services/prisma';
 import type { OutboxEventHandler } from '../workers/outboxWorker';
 
 /**
  * Event types that should trigger a contribution score recomputation.
  */
-const SCORE_RECOMPUTE_EVENTS = new Set([
-  'ROLE_ASSIGNED',
-  'ROLE_REMOVED',
-  'BADGE_ASSIGNED',
-  'BADGE_REVOKED',
-  'MEMBER_ATTENDED',
-  'EVENT_ATTENDANCE_RECORDED',
-  'MEMBERSHIP_CREATED',
-  'MEMBERSHIP_UPDATED',
+const SCORE_RECOMPUTE_EVENTS: ReadonlySet<OutboxEventType> = new Set([
+  OUTBOX_EVENT_TYPES.ROLE_ASSIGNED,
+  OUTBOX_EVENT_TYPES.ROLE_REMOVED,
+  OUTBOX_EVENT_TYPES.BADGE_ASSIGNED,
+  OUTBOX_EVENT_TYPES.BADGE_REVOKED,
+  OUTBOX_EVENT_TYPES.MEMBER_ATTENDED,
+  OUTBOX_EVENT_TYPES.EVENT_ATTENDANCE_RECORDED,
+  OUTBOX_EVENT_TYPES.MEMBERSHIP_CREATED,
+  OUTBOX_EVENT_TYPES.MEMBERSHIP_UPDATED,
 ]);
 
 export interface ContributionScoreHandlerConfig {
@@ -55,14 +60,12 @@ export interface ContributionScoreHandlerConfig {
 export function createContributionScoreHandler(
   config: ContributionScoreHandlerConfig = {},
 ): OutboxEventHandler {
-  // Lazy import to avoid circular dependency at module load time
   let prismaSingleton: PrismaClient | null = null;
 
-  async function getPrisma(): Promise<PrismaClient> {
+  async function resolvePrisma(): Promise<PrismaClient> {
     if (config.db) return config.db;
     if (!prismaSingleton) {
-      const { getPrisma } = require('../services/prisma');
-      prismaSingleton = getPrisma();
+      prismaSingleton = getPrismaSingleton();
     }
     return prismaSingleton!;
   }
@@ -82,7 +85,7 @@ export function createContributionScoreHandler(
     }
 
     try {
-      const db = await getPrisma();
+      const db = await resolvePrisma();
       await recomputeAndPersist(db, wallet, communityId);
     } catch (err: any) {
       // Log but don't throw — the score will be recomputed on the next

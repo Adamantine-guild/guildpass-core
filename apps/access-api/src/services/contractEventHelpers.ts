@@ -11,7 +11,8 @@
  * for the MembershipNFT contract ABI and typed event definitions.
  */
 
-import type { PrismaClient, Prisma } from '@prisma/client';
+import type { PrismaClient } from '@prisma/client';
+import { OUTBOX_EVENT_TYPES } from '@guildpass/shared-types';
 import { writeChainedAuditEvent } from './auditChainHasher';
 
 import type {
@@ -257,7 +258,7 @@ export async function applyContractEvent(
       // Create outbox event with on-chain metadata for downstream consumers
       await tx.outboxEvent.create({
         data: {
-          eventType: 'MEMBERSHIP_CREATED',
+          eventType: OUTBOX_EVENT_TYPES.MEMBERSHIP_CREATED,
           entityId: updatedMembership.id,
           entityType: 'Membership',
           communityId: event.communityId,
@@ -346,7 +347,7 @@ export async function applyContractEvent(
       // Create outbox event with on-chain metadata
       await tx.outboxEvent.create({
         data: {
-          eventType: 'MEMBERSHIP_RENEWED',
+          eventType: OUTBOX_EVENT_TYPES.MEMBERSHIP_RENEWED,
           entityId: token.member.membership?.id ?? 'unknown',
           entityType: 'Membership',
           communityId: token.member.communityId,
@@ -431,7 +432,9 @@ export async function applyContractEvent(
       // Create outbox event with on-chain metadata
       await tx.outboxEvent.create({
         data: {
-          eventType: event.isSuspended ? 'MEMBERSHIP_SUSPENDED' : 'MEMBERSHIP_UNSUSPENDED',
+          eventType: event.isSuspended
+            ? OUTBOX_EVENT_TYPES.MEMBERSHIP_SUSPENDED
+            : OUTBOX_EVENT_TYPES.MEMBERSHIP_UNSUSPENDED,
           entityId: token.member.membership?.id ?? 'unknown',
           entityType: 'Membership',
           communityId: token.member.communityId,
@@ -544,7 +547,6 @@ export async function applyContractEvent(
         },
       });
     } else if (event.type === 'OwnershipTransferred') {
-      const previousOwner = event.previousOwner.toLowerCase();
       const newOwner = event.newOwner.toLowerCase();
 
 

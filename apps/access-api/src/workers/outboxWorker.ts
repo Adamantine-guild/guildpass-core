@@ -38,6 +38,7 @@
 
 import { randomUUID } from "node:crypto";
 import { PrismaClient } from "@prisma/client";
+import type { OutboxEventType } from "@guildpass/shared-types";
 import { getPrisma } from "../services/prisma";
 import {
   claimPendingOutboxEvents,
@@ -86,7 +87,7 @@ const BACKLOG_REPORT_INTERVAL_MS = 15_000;
  */
 export type OutboxEventHandler = (event: {
   id: string;
-  eventType: string;
+  eventType: OutboxEventType;
   entityId: string | null;
   entityType: string | null;
   communityId: string | null;

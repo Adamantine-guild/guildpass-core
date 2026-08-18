@@ -6,13 +6,17 @@ import {
   type RewardEvent,
   type StreakPeriod,
 } from "@guildpass/reward-engine";
+import {
+  OUTBOX_EVENT_TYPES,
+  type OutboxEventType,
+} from "@guildpass/shared-types";
 import type { OutboxEventHandler } from "../workers/outboxWorker";
 
-const REWARD_EVENTS = new Set([
-  "MEMBERSHIP_CREATED",
-  "MEMBER_ATTENDED",
-  "EVENT_ATTENDANCE_RECORDED",
-  "CONTRIBUTION_SCORE_UPDATED",
+const REWARD_EVENTS: ReadonlySet<OutboxEventType> = new Set([
+  OUTBOX_EVENT_TYPES.MEMBERSHIP_CREATED,
+  OUTBOX_EVENT_TYPES.MEMBER_ATTENDED,
+  OUTBOX_EVENT_TYPES.EVENT_ATTENDANCE_RECORDED,
+  OUTBOX_EVENT_TYPES.CONTRIBUTION_SCORE_UPDATED,
 ]);
 
 export interface RewardConsumerOptions {

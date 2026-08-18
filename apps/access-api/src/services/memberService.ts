@@ -20,6 +20,7 @@ import {
   RoleDefinition,
   DelegatedGrant,
   PaginatedResponse,
+  OUTBOX_EVENT_TYPES,
 } from "@guildpass/shared-types";
 import {
   createDefaultEngine,
@@ -1161,7 +1162,9 @@ export function getMemberService(
         }
 
         await logOutboxEventTx(tx, {
-          eventType: existing ? "ACCESS_OVERRIDE_UPDATED" : "ACCESS_OVERRIDE_CREATED",
+          eventType: existing
+            ? OUTBOX_EVENT_TYPES.ACCESS_OVERRIDE_UPDATED
+            : OUTBOX_EVENT_TYPES.ACCESS_OVERRIDE_CREATED,
           entityId: record.id,
           entityType: "AccessOverride",
           communityId,
@@ -1235,7 +1238,7 @@ export function getMemberService(
 
         await tx.accessOverride.delete({ where: { id: existing.id } });
         await logOutboxEventTx(tx, {
-          eventType: "ACCESS_OVERRIDE_REVOKED",
+          eventType: OUTBOX_EVENT_TYPES.ACCESS_OVERRIDE_REVOKED,
           entityId: existing.id,
           entityType: "AccessOverride",
           communityId,
@@ -1389,7 +1392,7 @@ export function getMemberService(
         });
 
         await logOutboxEventTx(tx, {
-          eventType: "BADGE_ASSIGNED",
+          eventType: OUTBOX_EVENT_TYPES.BADGE_ASSIGNED,
           entityId: created.id,
           entityType: "Badge",
           communityId,
@@ -1457,7 +1460,7 @@ export function getMemberService(
       await prismaClient.$transaction(async (tx: any) => {
         await tx.badge.delete({ where: { id: existing.id } });
         await logOutboxEventTx(tx, {
-          eventType: "BADGE_REVOKED",
+          eventType: OUTBOX_EVENT_TYPES.BADGE_REVOKED,
           entityId: existing.id,
           entityType: "Badge",
           communityId,
@@ -1547,7 +1550,7 @@ export function getMemberService(
       await bumpPolicyVersion(communityId);
 
       await logOutboxEventTx(prismaClient, {
-        eventType: "POLICY_UPDATED",
+        eventType: OUTBOX_EVENT_TYPES.POLICY_UPDATED,
         entityId: policy.id,
         entityType: "AccessPolicy",
         communityId,
