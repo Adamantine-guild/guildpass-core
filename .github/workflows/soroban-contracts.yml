@@ -1,0 +1,92 @@
+name: Soroban Contracts - Build & Test
+
+on:
+  push:
+    branches: [main, master, develop]
+    paths:
+      - "contracts-soroban/**"
+      - ".github/workflows/soroban-contracts.yml"
+  pull_request:
+    branches: [main, master, develop]
+    paths:
+      - "contracts-soroban/**"
+      - ".github/workflows/soroban-contracts.yml"
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  build-and-test:
+    name: Build + Unit Tests (Soroban)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (stable, 1.79+)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.79.0"
+          targets: "wasm32-unknown-unknown"
+          components: "rustfmt, clippy"
+
+      - name: Install cargo-soroban
+        run: |
+          cargo install --locked soroban-cli --version 21.2.0 || true
+          soroban --version
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            contracts-soroban/target
+          key: ${{ runner.os }}-soroban-cargo-${{ hashFiles('contracts-soroban/**/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-soroban-cargo-
+
+      - name: Format check
+        working-directory: contracts-soroban
+        run: cargo fmt --all -- --check
+
+      - name: Clippy lints
+        working-directory: contracts-soroban/membership-nft
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Run unit tests (host environment)
+        working-directory: contracts-soroban/membership-nft
+        run: cargo test -- --nocapture
+
+      - name: Build .wasm (release, optimized for on-chain)
+        working-directory: contracts-soroban/membership-nft
+        run: |
+          rustup target add wasm32-unknown-unknown
+          cargo build --target wasm32-unknown-unknown --release
+
+      - name: Optimize .wasm + validate on-chain size
+        run: |
+          WASM="contracts-soroban/membership-nft/target/wasm32-unknown-unknown/release/guildpass_membership_nft.wasm"
+          if command -v soroban >/dev/null 2>&1; then
+            soroban contract optimize --wasm "$WASM" || true
+          fi
+          SIZE=$(stat --printf="%s" "$WASM" 2>/dev/null || wc -c < "$WASM")
+          echo "WASM size (bytes): $SIZE"
+          # Soroban mainnet max is currently ~512KB; warn above 400KB
+          if [ "$SIZE" -gt 524288 ]; then
+            echo "::error::WASM exceeds 512KB Soroban hard limit (size=$SIZE)"
+            exit 1
+          elif [ "$SIZE" -gt 409600 ]; then
+            echo "::warning::WASM > 400KB; approaching Soroban size limit (size=$SIZE)"
+          fi
+
+      - name: Upload .wasm artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: guildpass-membership-nft-wasm
+          path: |
+            contracts-soroban/membership-nft/target/wasm32-unknown-unknown/release/*.wasm
+          retention-days: 60

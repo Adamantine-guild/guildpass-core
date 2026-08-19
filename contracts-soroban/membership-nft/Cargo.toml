@@ -1,0 +1,19 @@
+[package]
+name = "guildpass-membership-nft"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "guildpass_membership_nft"
+
+[features]
+default = []
+testutils = ["soroban-sdk?/testutils"]
+
+[dependencies]
+soroban-sdk = { workspace = true }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }
