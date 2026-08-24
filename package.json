@@ -14,6 +14,7 @@
     "db:studio": "pnpm --filter @guildpass/api prisma:studio"
   },
   "devDependencies": {
+    "@types/node": "^20.19.43",
     "typescript": "5.9.3"
   }
 }
