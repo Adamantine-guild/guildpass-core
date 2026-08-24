@@ -1,3 +1,38 @@
+CREATE TABLE "MembershipToken" (
+    "id" TEXT NOT NULL,
+    "tokenId" INTEGER NOT NULL,
+    "chainId" INTEGER NOT NULL DEFAULT 31337,
+    "contractAddress" TEXT NOT NULL DEFAULT '0x0000000000000000000000000000000000000000',
+    "memberId" TEXT NOT NULL,
+    "state" "MembershipState" NOT NULL,
+    "expiresAt" TIMESTAMP(3),
+    "renewedAt" TIMESTAMP(3),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "MembershipToken_pkey" PRIMARY KEY ("id")
+);
+
+CREATE UNIQUE INDEX "MembershipToken_chainId_contractAddress_tokenId_key"
+    ON "MembershipToken"("chainId", "contractAddress", "tokenId");
+
+CREATE UNIQUE INDEX "MembershipToken_chainId_tokenId_key"
+    ON "MembershipToken"("chainId", "tokenId");
+
+CREATE INDEX "MembershipToken_state_expiresAt_idx"
+    ON "MembershipToken"("state", "expiresAt");
+
+CREATE INDEX "MembershipToken_tokenId_idx"
+    ON "MembershipToken"("tokenId");
+
+CREATE INDEX "MembershipToken_chainId_idx"
+    ON "MembershipToken"("chainId");
+
+ALTER TABLE "MembershipToken"
+    ADD CONSTRAINT "MembershipToken_memberId_fkey"
+    FOREIGN KEY ("memberId")
+    REFERENCES "Member"("id")
+    ON DELETE RESTRICT
+    ON UPDATE CASCADE;
 -- Suspension appeals workflow (#249)
 -- Also restores Membership.activeTokenId for multi-token membership relation.
 

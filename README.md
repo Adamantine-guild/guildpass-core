@@ -32,7 +32,7 @@ This monorepo contains a runnable MVP backend and protocol foundation. It is int
 - Node.js 18+
 - npm 9+
 - Docker (for PostgreSQL and Redis)
-- [Foundry](https://book.getfoundry.sh/getting-started/installation) (for Solidity contracts)
+- Rust 1.80+ (for Cadence contracts)
 
 ### Steps
 

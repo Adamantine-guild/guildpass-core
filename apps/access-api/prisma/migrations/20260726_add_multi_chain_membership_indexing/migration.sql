@@ -66,7 +66,9 @@ ALTER TABLE "Community" ADD COLUMN "chainConfigId" TEXT;
 CREATE INDEX "Community_chainConfigId_idx" ON "Community"("chainConfigId");
 ALTER TABLE "Community" ADD CONSTRAINT "Community_chainConfigId_fkey" FOREIGN KEY ("chainConfigId") REFERENCES "ChainConfig"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
-ALTER TABLE "Membership" ADD COLUMN "chainId" INTEGER;
+ALTER TABLE "Membership" 
+ADD COLUMN "tokenId" INTEGER,
+ADD COLUMN "chainId" INTEGER;
 DROP INDEX IF EXISTS "Membership_tokenId_key";
 CREATE UNIQUE INDEX "Membership_chainId_tokenId_key" ON "Membership"("chainId", "tokenId");
 CREATE INDEX "Membership_chainId_idx" ON "Membership"("chainId");
