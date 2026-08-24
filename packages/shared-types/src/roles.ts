@@ -13,3 +13,11 @@ export interface RoleDefinition {
   name: string;
   description?: string | null;
 }
+
+export interface RoleAssignment {
+  id: string;
+  memberId: string;
+  roleDefinitionId: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
