@@ -9,7 +9,10 @@ const configSchema = z.object({
     .number()
     .int()
     .positive()
-    .default(3000)
+    .default(3000),
+
+  DATABASE_URL: z.string().optional(),
+  DIRECT_URL: z.string().optional()
 });
 
 export type AppConfig = z.infer<typeof configSchema>;
