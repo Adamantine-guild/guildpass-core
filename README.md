@@ -1,536 +1,1268 @@
-# GuildPass Core Monorepo (MVP)
+<p align="center">
+  <img src="./logo/logo.png" alt="GuildPass Logo" width="180" />
+</p>
 
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](./LICENSE)
-[![Node](https://img.shields.io/badge/node-%3E%3D18-green?style=flat-square)](https://nodejs.org)
+<h1 align="center">GuildPass Core</h1>
 
-GuildPass provides **wallet-based membership and token-gated community infrastructure** for the Web3 / EVM ecosystem.
+<p align="center">
+  <strong>Open infrastructure for membership, access, governance and contribution-driven communities on Stellar.</strong>
+</p>
 
-This monorepo contains a runnable MVP backend and protocol foundation. It is intentionally not feature-complete, but is real, demoable, and extendable.
-
-> **Part of the [Adamantine-Guild](https://github.com/Adamantine-Guild) project.**
-
----
-
-## Structure
-
-| Path | Purpose |
-| ---- | ------- |
-| `apps/access-api` | Fastify REST API (TypeScript, Prisma, PostgreSQL, OpenAPI) |
-| `packages/contracts` | TypeScript helpers for on-chain contract addresses and ABIs |
-| `packages/shared-types` | Shared types and enums for roles, membership, and decisions |
-| `packages/policy-engine` | Simple, explainable access policy engine |
-| `packages/contribution-engine` | Pluggable signal-based contribution scoring engine |
-| `packages/sdk-lite` | Minimal HTTP client for the access API |
-| `contracts/` | Foundry Solidity project (MembershipNFT + tests + deploy scripts) |
+<p align="center">
+  <a href="https://github.com/Adamantine-guild/guildpass-core">
+    <img src="https://img.shields.io/badge/GitHub-GuildPass%20Core-181717?logo=github" alt="GitHub Repository" />
+  </a>
+  <img src="https://img.shields.io/badge/Version-Core%20V2-6F42C1" alt="GuildPass Core V2" />
+  <img src="https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript&logoColor=white" alt="TypeScript" />
+  <img src="https://img.shields.io/badge/Node.js-20+-339933?logo=node.js&logoColor=white" alt="Node.js" />
+  <img src="https://img.shields.io/badge/Stellar-Soroban-7C3AED" alt="Stellar Soroban" />
+  <img src="https://img.shields.io/badge/License-See%20LICENSE-blue" alt="License" />
+</p>
 
 ---
 
-## Quick Start
+## GuildPass
 
-### Prerequisites
+GuildPass is an open-source infrastructure project for communities that need programmable membership, access control, roles, governance, contribution tracking and rewards.
 
-- Node.js 18+
-- npm 9+
-- Docker (for PostgreSQL and Redis)
-- Rust 1.80+ (for Cadence contracts)
+`guildpass-core` contains the backend and core domain logic behind the GuildPass ecosystem.
 
-### Steps
+The project is being rebuilt as **GuildPass Core V2** with a cleaner architecture, stronger domain boundaries, reproducible infrastructure and a Stellar-first blockchain model.
+
+The goal is not simply to provide membership records. GuildPass is intended to provide a reusable foundation for communities that need to answer questions such as:
+
+- Is this wallet a recognised member of this community?
+- Is the membership currently valid?
+- Does the member have the required role?
+- Should this member be allowed to access a resource?
+- What contributions has the member made?
+- What rewards or role upgrades have they earned?
+- Which governance rules apply to the community?
+- What events should be recorded for auditing or downstream processing?
+- How should off-chain membership state interact with Stellar smart contracts?
+
+GuildPass Core provides the infrastructure on which those decisions can be built.
+
+---
+
+## Core V2
+
+GuildPass Core V2 is a ground-up rebuild of the original GuildPass Core implementation.
+
+The previous implementation remains preserved in Git history and through the project's pre-rebuild archive, while V2 establishes a smaller and more maintainable foundation for future development.
+
+The rebuild focuses on:
+
+- clear domain models;
+- deterministic access decisions;
+- modular application services;
+- reproducible database migrations;
+- strict TypeScript;
+- Stellar-native wallet support;
+- Soroban smart contracts;
+- reliable testing;
+- CI-gated pull requests;
+- contribution-friendly issue scopes;
+- auditable domain events;
+- separation between infrastructure and business logic.
+
+---
+
+## Current Status
+
+> GuildPass Core V2 is under active development.
+
+The current V2 foundation includes:
+
+- pnpm workspace configuration;
+- TypeScript monorepo configuration;
+- shared GuildPass domain types;
+- Fastify API foundation;
+- environment validation;
+- `/health` API endpoint;
+- local PostgreSQL infrastructure;
+- local Redis infrastructure;
+- contributor and repository governance files.
+
+Additional capabilities are being implemented incrementally through scoped contributor issues.
+
+A feature described in the architecture or roadmap below should not automatically be assumed to be production-ready.
+
+---
+
+## Architecture
+
+GuildPass Core is organised as a modular monorepo.
+
+```text
+guildpass-core/
+│
+├── apps/
+│   └── api/
+│       └── GuildPass HTTP API
+│
+├── packages/
+│   ├── shared-types/
+│   │   └── Shared domain contracts and TypeScript types
+│   │
+│   ├── policy-engine/
+│   │   └── Deterministic access-control decisions
+│   │
+│   ├── constitutional-engine/
+│   │   └── Community rules and constitutional constraints
+│   │
+│   ├── contribution-engine/
+│   │   └── Contribution evaluation and scoring
+│   │
+│   ├── governance-engine/
+│   │   └── Community governance logic
+│   │
+│   └── reward-engine/
+│       └── Rewards, badges and role progression
+│
+├── contracts/
+│   └── soroban/
+│       └── Stellar Soroban smart contracts
+│
+├── tests/
+│   └── integration/
+│
+├── docs/
+│
+├── logo/
+│
+├── docker-compose.yml
+├── pnpm-workspace.yaml
+├── tsconfig.base.json
+├── package.json
+├── .env.example
+└── README.md
+```
+
+Some directories shown above are part of the V2 architecture and may be introduced as their associated implementation issues are completed.
+
+---
+
+## Core Domains
+
+### Communities
+
+A Community represents an organisation or group operating through GuildPass.
+
+Communities provide the boundary for:
+
+- memberships;
+- roles;
+- governance;
+- resources;
+- access decisions;
+- contributions;
+- rewards.
+
+A community can define its own membership and permission model while using common GuildPass infrastructure.
+
+---
+
+### Membership
+
+Membership represents the relationship between a person or wallet and a GuildPass community.
+
+The V2 domain currently defines membership states including:
+
+```text
+active
+expired
+suspended
+```
+
+Membership logic is designed to support:
+
+- membership creation;
+- expiry;
+- suspension;
+- restoration;
+- membership-state evaluation;
+- eventual Soroban membership representation.
+
+---
+
+### Wallets
+
+GuildPass Core V2 is being designed with a **Stellar-first** wallet model.
+
+Wallet infrastructure will be responsible for:
+
+- validating Stellar addresses;
+- linking wallets to members;
+- preventing invalid or duplicate wallet relationships;
+- providing a stable identity boundary for blockchain interaction.
+
+The shared domain currently defines the supported wallet network as:
+
+```text
+stellar
+```
+
+Additional chains should only be introduced through an intentional architectural decision rather than by carrying forward legacy multichain complexity.
+
+---
+
+### Roles
+
+Roles provide community-level authorisation.
+
+Built-in role concepts currently include:
+
+```text
+admin
+member
+contributor
+```
+
+GuildPass is also designed to support community-defined role definitions.
+
+Roles are expected to participate directly in access decisions and governance policies.
+
+---
+
+### Access Control
+
+Access decisions are intended to be deterministic.
+
+Instead of controllers implementing permission logic independently, GuildPass uses a policy-engine model that evaluates relevant membership and role state and returns an explicit decision.
+
+Example:
+
+```ts
+interface AccessDecision {
+  allowed: boolean;
+  code: AccessDecisionCode;
+  reasons: string[];
+}
+```
+
+Possible decision codes include:
+
+```text
+ALLOW
+NOT_MEMBER
+MEMBERSHIP_EXPIRED
+MEMBERSHIP_SUSPENDED
+INSUFFICIENT_ROLE
+DENY
+```
+
+This makes access decisions easier to:
+
+- test;
+- audit;
+- explain;
+- consume from APIs;
+- reuse across GuildPass applications.
+
+---
+
+## Planned Access Flow
+
+A typical access request is intended to follow this path:
+
+```text
+Client
+  │
+  ▼
+GuildPass API
+  │
+  ▼
+Request validation
+  │
+  ▼
+Community + Membership state
+  │
+  ▼
+Role assignments
+  │
+  ▼
+Policy Engine
+  │
+  ▼
+AccessDecision
+  │
+  ├── ALLOW
+  │
+  └── DENY + reason
+```
+
+The planned API endpoint for this capability is:
+
+```http
+POST /v1/access/check
+```
+
+---
+
+## Governance
+
+The GuildPass governance engine will provide reusable domain logic for community governance.
+
+Rather than embedding governance behaviour directly inside routes or database queries, governance rules should be expressed through a dedicated engine.
+
+Planned areas include:
+
+- community rule evaluation;
+- permissions;
+- governance constraints;
+- rule-set validation;
+- integration with constitutional rules;
+- deterministic governance outcomes.
+
+---
+
+## Constitutional Rules
+
+GuildPass separates general governance logic from constitutional constraints.
+
+The constitutional engine is intended to represent rules that should not be bypassed by ordinary application behaviour.
+
+This provides a foundation for communities that want stronger guarantees around how governance decisions are evaluated.
+
+---
+
+## Contributions
+
+Communities often need more than binary membership.
+
+The GuildPass contribution engine is intended to track and evaluate meaningful participation, providing a foundation for systems such as:
+
+- contributor scores;
+- activity thresholds;
+- community progression;
+- reputation;
+- contribution-based privileges;
+- reward eligibility.
+
+Contribution logic should remain deterministic and independently testable.
+
+---
+
+## Rewards
+
+The reward engine will use community activity and contribution information to evaluate rewards.
+
+Potential reward outcomes include:
+
+- badges;
+- recognition;
+- role upgrades;
+- progression;
+- community-defined rewards.
+
+Reward evaluation should be separated from HTTP controllers and blockchain code so that the same rules can be reused by multiple GuildPass interfaces.
+
+---
+
+## Stellar and Soroban
+
+GuildPass Core V2 is adopting Stellar as its primary blockchain environment.
+
+Smart contracts are located under:
+
+```text
+contracts/soroban/
+```
+
+The initial contract direction focuses on GuildPass membership.
+
+The Soroban implementation is expected to complement the backend domain rather than duplicate all backend functionality on-chain.
+
+A simplified future relationship is:
+
+```text
+GuildPass API
+     │
+     ├──────────────┐
+     │              │
+     ▼              ▼
+PostgreSQL       Soroban
+     │           Contract
+     │              │
+     └──────┬───────┘
+            │
+            ▼
+      Membership State
+```
+
+The exact boundary between on-chain and off-chain responsibilities should remain explicit and documented as the contract architecture develops.
+
+---
+
+## Technology Stack
+
+### Backend
+
+- Node.js 20+
+- TypeScript
+- Fastify
+- Zod
+
+### Package Management
+
+- pnpm
+- pnpm workspaces
+
+### Data
+
+- PostgreSQL
+- Prisma ORM
+- Redis
+
+> Prisma integration is part of the Core V2 implementation roadmap and may depend on the current state of the relevant contributor issues.
+
+### Blockchain
+
+- Stellar
+- Soroban
+- Rust
+
+### Infrastructure
+
+- Docker
+- Docker Compose
+- GitHub Actions
+
+---
+
+## Prerequisites
+
+Before working on GuildPass Core, install:
+
+- Node.js 20 or newer
+- pnpm
+- Docker
+- Docker Compose
+- Git
+- Rust and Stellar/Soroban tooling when working on smart contracts
+
+Check your Node version:
 
 ```bash
-# 1. Clone and enter the repo
-git clone https://github.com/Adamantine-Guild/guildpass-core.git
+node --version
+```
+
+Check pnpm:
+
+```bash
+pnpm --version
+```
+
+The repository currently uses:
+
+```text
+pnpm 11.16.0
+```
+
+---
+
+## Getting Started
+
+### 1. Fork the repository
+
+Fork:
+
+```text
+Adamantine-guild/guildpass-core
+```
+
+to your own GitHub account.
+
+---
+
+### 2. Clone your fork
+
+```bash
+git clone https://github.com/<YOUR_USERNAME>/guildpass-core.git
 cd guildpass-core
-
-# 2. Start PostgreSQL and Redis
-docker compose up -d
-
-# 3. Install dependencies
-npm install
-
-# 4. Set up environment variables
-cp .env.example .env
-# Edit .env — set DATABASE_URL, REDIS_URL, etc.
-
-# 5. Generate Prisma client and run migrations
-npm run -w access-api prisma:migrate
-
-# 6. Seed the database with sample data
-npm run seed
-
-# 7. Start the API in development mode
-npm run dev
 ```
-
-OpenAPI docs available at: **http://localhost:3000/docs**
 
 ---
 
-## Contracts (Solidity / Foundry)
-
-The `MembershipNFT` is a simple ERC-721 with expiry and suspension semantics, and admin-controlled mint/renew. It supports **multi-community memberships**, meaning a single deployed contract can represent memberships across multiple communities via the `communityId` mapping. Events emitted are suitable for off-chain indexing and include the associated `communityId` to easily map to the backend state.
+### 3. Add the upstream repository
 
 ```bash
-# Build contracts
-npm run contracts:build   # runs: forge build
-
-# Test contracts
-npm run contracts:test    # runs: forge test
-
-# Deploy (example script)
-npm run contracts:deploy  # runs: forge script contracts/script/Deploy.s.sol --broadcast
+git remote add upstream https://github.com/Adamantine-guild/guildpass-core.git
 ```
 
-After deploying, set `MEMBERSHIP_NFT_ADDRESS`, `CHAIN_ID`, and `RPC_URL` in `.env` for a backward-compatible single-chain deployment. For multi-chain deployments, set `MEMBERSHIP_CHAIN_CONFIGS` to a JSON array of `{ name, chainId, rpcUrl, membershipNftAddress }` objects and associate each community with the matching `ChainConfig` row. The multi-chain indexing design and migration notes are documented in [`docs/multi-chain-membership-indexing.md`](docs/multi-chain-membership-indexing.md).
-
----
-
-## API Versioning & Compatibility
-
-The GuildPass Access API follows a strict versioning and compatibility contract for all `/v1` routes:
-
-- **Version Header**: All API responses include an `x-guildpass-api-version` header (e.g., `1.0.0`) indicating the version being served.
-- **Server Version**: The `GET /health/live` endpoint exposes the current server API version.
-- **Backwards Compatibility**: We commit to maintaining backwards compatibility for all `/v1` routes. We will not remove fields from responses or require new mandatory request parameters without bumping the major API version (e.g., to `/v2`).
-- **Deprecation**: If a `/v1` route or field needs to be deprecated, we will serve a `deprecation: true` header on those responses and provide guidance in our documentation. Deprecated endpoints will continue to function for a minimum sunset period before removal. Clients are encouraged to monitor the `deprecation` header.
-
----
-
-## API Endpoints (MVP)
-
-| Method | Path | Description |
-| ---- | ---- | ----------- |
-| GET | `/v1/memberships/:wallet` | Membership status summary by wallet |
-| GET | `/v1/members/:wallet` | Member profile (with membership and roles) |
-| POST | `/v1/access/check` | Access decision for `{ wallet, communityId, resource }` (schema-validated; per-IP/API-key and per-wallet rate limits return `429` + `Retry-After`) |
-| GET | `/v1/communities/:communityId/members` | Admin member listing (offset pagination: `page` default 1, `pageSize` default 25 / max 100, `sort` `joinedAt`\|`role`, optional `role` / `status`) |
-
-Responses include `allowed`/`denied` plus human-readable and machine-readable reasons.
-
----
-
-
-### Requester Identity Header
-
-Admin-only routes resolve the caller's wallet address through the shared requester identity helper. API clients should send the `x-wallet` header. For backwards compatibility, the server accepts the following requester-wallet headers in this precedence order:
-
-1. `x-wallet` (preferred)
-2. `x-user-wallet`
-3. `x-requester-wallet`
-
-If more than one requester-wallet header is present, the first header in that order wins. Contributors adding routes that need requester identity should use `resolveRequesterWallet(req)` instead of parsing headers in route handlers.
-
-## OpenAPI Specification
-
-A stable, machine-readable OpenAPI specification is generated for all public API routes to support SDKs and integrations.
-
-- **Specification File:** [docs/openapi.json](./docs/openapi.json)
-
-**For Contributors:**
-When adding or modifying routes in the Access API, you must update the checked-in specification. Run the following command from the root of the repository:
+Verify:
 
 ```bash
-npm run -w access-api openapi:generate
+git remote -v
 ```
 
-CI will automatically verify that the OpenAPI specification is up-to-date with your code changes.
+You should have:
+
+```text
+origin    your fork
+upstream  Adamantine-guild/guildpass-core
+```
 
 ---
 
-## Data Model
-
-Prisma schema includes: `communities`, `wallets`, `members`, `memberships`, `roles`, `access policies`, `profiles`, `badges` (placeholder), `audit_events`, and `outbox_events`.
-
-For an entity-relationship diagram and a per-table explanation of how these models connect (e.g. how `memberships` ties to `wallets` and `communities`, or how `access policies` reference roles), see [`docs/data-model.md`](docs/data-model.md).
-
-- [Suspension Appeals](./docs/suspension-appeals.md) — Appeal submission, admin review, and authorized on-chain unsuspend outbox flow
-
-
----
-
-## Integration Event Outbox
-
-The API uses the **transactional outbox pattern** to emit reliable integration events when domain state changes. Every mutation that affects memberships, roles, policies, resources, or access decisions writes a durable event to the `OutboxEvent` table within the same database transaction as the state change. This guarantees that no event is lost on request failure or process restart.
-
-### Outbox Processing Contract
-
-| Concept | Description |
-| ------- | ----------- |
-| **Event creation** | Events are written atomically with the domain mutation inside a Prisma `$transaction`. If the mutation fails, no event is created. If the event write fails, the entire transaction rolls back. |
-| **Event types** | `MEMBERSHIP_CREATED`, `MEMBERSHIP_UPDATED`, `MEMBERSHIP_DELETED`, `MEMBERSHIP_SUSPENDED`, `MEMBERSHIP_UNSUSPENDED`, `MEMBERSHIP_REINSTATED`, `MEMBERSHIP_UNSUSPEND_REQUESTED`, `ROLE_ASSIGNED`, `ROLE_REMOVED`, `RESOURCE_CREATED`, `RESOURCE_UPDATED`, `RESOURCE_ARCHIVED`, `POLICY_CREATED`\*, `POLICY_UPDATED`\*, `POLICY_DELETED`\*, `ACCESS_DECISION`, `ACCESS_OVERRIDE_CREATED`, `ACCESS_OVERRIDE_UPDATED`, `ACCESS_OVERRIDE_REVOKED`, `MEMBER_ATTENDED`, `EVENT_CREATED`, `EVENT_UPDATED`, `EVENT_DELETED`, `EVENT_ATTENDANCE_RECORDED`, `BADGE_ASSIGNED`, `BADGE_REVOKED` |
-| **Statuses** | `pending` (awaiting delivery), `delivered` (successfully processed), `failed` (permanently failed after max retries) |
-| **Retry strategy** | Exponential backoff: `nextRetryAt = now + 10 × 2^retryCount` seconds. Default max 5 retries. |
-| **Delivery worker** | `outboxWorker` polls for pending events every `OUTBOX_WORKER_INTERVAL_MS` (default 10s) and delegates to a pluggable handler. The default handler is a no-op logger. |
-| **Pruning** | Delivered events older than 7 days are automatically pruned to prevent unbounded table growth. The predicate explicitly excludes `pending` and `failed` events regardless of age. |
-
-\* `POLICY_CREATED`/`POLICY_UPDATED`/`POLICY_DELETED` are reserved for future CRUD on the base `AccessPolicy` (per-resource `ruleType`) record, which today is only read, not managed via an API. Wallet-specific **access overrides** (see Policy Engine, above) are a separate concept with their own `ACCESS_OVERRIDE_*` event types.
-
-### Manual pruning
-
-Operators can run the same safety-scoped pruning logic on demand:
-
-```bash
-npm run -w access-api outbox:prune -- --days 14
-```
-
-`--days=N` is also supported. If the flag is omitted, the script reads
-`OUTBOX_RETENTION_DAYS`, then defaults to 7 days. The value must be greater
-than zero and may be fractional. Only rows with `status = delivered` and a
-`deliveredAt` timestamp strictly older than the calculated cutoff are deleted;
-events exactly on the boundary are retained.
-
-The script uses `DATABASE_URL` through the normal Prisma configuration and
-prints the number of deleted events before disconnecting.
-
-### Delivery Guarantees
-
-The outbox mechanism guarantees **at-least-once** delivery.
-
-- If a consumer (or webhook handler) successfully processes an event, but the outbox worker crashes or is restarted before it can mark the event as `delivered` in the database, the event **will be redelivered** on the next poll.
-- To handle redeliveries safely, consumers **must be idempotent**.
-- Every outbox event payload explicitly includes a stable, unique `id` and a `createdAt` timestamp. Consumers should use `id` (e.g., checking it against a cache or database table of processed IDs) to de-duplicate incoming events.
-- See `@guildpass/sdk-lite` for an `IdempotentWebhookConsumer` helper demonstrating this pattern.
-
-### Horizontal scaling (multi-instance)
-
-It is safe to run multiple `access-api` processes (or `OUTBOX_WORKER_COUNT` shards within one process) against the same database. Coordination uses **Postgres row-level locking**, not a Redis leader lock:
-
-| Approach | How it works | Trade-off |
-| -------- | ------------ | --------- |
-| **Chosen: `SELECT … FOR UPDATE SKIP LOCKED` + claim lease** | Each poll atomically claims a disjoint batch (`claimPendingOutboxEvents`), stamping `claimedBy` / `claimExpiresAt`. Concurrent workers skip locked rows and process different events in parallel. If a worker dies mid-batch, the lease expires and another worker reclaims the rows. | Throughput scales with worker count. Cross-worker delivery order is no longer strictly `createdAt`-ascending under contention. |
-| **Alternative: Redis distributed lock / leader election** | One leader holds `SET key NX PX <ttl>` (with renewal) and is the only process allowed to poll. | Simpler mental model (single active drain), but serializes all delivery through one instance — no parallel drain — and adds a Redis dependency for correctness of the outbox path. Redis is already used elsewhere; we still prefer Postgres locking so outbox delivery stays correct even if Redis is down. |
-
-Lock TTL for crash recovery is `OUTBOX_WORKER_CLAIM_LEASE_MS` (the claim lease). There is no separate Redis lock renewal interval because leadership is not used.
-
-Prometheus counters `outbox_events_delivered_total` / `outbox_events_failed_total` and gauge `outbox_worker_batch_size` include a `worker_id` label so multi-instance fleets are observable. Set `OUTBOX_WORKER_ID` to a stable pod/hostname when you want attributable series across restarts.
-
-### Configuration
-
-| Environment Variable | Default | Description |
-| -------------------- | ------- | ----------- |
-| `OUTBOX_WORKER_INTERVAL_MS` | `10000` | Polling interval per shard (ms) |
-| `OUTBOX_WORKER_BATCH_SIZE` | `50` | Max events per shard per poll |
-| `OUTBOX_WORKER_COUNT` | `1` | Number of concurrent shards for horizontal scaling |
-| `OUTBOX_WORKER_MIN_BATCH_SIZE` | `5` | Min batch size under backpressure |
-| `OUTBOX_WORKER_CLAIM_LEASE_MS` | `60000` | How long a claimed batch is held before another worker may reclaim it after a crash (ms). Must exceed worst-case handler latency. |
-| `OUTBOX_WORKER_ID` | *(random UUID)* | Stable identity for claim leases and `worker_id` metric labels; optional |
-
-See also `apps/access-api/README.md` for crash-recovery and ordering details.
-
-### Pluggable Handler
-
-The outbox worker accepts a custom `OutboxEventHandler` function. Replace the default no-op with your own delivery logic (HTTP webhook, NATS, Kafka, analytics pipeline, etc.):
-
-```typescript
-import { createOutboxWorker, OutboxEventHandler } from './workers/outboxWorker';
-
-const myHandler: OutboxEventHandler = async (event) => {
-  await fetch('https://hooks.example.com/integration', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(event),
-  });
-};
-
-const worker = createOutboxWorker({ intervalMs: 10_000, handler: myHandler });
-worker.start();
-```
-
-### Production Webhook Handler
-
-`createWebhookHandler` (`apps/access-api/src/handlers/webhookHandler.ts`) is a
-ready-to-use `OutboxEventHandler` that delivers events as signed HTTP
-webhooks to every active `WebhookSubscription` registered for a community,
-filtered by event type.
-
-Enable it in the process entrypoint with `OUTBOX_WEBHOOK_ENABLED=true` (see
-`.env.example`), or wire it manually:
-
-```typescript
-import { createOutboxWorker } from './workers/outboxWorker';
-import { createWebhookHandler } from './handlers/webhookHandler';
-
-const worker = createOutboxWorker({ intervalMs: 10_000, handler: createWebhookHandler() });
-worker.start();
-```
-
-A `WebhookSubscription` row (`communityId`, `url`, `secret`, `eventTypes[]`)
-registers where a community's events should be delivered. An empty
-`eventTypes` array means "all event types".
-
-#### Webhook Signature Verification
-
-Every delivered request is HMAC-SHA256 signed with the subscription's
-per-community secret, and includes anti-replay fields:
-
-| Header | Description |
-| ------ | ----------- |
-| `X-GuildPass-Signature` | `hex(HMAC_SHA256(secret, "${timestamp}.${nonce}.${body}"))` |
-| `X-GuildPass-Timestamp` | Unix epoch milliseconds when the request was signed |
-| `X-GuildPass-Nonce` | Random UUID, unique per delivery attempt |
-
-To verify a webhook on the receiving side:
-
-1. Recompute the HMAC from your stored secret, the received timestamp,
-   nonce, and raw request body, and compare it to `X-GuildPass-Signature`
-   using a constant-time comparison (never `===` on secrets/signatures).
-2. Reject the request if `X-GuildPass-Timestamp` is older than your
-   tolerance window (5 minutes recommended) — this bounds how long a
-   captured request could be replayed.
-3. Reject the request if you've already processed `X-GuildPass-Nonce`
-   (e.g. check-and-set it in Redis with a TTL matching your tolerance
-   window) — the timestamp check alone does not prevent replay *within*
-   the tolerance window.
-
-`verifyWebhookSignature` in `webhookHandler.ts` is a reference
-implementation of steps 1–2 (nonce tracking is necessarily your
-application's responsibility, since it requires storage this library
-doesn't own). A frozen HMAC test vector for consumer implementations is
-documented in `docs/webhook-signature-verification.md` and asserted in
-`apps/access-api/src/handlers/webhookHandler.test.ts`.
-
-If **any** subscription delivery for an event fails (non-2xx response,
-timeout, network error), the whole event is re-queued through the outbox's
-existing exponential-backoff retry — the handler does not partially retry
-just the failed subscriptions. Webhook consumers should therefore be
-idempotent per `(event.id, X-GuildPass-Nonce)`.
-
-#### Dead-Letter Store
-
-An event that exhausts the outbox's `maxRetries` (default 5) is no longer
-just marked `failed` and pruned after 7 days — it's captured in
-`DeadLetterEvent` with its failure reason and retry count, inspectable and
-manually retriable via:
-
-| Method | Path | Description |
-| ------ | ---- | ----------- |
-| GET | `/v1/communities/:communityId/dead-letter-events` | List dead-lettered events for a community, optionally filtered by `?status=` |
-| POST | `/v1/communities/:communityId/dead-letter-events/:id/retry` | Re-enqueue a dead-lettered event as a fresh pending `OutboxEvent` |
-| GET | `/v1/communities/:communityId/outbox/failed` | Alias of the list endpoint (defaults to `status=pending`) |
-| POST | `/v1/communities/:communityId/outbox/:id/retry` | Alias of the retry endpoint |
-
-### Observability
-
-| Metric | Type | Labels |
-| ------ | ---- | ------ |
-| `outbox_events_created_total` | Counter | `event_type` |
-| `outbox_events_delivered_total` | Counter | `event_type` |
-| `outbox_events_failed_total` | Counter | `event_type` |
-
----
-
-## Policy Engine
-
-Simple rules: `PUBLIC`, `MEMBERS_ONLY`, `ADMINS_ONLY`, `CONTRIBUTORS_OR_ADMINS`.
-
-Role resolution combines:
-- Membership state (adds `member` role when active)
-- Backend role assignments (including custom role hierarchies and delegated grants)
-- **Manual access overrides** — an explicit `ALLOW`/`DENY` for a single `(wallet, communityId, resource)` triple, e.g. a temporary ban or a one-off grant for a partner wallet. An active override is checked **before** any rule evaluation and, if present, short-circuits the decision — it takes precedence over every role- or membership-derived outcome. Overrides are managed via the `/v1/communities/:communityId/overrides` admin routes below and expire automatically via their optional `expiresAt`.
-
-**Full spec** (policy semantics, exact role-resolution algorithm, override precedence, worked examples): [`packages/policy-engine/README.md`](./packages/policy-engine/README.md).
-
-### Managing access overrides
-
-| Method | Path | Description |
-| ------ | ---- | ----------- |
-| POST | `/v1/communities/:communityId/overrides` | Create or update an override for a wallet/resource pair (admin only) |
-| GET | `/v1/communities/:communityId/overrides` | List overrides for a community, including expired ones (admin only) |
-| DELETE | `/v1/communities/:communityId/overrides/:wallet/:resource` | Revoke an override (admin only) |
-
-Every mutation is written transactionally with an `ACCESS_OVERRIDE_CREATED`, `ACCESS_OVERRIDE_UPDATED`, or `ACCESS_OVERRIDE_REVOKED` outbox event (see below).
-
----
-
-## Testing
-
-```bash
-# All tests across workspaces
-npm run test
-
-# Policy engine unit tests
-npm run -w @guildpass/policy-engine test
-
-# Access API unit and integration tests
-npm run -w access-api test
-
-# Contract tests (Foundry)
-npm run contracts:test
-
-# TypeScript type checking
-npm run typecheck
-```
-
-### Prisma migration checks
-
-When you change the Prisma schema or migration history, validate the database workflow locally before opening a pull request:
+### 4. Install dependencies
 
 ```bash
 pnpm install --frozen-lockfile
-createdb guildpass_test
-createdb guildpass_shadow
-DATABASE_URL=postgresql://localhost:5432/guildpass_test \
-SHADOW_DATABASE_URL=postgresql://localhost:5432/guildpass_shadow \
-pnpm --filter access-api prisma:validate
-pnpm --filter access-api prisma:generate
-pnpm --filter access-api prisma:migrate:deploy
-pnpm --filter access-api prisma:migrate:check
 ```
 
-The CI workflow runs the same validation steps against a disposable PostgreSQL service and a shadow database so drift is caught before merge.
+For local dependency updates:
 
-Not every schema change is safe to ship as a single direct migration —
-see [CONTRIBUTING.md > Database Migrations: Direct vs. Expand/Contract](./CONTRIBUTING.md#database-migrations-direct-vs-expandcontract)
-for the decision framework, a worked example, and the reusable
-batched-backfill utility (`apps/access-api/src/services/backfillService.ts`)
-for populating large tables without holding long-running locks.
-
-### Integration Testing
-
-The **Membership Integration Test** (`apps/access-api/src/membership-integration.test.ts`) validates the complete flow from MembershipNFT contract events to API access decisions:
-
-- **Contract Events** → Database State → Policy Engine → API Response
-- Tests event ingestion (MembershipMinted, MembershipRenewed, MembershipSuspended)
-- Validates active, expired, and suspended membership scenarios
-- Proves access control decisions reflect actual membership state
-- Can run locally without a live blockchain
-
-See [apps/access-api/INTEGRATION_TEST_GUIDE.md](./apps/access-api/INTEGRATION_TEST_GUIDE.md) for detailed documentation.
-
----
-
-## Linting
-
-This project uses ESLint to maintain code quality.
-
-- **Run linting for all packages:** `npm run lint`
-- **Run linting for a specific package:** `npm run lint -w <package-name>`
-
----
-
-## Environment
-
-See [`.env.example`](./.env.example) for all required variables.
-
----
-
----
-
-## On-Chain Reconciliation Worker
-
-The `onChainReconciliationWorker` is a defense-in-depth mechanism that periodically cross-checks the database's membership state against the **actual current state returned by the contract's view functions** (`ownerOf`, `isActive`, `expiry`, `suspended`, `communityOf`).
-
-### Why this is needed
-
-The `IndexerWorker` keeps off-chain state current by applying live contract events, but its correctness depends entirely on every relevant event being captured and applied without error. If an event is missed (due to a reorg edge case, a missed event type, or a future application bug), the database will silently drift from on-chain truth. The `onChainReconciliationWorker` catches any such drift — regardless of cause — through a direct, systematic comparison.
-
-### What it does
-
-For each sampled `MembershipToken`, the worker:
-
-1. Reads the current on-chain state via `OnChainViewProvider.getTokenState(tokenId)` (five view-function calls: `ownerOf`, `isActive`, `expiry`, `suspended`, `communityOf`).
-2. Compares each field against the database record.
-3. On any mismatch, writes a `RECONCILIATION_DISCREPANCY` audit event with full structured detail (`beforeState` = on-chain snapshot, `afterState` = database snapshot).
-4. **Does not auto-correct either side** — a mismatch could mean the DB is stale, or that the RPC read is momentarily at a different block than the indexer. An operator must investigate and apply the correct remediation.
-
-### Discrepancy audit events
-
-Query for outstanding discrepancies:
-
-```sql
-SELECT * FROM audit_events
-WHERE event_type = 'RECONCILIATION_DISCREPANCY'
-ORDER BY created_at DESC;
+```bash
+pnpm install
 ```
 
-Each event contains:
-- `walletId` / `communityId` — which member
-- `beforeState` — on-chain values at read time (`owner`, `isActive`, `expiry`, `suspended`, `communityId`)
-- `afterState` — database values (`owner`, `isActive`, `expiry`, `suspended`, `tokenId`, `memberId`)
-- `reasonCode: "ON_CHAIN_STATE_MISMATCH"`
-- `correlationId` — links the event to a specific reconciliation pass and tokenId
+---
 
-### Sampling strategy and RPC cost
+### 5. Configure environment variables
 
-| Option | Default | Description |
-| ------ | ------- | ----------- |
-| `sampleSize` | `50` | Max tokens checked per pass. Use `Infinity` for exhaustive (small communities only). |
-| `randomSample` | `true` | Randomly subsample so all tokens are reached over time, not just the oldest. |
-| `communityId` | – | Restrict sample to one community. |
-| `activeOnly` | `true` | Only check `active`/`suspended` tokens (highest operational relevance). |
+Copy the example environment file:
 
-**RPC budget per pass (worst case):** `sampleSize × 5 eth_call`
+```bash
+cp .env.example .env
+```
 
-With defaults (sampleSize=50, interval=5 min): ≈250 calls/5 min — well within free-tier limits of all major managed RPC providers.
+The local development defaults are:
 
-### Configuration
+```env
+NODE_ENV=development
+PORT=3000
 
-| Environment Variable | Default | Description |
-| -------------------- | ------- | ----------- |
-| `ON_CHAIN_RECONCILIATION_INTERVAL_MS` | `300000` | How often the worker runs (ms). Default: 5 minutes. |
-| `ON_CHAIN_RECONCILIATION_SAMPLE_SIZE` | `50` | Max tokens checked per pass. |
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/guildpass
+DIRECT_URL=postgresql://postgres:postgres@localhost:5432/guildpass
 
-### Enabling in production
+REDIS_URL=redis://localhost:6379
+```
 
-The worker is instantiated but **disabled by default** (`start()` is commented out in `index.ts`) until a real `OnChainViewProvider` is configured. To enable:
-
-1. Implement `OnChainViewProvider` backed by your RPC endpoint (see the comment block in `apps/access-api/src/index.ts` for a ready-to-paste `ethers.js` example).
-2. Set `MEMBERSHIP_NFT_ADDRESS` and `RPC_URL` in `.env`.
-3. Uncomment `onChainReconciliationWorker.start()` in `index.ts`.
+Do not commit `.env`.
 
 ---
 
-## Multi-Chain Architecture & Resolution
+## Local Infrastructure
 
-GuildPass supports deploying and indexing `MembershipNFT` contracts across multiple EVM chains (e.g. Ethereum Mainnet, Polygon, Arbitrum) for the same community.
+GuildPass Core uses Docker Compose for local infrastructure.
 
-### Key Concepts
+Start the services:
 
-- **Community Contract Mapping**: A community can be configured with multiple `(chainId, contractAddress)` contracts via `CommunityContract`.
-- **Scoped Data Model**: `MembershipToken` records carry explicit `chainId` and `contractAddress` fields and are uniquely identified by `(chainId, contractAddress, tokenId)`.
-- **Collision-Free Event Ingestion**: `ProcessedEvent` idempotency records are scoped by `(chainId, contractAddress, transactionHash, logIndex)` to eliminate cross-chain collisions.
-- **Cross-Chain Resolution Policy**:
-  - **Suspension-First (Deny Overrides Allow)**: If a wallet's membership state on ANY configured chain is `suspended`, the resolved cross-chain membership status for that community is `suspended` (access denied).
-  - **Any-Active-Grants**: If not suspended on any chain, holding an active, non-expired membership token on AT LEAST ONE configured chain grants `active` membership (access allowed).
-  - **Expiration Fallback**: If not suspended or active, having an expired membership token on any chain resolves to `expired`.
-- **Single-Chain Backward Compatibility**: Single-chain setups using `MEMBERSHIP_NFT_ADDRESS` and `CHAIN_ID` environment variables continue to function seamlessly without extra configuration.
+```bash
+docker compose up -d
+```
+
+Check them:
+
+```bash
+docker compose ps
+```
+
+The development stack includes:
+
+```text
+PostgreSQL : 5432
+Redis      : 6379
+```
+
+Stop the stack with:
+
+```bash
+docker compose down
+```
+
+To also remove local volumes:
+
+```bash
+docker compose down -v
+```
+
+Use volume deletion carefully because it removes local persisted database data.
 
 ---
 
-## Deferred Areas (Intentionally Not Implemented)
+## Running the API
 
-- Advanced governance permissions (implemented; see `docs/governance-permissions.md`)
-- Rich reward distribution and advanced streak logic (implemented; see `docs/REWARD_ENGINE_ARCHITECTURE.md`)
-- Full event attendance ingestion (implemented with community events, active-window check-in, and attendance history)
-- Multi-chain support (implemented: EVM multi-chain enabled per community)
-- Advanced indexing pipeline
-- Multi-chain membership indexing with per-community `(chainId, contractAddress)` routing
+Start the development server:
 
-Clear interfaces and TODOs are left where appropriate.
+```bash
+pnpm dev
+```
+
+or directly:
+
+```bash
+pnpm --filter @guildpass/api dev
+```
+
+The default API address is:
+
+```text
+http://localhost:3000
+```
 
 ---
 
-## Development Notes
+## Health Check
 
-- Business logic lives in services and the policy engine, not route handlers.
-- Contracts and API are aligned via shared types and simple event ABI.
-- The code aims to be small and understandable; extending should not require rewrites.
+GuildPass Core provides a basic health endpoint:
+
+```http
+GET /health
+```
+
+Example:
+
+```bash
+curl http://localhost:3000/health
+```
+
+Expected response:
+
+```json
+{
+  "status": "ok",
+  "service": "guildpass-core-api"
+}
+```
+
+Database readiness checks will be incorporated as the persistence layer is completed.
 
 ---
 
-## Contributing
+## Workspace Commands
 
-We welcome contributions! See [CONTRIBUTING.md](./CONTRIBUTING.md) for the full guide.
+### Build all workspaces
 
-### How to contribute
+```bash
+pnpm build
+```
 
-1. Browse open issues tagged [`good first issue`](https://github.com/Adamantine-Guild/guildpass-core/issues?q=label%3A%22good+first+issue%22) or [`help wanted`](https://github.com/Adamantine-Guild/guildpass-core/issues?q=label%3A%22help+wanted%22).
-2. Comment directly on the GitHub issue you'd like to work on.
-3. Fork the repo, create a feature branch, implement your change, open a PR.
+Equivalent to:
 
-### Maintainer contact
+```bash
+pnpm -r build
+```
 
-- Contact: cerealboxx123@gmail.com
+---
 
-## License
+### Typecheck
 
-MIT — see [LICENSE](./LICENSE).
+```bash
+pnpm typecheck
+```
+
+---
+
+### Run tests
+
+```bash
+pnpm test
+```
+
+---
+
+### Start API development server
+
+```bash
+pnpm dev
+```
+
+---
+
+## Shared Types
+
+Core domain contracts live in:
+
+```text
+packages/shared-types
+```
+
+The package is published internally as:
+
+```text
+@guildpass/shared-types
+```
+
+It should contain definitions that need to be shared across GuildPass modules without introducing infrastructure dependencies.
+
+For example:
+
+```ts
+export interface Community {
+  id: string;
+  name: string;
+  slug: string;
+  createdAt: Date;
+}
+```
+
+and:
+
+```ts
+export interface AccessDecision {
+  allowed: boolean;
+  code: AccessDecisionCode;
+  reasons: string[];
+}
+```
+
+Shared types should remain focused on domain contracts.
+
+Database clients, HTTP frameworks and application-specific implementation details should not be introduced into this package.
+
+---
+
+## Database
+
+GuildPass Core V2 uses PostgreSQL as its primary relational datastore.
+
+The database layer is being rebuilt with an emphasis on:
+
+- one coherent Prisma schema;
+- reproducible migrations;
+- clean fresh-database setup;
+- explicit relationships;
+- predictable constraints;
+- testable seed and migration behaviour.
+
+A fresh clone should eventually be able to:
+
+```text
+install dependencies
+        ↓
+start PostgreSQL
+        ↓
+generate Prisma client
+        ↓
+apply migrations
+        ↓
+build
+        ↓
+test
+```
+
+without manual database repair.
+
+---
+
+## Redis
+
+Redis is intended for infrastructure concerns such as access-decision caching.
+
+Redis must not become the source of truth for GuildPass domain state.
+
+The authoritative state should remain in the appropriate persistent domain store.
+
+Caching should be treated as an optimisation layer.
+
+---
+
+## Events and Transactional Outbox
+
+Core V2 will introduce structured domain events and a transactional outbox.
+
+This is intended to support reliable downstream processing without coupling domain operations directly to external consumers.
+
+The general pattern is:
+
+```text
+Domain operation
+      │
+      ▼
+Database transaction
+      │
+      ├── State update
+      │
+      └── Outbox event
+              │
+              ▼
+       Event processor
+```
+
+This ensures important events can be persisted alongside the state transition that produced them.
+
+---
+
+## Auditability
+
+GuildPass infrastructure should make important state changes explainable.
+
+Audit events are planned for operations involving areas such as:
+
+- membership;
+- roles;
+- access;
+- governance;
+- rewards;
+- administrative actions.
+
+Audit infrastructure should capture meaningful domain activity without leaking sensitive information.
+
+---
+
+# Development Workflow
+
+## Sync your fork
+
+Before starting a new issue:
+
+```bash
+git checkout main
+git fetch upstream
+git pull upstream main
+git push origin main
+```
+
+---
+
+## Create a feature branch
+
+Do not work directly on `main`.
+
+Example:
+
+```bash
+git checkout -b feat/community-service
+```
+
+Recommended branch prefixes include:
+
+```text
+feat/
+fix/
+test/
+docs/
+refactor/
+chore/
+ci/
+```
+
+Examples:
+
+```text
+feat/community-service
+feat/stellar-wallet-validation
+fix/access-decision-state
+test/membership-lifecycle
+docs/api-architecture
+```
+
+---
+
+## Keep Changes Scoped
+
+Each pull request should solve the issue it references.
+
+Avoid combining unrelated:
+
+- refactors;
+- dependencies;
+- formatting changes;
+- new features;
+- infrastructure changes
+
+into the same PR unless they are required by the issue.
+
+Smaller scoped PRs are easier to review, test and merge.
+
+---
+
+## Before Opening a Pull Request
+
+Run:
+
+```bash
+pnpm install --frozen-lockfile
+pnpm typecheck
+pnpm build
+pnpm test
+```
+
+All applicable checks should pass before submitting your PR.
+
+---
+
+# Continuous Integration
+
+GuildPass Core uses GitHub Actions to validate pull requests.
+
+The Core validation pipeline is intended to run:
+
+```text
+dependency installation
+        ↓
+typecheck
+        ↓
+build
+        ↓
+tests
+```
+
+The required Core validation job is:
+
+```text
+Build and Test
+```
+
+Pull requests should not be merged until the required Core CI checks pass.
+
+As database infrastructure matures, validation will also expand to include fresh PostgreSQL and Prisma migration verification.
+
+---
+
+## PR Automation
+
+GuildPass uses central PR automation maintained by Adamantine Guild.
+
+The automation evaluates open contributor pull requests and can:
+
+- inspect workflow status;
+- wait for pending checks;
+- detect failed checks;
+- detect merge conflicts;
+- comment when intervention is required;
+- safely approve eligible external-contributor workflow runs;
+- automatically merge eligible pull requests.
+
+For `guildpass-core`, the required Core CI check must be present and successful before a PR becomes eligible for automatic merging.
+
+The intended flow is:
+
+```text
+Contributor opens PR
+        │
+        ├───────────────┐
+        │               │
+        ▼               ▼
+    Core CI        PR automation
+        │               │
+        ▼               │
+ Build and Test          │
+        │               │
+        └───────┬───────┘
+                │
+                ▼
+        Evaluate PR state
+                │
+        ┌───────┼─────────┐
+        │       │         │
+      Fail   Pending    Success
+        │       │         │
+        ▼       ▼         ▼
+      Block    Wait     Mergeable
+```
+
+A failed pipeline does not qualify for auto-merge.
+
+---
+
+## Workflow Security
+
+Pull requests that modify:
+
+```text
+.github/workflows/
+```
+
+require additional care.
+
+The central automation deliberately avoids blindly approving contributor workflow changes because GitHub Actions workflows can affect repository permissions and execution behaviour.
+
+CI and workflow modifications may therefore require maintainer review.
+
+---
+
+# Contributing
+
+Contributions are welcome.
+
+Before contributing, read:
+
+```text
+CONTRIBUTING.md
+CODE_OF_CONDUCT.md
+SECURITY.md
+```
+
+---
+
+## Contributor Issues
+
+Work should normally begin from an existing GitHub issue.
+
+GuildPass contributor issues generally contain:
+
+- difficulty;
+- issue type;
+- background;
+- problem definition;
+- expected outcome;
+- suggested implementation;
+- acceptance criteria;
+- likely affected files or directories.
+
+Campaign issues may also carry labels such as:
+
+```text
+Third Campaign
+backend
+database
+stellar
+soroban
+testing
+governance
+membership
+policy
+intermediate
+advanced
+```
+
+Select an issue that matches your experience and follow the acceptance criteria carefully.
+
+---
+
+## Pull Request Guidelines
+
+When opening a pull request:
+
+1. Reference the issue being solved.
+2. Explain what changed.
+3. Keep the implementation scoped to the issue.
+4. Add or update tests where appropriate.
+5. Avoid unrelated formatting or refactoring.
+6. Ensure TypeScript typechecking passes.
+7. Ensure the project builds.
+8. Ensure tests pass.
+9. Resolve merge conflicts.
+10. Respond to review feedback where necessary.
+
+Example:
+
+```text
+Closes #123
+```
+
+---
+
+## Commit Messages
+
+Use clear, scoped commit messages.
+
+Recommended format:
+
+```text
+type(scope): description
+```
+
+Examples:
+
+```text
+feat(membership): add membership lifecycle service
+fix(policy): handle suspended membership decisions
+test(wallet): add Stellar address validation cases
+docs(api): document access check contract
+ci(core): add database migration verification
+```
+
+---
+
+# Contributor Roadmap
+
+Core V2 development is intentionally being broken into smaller independently reviewable pieces.
+
+Major work areas include:
+
+### Foundation
+
+- Prisma and PostgreSQL setup
+- core Prisma schema
+- reproducible initial migration
+- fresh-clone CI validation
+- database-aware health checks
+
+### Domain Services
+
+- community service
+- Stellar wallet service
+- member and membership lifecycle
+- roles and role assignments
+
+### Access
+
+- policy engine
+- access-check API
+- standardised API errors
+- Redis access-decision caching
+
+### Infrastructure
+
+- audit events
+- transactional outbox
+- integration testing
+
+### Community Systems
+
+- governance engine
+- contribution engine
+- reward engine
+
+### Stellar
+
+- Soroban membership contract
+- Soroban contract tests
+
+---
+
+# Design Principles
+
+Contributors should keep the following principles in mind when working on Core V2.
+
+## 1. Domain logic should be explicit
+
+Business rules should not be hidden inside controllers, Prisma calls or route handlers.
+
+---
+
+## 2. Deterministic behaviour is preferred
+
+Given the same valid inputs and state, domain engines should return predictable outcomes.
+
+---
+
+## 3. Infrastructure should not define the domain
+
+PostgreSQL, Redis, Fastify and Soroban are tools used by GuildPass.
+
+The GuildPass domain should remain understandable independently of those tools.
+
+---
+
+## 4. Avoid premature abstraction
+
+V2 intentionally starts smaller than the previous architecture.
+
+Create abstractions when the domain requires them, not solely because they existed in V1.
+
+---
+
+## 5. Migrations must be reproducible
+
+A migration should work against a fresh database without requiring knowledge of a developer's local database history.
+
+---
+
+## 6. Tests are part of the feature
+
+New domain behaviour should include appropriate tests.
+
+Bug fixes should preferably include a regression test.
+
+---
+
+## 7. Security-sensitive changes deserve explicit review
+
+Changes involving:
+
+- authentication;
+- wallet ownership;
+- permissions;
+- access control;
+- workflow files;
+- smart contracts;
+- secrets;
+- governance
+
+should be implemented conservatively and reviewed carefully.
+
+---
+
+# Repository History
+
+GuildPass Core V2 is a rebuild, not a deletion of the project's history.
+
+The original implementation remains available through Git history and the repository's preserved pre-rebuild references.
+
+This allows maintainers to inspect earlier implementations when useful without carrying legacy architecture directly into V2.
+
+Contributors should implement against the current Core V2 architecture rather than restoring old V1 modules unless an issue explicitly requests it.
+
+---
+
+# Security
+
+Do not report security vulnerabilities through a public GitHub issue.
+
+Follow the process described in:
+
+```text
+SECURITY.md
+```
+
+Never commit:
+
+- private keys;
+- seed phrases;
+- wallet secrets;
+- API keys;
+- database credentials;
+- access tokens;
+- production `.env` files.
+
+---
+
+# Documentation
+
+Architecture and implementation documentation should live under:
+
+```text
+docs/
+```
+
+Documentation should be updated when a change materially affects:
+
+- architecture;
+- public APIs;
+- data models;
+- developer setup;
+- smart-contract interfaces;
+- contributor workflows.
+
+---
+
+# Licence
+
+GuildPass Core is distributed under the terms described in the repository's:
+
+```text
+LICENSE
+```
+
+Review the licence before redistributing or integrating the project.
+
+---
+
+# Adamantine Guild
+
+GuildPass is developed as part of the **Adamantine Guild** open-source ecosystem.
+
+Repository:
+
+```text
+https://github.com/Adamantine-guild/guildpass-core
+```
+
+Organisation:
+
+```text
+https://github.com/Adamantine-guild
+```
+
+---
+
+<p align="center">
+  <strong>GuildPass Core</strong><br />
+  Infrastructure for programmable communities.
+</p>
