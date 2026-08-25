@@ -37,6 +37,8 @@ importers:
         specifier: ^4.20.5
         version: 4.23.12
 
+  packages/quorum-engine: {}
+
   packages/shared-types: {}
 
 packages:
