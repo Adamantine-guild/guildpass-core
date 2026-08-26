@@ -1,9 +1,12 @@
 import Fastify from "fastify";
+import { correlationPlugin } from "./plugins/correlation.js";
 
 export function buildApp() {
   const app = Fastify({
     logger: true
   });
+
+  app.register(correlationPlugin);
 
   app.get("/health", async () => {
     return {
@@ -14,3 +17,4 @@ export function buildApp() {
 
   return app;
 }
+
