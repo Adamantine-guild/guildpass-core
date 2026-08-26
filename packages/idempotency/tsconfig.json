@@ -2,7 +2,10 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "outDir": "dist",
-    "rootDir": "src"
+    "baseUrl": ".",
+    "paths": {
+      "@guildpass/canonical-json": ["../canonical-json/src/index.ts"]
+    }
   },
   "include": ["src/**/*.ts"]
 }
