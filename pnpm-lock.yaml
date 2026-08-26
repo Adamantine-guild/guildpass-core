@@ -61,6 +61,15 @@ importers:
 
   packages/shared-types: {}
 
+  packages/webhook-verification:
+    devDependencies:
+      typescript:
+        specifier: ^5.3.3
+        version: 5.9.3
+      vitest:
+        specifier: ^1.2.1
+        version: 1.6.1(@types/node@20.19.43)
+
 packages:
 
   '@esbuild/aix-ppc64@0.21.5':
