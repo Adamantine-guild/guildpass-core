@@ -46,6 +46,8 @@ importers:
         specifier: ^1.2.1
         version: 1.6.1(@types/node@20.19.43)
 
+  packages/permission-expression: {}
+
   packages/quorum-engine: {}
 
   packages/rate-limit:
@@ -60,6 +62,15 @@ importers:
   packages/shared-types: {}
 
   packages/stellar-utils:
+    devDependencies:
+      typescript:
+        specifier: ^5.3.3
+        version: 5.9.3
+      vitest:
+        specifier: ^1.2.1
+        version: 1.6.1(@types/node@20.19.43)
+
+  packages/webhook-verification:
     devDependencies:
       typescript:
         specifier: ^5.3.3
