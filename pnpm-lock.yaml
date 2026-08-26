@@ -39,6 +39,12 @@ importers:
 
   packages/canonical-json: {}
 
+  packages/idempotency:
+    dependencies:
+      '@guildpass/canonical-json':
+        specifier: workspace:*
+        version: link:../canonical-json
+
   packages/log-redaction:
     devDependencies:
       typescript:
