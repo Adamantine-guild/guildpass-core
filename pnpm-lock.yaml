@@ -39,6 +39,8 @@ importers:
 
   packages/canonical-json: {}
 
+  packages/exact-amount: {}
+
   packages/idempotency:
     dependencies:
       '@guildpass/canonical-json':
