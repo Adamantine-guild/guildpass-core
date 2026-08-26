@@ -80,6 +80,15 @@ importers:
 
   packages/shared-types: {}
 
+  packages/stellar-network-config:
+    devDependencies:
+      typescript:
+        specifier: ^5.3.3
+        version: 5.9.3
+      vitest:
+        specifier: ^1.2.1
+        version: 1.6.1(@types/node@20.19.43)
+
   packages/stellar-utils:
     devDependencies:
       typescript:
