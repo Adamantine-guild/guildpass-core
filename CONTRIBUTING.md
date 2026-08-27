@@ -1,332 +1,737 @@
 # Contributing to GuildPass Core
 
-Thank you for your interest in contributing to GuildPass Core! This is the backend and smart-contract foundation for the GuildPass protocol.
+Thank you for contributing to GuildPass Core.
 
-## Table of Contents
+GuildPass Core V2 is being rebuilt as a modular, Stellar-first backend and domain layer for programmable communities. Contributions should therefore favour clear boundaries, deterministic behaviour, focused scope, strong typing, and tests.
 
-- [Code of Conduct](#code-of-conduct)
-- [Ways to Contribute](#ways-to-contribute)
-- [Finding Issues](#finding-issues)
-- [Development Setup](#development-setup)
-- [Branching & Commits](#branching--commits)
-- [Submitting a Pull Request](#submitting-a-pull-request)
-- [Smart Contract Contributions](#smart-contract-contributions)
-- [Review Process](#review-process)
-- [Communication](#communication)
+This guide explains how to contribute safely and consistently.
 
 ---
 
-## Code of Conduct
+## Before You Start
 
-By participating you agree to our [Code of Conduct](./CODE_OF_CONDUCT.md).
+Please read:
 
----
+- `README.md`
+- `CODE_OF_CONDUCT.md`
+- `SECURITY.md`
 
-## Ways to Contribute
+If you are working from a campaign issue, read the full issue carefully before writing code.
 
-- Fix bugs in the Fastify API or Prisma data layer
-- Add or improve unit/integration tests
-- Extend or improve the policy engine
-- Write or improve Solidity contracts and their Foundry tests
-- Improve OpenAPI documentation
-- Add new API endpoints with tests
-- Improve TypeScript types in shared packages
+Issues are intended to define:
 
----
+- the problem;
+- the expected outcome;
+- implementation boundaries;
+- acceptance criteria;
+- likely affected files or directories.
 
-## Finding Issues
-
-1. Browse issues directly on GitHub:
-   - [`good first issue`](https://github.com/Adamantine-Guild/guildpass-core/issues?q=label%3A%22good+first+issue%22)
-   - [`help wanted`](https://github.com/Adamantine-Guild/guildpass-core/issues?q=label%3A%22help+wanted%22)
-2. Comment `I'd like to work on this` on the GitHub issue you'd like to work on.
-3. Wait for a maintainer to assign it before starting — this avoids duplicate effort.
+Treat the issue as the primary source of truth for the contribution.
 
 ---
 
-## Development Setup
+# Repository Direction
 
-### Prerequisites
+GuildPass Core V2 is a clean rebuild of the previous implementation.
 
-- Node.js 18+
-- npm 9+
-- Docker (for PostgreSQL and Redis)
-- [Foundry](https://book.getfoundry.sh/getting-started/installation) (for Solidity work)
+The current direction is:
 
-### Steps
+- TypeScript-first backend development;
+- Stellar-first blockchain support;
+- Soroban smart contracts for on-chain functionality;
+- PostgreSQL for relational persistence;
+- Redis for caching and infrastructure concerns;
+- deterministic domain logic;
+- independently testable modules.
+
+Do not restore old V1 architecture unless an issue explicitly asks for it.
+
+In particular, avoid reintroducing legacy complexity such as:
+
+- EVM-specific assumptions;
+- generic multichain abstractions;
+- old migration history;
+- deprecated services;
+- duplicated access-control logic;
+- tightly coupled route and domain logic.
+
+---
+
+# Contribution Principles
+
+## 1. Keep Pull Requests Focused
+
+A pull request should solve one issue.
+
+Avoid combining unrelated:
+
+- features;
+- refactors;
+- dependency upgrades;
+- formatting changes;
+- documentation rewrites;
+- infrastructure changes.
+
+Small, focused PRs are easier to review and safer to merge.
+
+---
+
+## 2. Do Not Create Hidden Dependencies Between Issues
+
+Campaign issues are generally designed to be worked on concurrently.
+
+Do not make your implementation depend on another open issue unless the issue explicitly says so.
+
+If your task requires a missing helper, implement the minimum self-contained functionality needed for your issue instead of waiting for another contributor.
+
+---
+
+## 3. Prefer Deterministic Logic
+
+Given the same valid inputs, domain logic should produce the same result.
+
+Avoid behaviour that depends unnecessarily on:
+
+- object insertion order;
+- global mutable state;
+- implicit current time;
+- random values without injection;
+- network state;
+- local environment assumptions.
+
+Where time or randomness is required, make it testable.
+
+---
+
+## 4. Separate Domain Logic From Infrastructure
+
+Domain logic should not be hidden inside:
+
+- Fastify routes;
+- Prisma queries;
+- Redis calls;
+- Docker configuration;
+- blockchain transport code.
+
+Prefer a structure where business rules can be tested without starting external services.
+
+---
+
+## 5. Tests Are Part of the Contribution
+
+New behaviour should include tests.
+
+Bug fixes should preferably include a regression test that demonstrates the previous failure.
+
+Tests should cover:
+
+- normal behaviour;
+- invalid input;
+- boundary conditions;
+- failure modes;
+- deterministic ordering;
+- concurrency where relevant;
+- security-sensitive edge cases.
+
+---
+
+# Development Setup
+
+## Prerequisites
+
+Install:
+
+- Git
+- Node.js 24 or newer
+- pnpm 11.x
+- Docker
+- Docker Compose
+
+If you are working on Soroban contracts, also install the required Rust and Stellar tooling.
+
+Check versions:
 
 ```bash
-# 1. Fork and clone
-git clone https://github.com/<your-username>/guildpass-core.git
+node --version
+pnpm --version
+```
+
+The repository currently uses:
+
+```text
+pnpm 11.16.0
+```
+
+---
+
+# Fork and Clone
+
+Fork:
+
+```text
+Adamantine-guild/guildpass-core
+```
+
+Then clone your fork:
+
+```bash
+git clone https://github.com/<YOUR_USERNAME>/guildpass-core.git
 cd guildpass-core
+```
 
-# 2. Start required services
-docker compose up -d
+Add the upstream repository:
 
-# 3. Install all workspace dependencies
-npm install
+```bash
+git remote add upstream https://github.com/Adamantine-guild/guildpass-core.git
+```
 
-# 4. Set up environment variables
+Verify:
+
+```bash
+git remote -v
+```
+
+You should have:
+
+```text
+origin    your fork
+upstream  Adamantine-guild/guildpass-core
+```
+
+---
+
+# Sync Before Starting Work
+
+Before creating a new branch:
+
+```bash
+git checkout main
+git fetch upstream
+git pull upstream main
+git push origin main
+```
+
+Always start new work from the latest `main`.
+
+---
+
+# Create a Feature Branch
+
+Do not work directly on `main`.
+
+Recommended branch prefixes:
+
+```text
+feat/
+fix/
+test/
+docs/
+refactor/
+chore/
+ci/
+```
+
+Examples:
+
+```bash
+git checkout -b feat/stellar-address-validator
+```
+
+```bash
+git checkout -b fix/access-decision-ordering
+```
+
+```bash
+git checkout -b test/quorum-boundaries
+```
+
+---
+
+# Install Dependencies
+
+Run:
+
+```bash
+pnpm install
+```
+
+For reproducible verification:
+
+```bash
+pnpm install --frozen-lockfile
+```
+
+If pnpm requests approval for expected dependency build scripts:
+
+```bash
+pnpm approve-builds
+```
+
+Only approve dependencies you recognise and that are required by the project.
+
+---
+
+# Environment Setup
+
+Create a local environment file:
+
+```bash
 cp .env.example .env
-# Edit .env with your database and Redis URLs
-
-# 5. Run Prisma migrations
-npm run -w access-api prisma:migrate
-
-# 6. Seed with sample data
-npm run seed
-
-# 7. Start the API
-npm run dev
-# API: http://localhost:3000
-# OpenAPI docs: http://localhost:3000/docs
 ```
 
-### Workspace structure
+The default local values are:
 
-| Path | Purpose |
-| ---- | ------- |
-| `apps/access-api` | Fastify REST API (main server) |
-| `packages/contracts` | On-chain contract ABIs and addresses |
-| `packages/shared-types` | Shared TypeScript types |
-| `packages/policy-engine` | Access policy logic |
-| `packages/sdk-lite` | Minimal HTTP client |
-| `contracts/` | Solidity (Foundry) |
+```env
+NODE_ENV=development
+PORT=3000
 
----
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/guildpass
+DIRECT_URL=postgresql://postgres:postgres@localhost:5432/guildpass
 
-## Branching & Commits
+REDIS_URL=redis://localhost:6379
+```
 
-- Branch off `main`: `git checkout -b feat/short-description` or `fix/short-description`
-- Use conventional commits:
-  - `feat: add /v1/communities/:id/roles endpoint`
-  - `fix: correct policy engine CONTRIBUTORS_OR_ADMINS resolution`
-  - `test: add policy-engine unit tests for edge cases`
-  - `chore: update Prisma to 5.x`
-  - `contracts: add MembershipNFT renewal event`
-- Keep commits focused and atomic.
+Do not commit `.env`.
 
 ---
 
-## Submitting a Pull Request
+# Local Infrastructure
 
-1. Push your branch to your fork.
-2. Open a PR against `Adamantine-Guild/guildpass-core` on the `main` branch.
-3. Fill in the [PR template](.github/PULL_REQUEST_TEMPLATE.md) completely.
-4. Ensure these pass before submitting:
+Start PostgreSQL and Redis:
 
 ```bash
-npm run typecheck    # Must pass
-npm run lint         # Fix reported issues
-npm run test         # All tests must pass
+docker compose up -d
 ```
 
-### PR Quality Expectations
-
-- All new API endpoints must have at least one integration test.
-- Business logic must live in services, not route handlers.
-- Prisma schema changes must include a migration file.
-- TypeScript `any` is not acceptable without a clear comment explaining why.
-
----
-
-## Database Migrations: Direct vs. Expand/Contract
-
-`apps/access-api` serves a live, populated PostgreSQL database. Some schema
-changes are safe to ship as a single `prisma migrate deploy`; others will
-lock a large table, break rows currently being read by running application
-instances, or lose data if applied naively. Before writing a migration,
-decide which category it falls into.
-
-### Decision framework
-
-Ask these questions, in order, about the change:
-
-1. **Does it only add something new (a nullable column, a new table, a new
-   index built `CONCURRENTLY`)?**
-   If yes → **direct migration**. Nothing existing reads or depends on the
-   new column/table yet, so there is no window where old and new code
-   disagree about the schema.
-
-2. **Does it remove or rename something an already-deployed version of the
-   API still reads or writes (a column, a table, an enum value)?**
-   If yes → **expand/contract**. During a rolling deploy, old and new
-   application instances run side-by-side against the same database for
-   several minutes. If the old instance's queries reference a column the
-   new migration already dropped or renamed, every request it serves
-   during that window fails.
-
-3. **Does it make an existing nullable column `NOT NULL`, tighten a
-   `CHECK`/foreign-key constraint, or otherwise reject data that current
-   rows might contain?**
-   If yes → **expand/contract**. The constraint must not go live until
-   every existing row already satisfies it, which requires a backfill step
-   before the constraint is added.
-
-4. **Is the table large enough that rewriting it (adding a column with a
-   non-null `DEFAULT`, changing a column's type, building a non-concurrent
-   index) would hold a lock for longer than you're willing to block
-   traffic on that table?**
-   If yes → **expand/contract**, even if the change is conceptually
-   "additive" — split the DDL from the data rewrite so the rewrite can run
-   in batches instead of one transaction.
-
-If none of the above apply, a direct migration is the right, simpler
-choice — don't reach for the five-step pattern by default.
-
-### The expand/contract pattern
-
-For changes that fail the checks above, split the change into independently
-deployable steps, each safe on its own:
-
-1. **Expand** — add the new nullable column (or new table) in a direct
-   migration. Old code ignores it; nothing breaks.
-2. **Dual-write** — deploy an application change that writes the new column
-   alongside the old one on every mutation, so new rows are correct from
-   this point forward. Old rows are still unpopulated.
-3. **Backfill** — populate the new column for existing rows using the
-   batched-backfill utility (`apps/access-api/src/services/backfillService.ts`),
-   not a single `UPDATE` statement. See below.
-4. **Contract (constrain)** — once the backfill has finished and dual-write
-   has been running long enough that you're confident no row is missed,
-   ship a migration that adds the `NOT NULL` constraint (or whatever the
-   end state requires).
-5. **Contract (remove)** — once nothing reads the old column/table anymore,
-   ship a final migration dropping it.
-
-Each step is its own PR and its own deploy. Do not combine steps 1 and 4 in
-the same migration — that reintroduces the exact lock/downtime risk the
-pattern exists to avoid.
-
-### Worked example 1 — simple case: additive nullable column
-
-`OutboxEvent.correlationId` (migration
-`prisma/migrations/20260717_add_outbox_correlation_id`) groups outbox events
-emitted by the same originating request. It is a plain nullable `TEXT`
-column: existing rows are valid with `correlationId = NULL`, and no
-application code depended on it being present. This needed only **step 1**
-— a single direct migration, no dual-write, no constraint tightening.
-
-An optional backfill (`apps/access-api/scripts/backfillOutboxCorrelationId.ts`)
-assigns historical rows a value after the fact, purely so older events
-aren't permanently `NULL`. It's a good showcase of the batched-backfill
-utility even though the migration itself didn't require it — run it with:
+Check status:
 
 ```bash
-pnpm --filter access-api run backfill:outbox-correlation-id
+docker compose ps
 ```
 
-### Worked example 2 — hypothetical full pattern: a non-nullable column
-
-Suppose a future issue requires every `AccessOverride` to record which
-admin wallet created it (`createdByWallet`), and the field must be
-`NOT NULL` because the audit trail is meaningless without it. `AccessOverride`
-is small today, but imagine it has grown to millions of rows by the time
-this ships. A direct `ADD COLUMN "createdByWallet" TEXT NOT NULL` would
-either fail outright (no default, and existing rows have no value to give
-it) or, with a default, rewrite the entire table under a lock. The
-expand/contract sequence:
-
-1. **Expand**: `ALTER TABLE "AccessOverride" ADD COLUMN "createdByWallet" TEXT;`
-   (nullable, direct migration, ships immediately).
-2. **Dual-write**: deploy `memberService.createAccessOverride` writing
-   `createdByWallet: requesterWallet` on every new override. Existing rows
-   are still `NULL`.
-3. **Backfill**: run a script built on `runBatchedBackfill` that pages
-   through existing `AccessOverride` rows where `createdByWallet IS NULL`
-   and sets a value (e.g. a sentinel `"unknown-legacy-admin"` if the true
-   creator isn't recoverable), batching updates with a delay between
-   batches so the table stays available to live traffic throughout.
-4. **Contract (constrain)**: once the backfill reports `completed: true`
-   and dual-write has been live for a full deploy cycle, ship
-   `ALTER TABLE "AccessOverride" ALTER COLUMN "createdByWallet" SET NOT NULL;`.
-5. There is no step 5 here since nothing is being removed — the pattern
-   ends at step 4 for a "make nullable column required" change. Step 5
-   applies to renames/removals (e.g. dropping the old column once a rename
-   is fully rolled out).
-
-This example is illustrative only — no `createdByWallet` migration exists
-in this repo today.
-
-### Using the batched-backfill utility
-
-`runBatchedBackfill` (`apps/access-api/src/services/backfillService.ts`)
-walks a table in cursor-paginated batches instead of one large `UPDATE`, so
-each write is short-lived and the database stays responsive to live traffic
-between batches:
-
-```typescript
-import { runBatchedBackfill } from '../src/services/backfillService';
-
-await runBatchedBackfill<{ id: string }>({
-  batchSize: 500,   // rows per batch
-  delayMs: 200,     // pause between batches
-  fetchBatch: (cursor, limit) =>
-    prisma.someTable.findMany({
-      where: { targetColumn: null, ...(cursor ? { id: { gt: cursor } } : {}) },
-      select: { id: true },
-      orderBy: { id: 'asc' },
-      take: limit,
-    }),
-  getCursor: (row) => row.id,
-  applyBatch: async (rows) => {
-    const results = await prisma.$transaction(
-      rows.map((row) =>
-        prisma.someTable.updateMany({
-          where: { id: row.id, targetColumn: null },
-          data: { targetColumn: computeValue(row) },
-        }),
-      ),
-    );
-    return results.reduce((sum, r) => sum + r.count, 0);
-  },
-});
-```
-
-See `apps/access-api/scripts/backfillOutboxCorrelationId.ts` for a complete,
-runnable example, and `apps/access-api/src/services/backfillService.test.ts`
-for its test coverage (pagination, resumability via `maxBatches`, and
-progress reporting).
-
-Validate any migration that changes the schema — direct or
-expand/contract — with the shadow-DB workflow described in the
-[Prisma migration checks](./README.md#prisma-migration-checks) section of
-the README before opening a PR.
-
----
-
-## Smart Contract Contributions
-
-When modifying Solidity contracts:
+Stop services:
 
 ```bash
-# Build
-npm run contracts:build
-
-# Test — all forge tests must pass
-npm run contracts:test
-
-# Format Solidity
-forge fmt
+docker compose down
 ```
 
-- All new contract functions must have NatSpec documentation.
-- All state-changing functions must emit events.
-- New contracts must have corresponding Foundry unit tests.
-- Do not deploy to any real network without explicit maintainer approval.
+Remove volumes only when you intentionally want to reset local persisted data:
+
+```bash
+docker compose down -v
+```
 
 ---
 
-## Review Process
+# Run the API
 
-- A maintainer will review your PR within **5 business days**.
-- Address requested changes promptly.
-- Once approved and CI passes, a maintainer merges.
-- Smart contract changes require additional review and will take longer.
+Start the development server:
+
+```bash
+pnpm dev
+```
+
+or:
+
+```bash
+pnpm --filter @guildpass/api dev
+```
+
+Default URL:
+
+```text
+http://localhost:3000
+```
+
+Health check:
+
+```bash
+curl http://localhost:3000/health
+```
 
 ---
 
-## Communication
+# Required Validation
 
-- GitHub Issues: preferred for all task discussion
-- Contact: cerealboxx123@gmail.com
+Before opening a pull request, run:
+
+```bash
+pnpm install --frozen-lockfile
+pnpm typecheck
+pnpm build
+pnpm test
+```
+
+All applicable checks must pass.
+
+Do not open a PR with known failing tests unless the issue explicitly concerns the failing test infrastructure.
+
+---
+
+# TypeScript Guidelines
+
+GuildPass Core uses strict TypeScript.
+
+Prefer:
+
+- explicit domain types;
+- discriminated unions;
+- narrow public APIs;
+- readonly values where appropriate;
+- `unknown` over `any` at trust boundaries;
+- runtime validation for external input.
+
+Avoid:
+
+- unnecessary `any`;
+- unsafe type assertions;
+- broad casts used to silence compiler errors;
+- duplicating types already defined in shared packages.
+
+---
+
+# Error Handling
+
+Errors should be:
+
+- structured;
+- predictable;
+- safe to expose;
+- useful to tests and callers.
+
+Do not rely only on free-form strings when a machine-readable code is more appropriate.
+
+Avoid leaking:
+
+- secrets;
+- tokens;
+- database credentials;
+- private keys;
+- raw authentication headers.
+
+---
+
+# Database Contributions
+
+When modifying Prisma or PostgreSQL-related functionality:
+
+- keep schema changes scoped;
+- create reproducible migrations;
+- test against a fresh database;
+- avoid assuming local database history;
+- preserve referential integrity;
+- document important constraints.
+
+A migration that only works on one developer's existing database is not acceptable.
+
+---
+
+# Redis Contributions
+
+Redis should be treated as infrastructure, not the authoritative source of domain state.
+
+Use Redis for concerns such as:
+
+- caching;
+- temporary coordination;
+- performance optimisation.
+
+Do not make critical GuildPass state exist only in Redis unless explicitly designed and approved.
+
+---
+
+# Stellar and Soroban Contributions
+
+GuildPass Core V2 is Stellar-first.
+
+When working on Stellar-related functionality:
+
+- validate Stellar formats correctly;
+- avoid prefix-only validation;
+- keep network logic separated from pure domain logic;
+- do not introduce EVM dependencies unless explicitly requested;
+- keep Soroban-specific code isolated from unrelated backend functionality.
+
+When working on Soroban contracts:
+
+- include appropriate Rust tests;
+- document storage and authorization assumptions;
+- avoid unnecessary contract complexity;
+- treat public contract interfaces as stable API surfaces.
+
+---
+
+# Public API Changes
+
+Changes to public APIs should be intentional.
+
+If your contribution changes:
+
+- request shapes;
+- response shapes;
+- exported types;
+- public function signatures;
+- contract interfaces;
+
+document the change clearly in the PR.
+
+Do not introduce breaking changes casually.
+
+---
+
+# Adding Dependencies
+
+Dependencies affect:
+
+- security;
+- install size;
+- maintenance;
+- build reproducibility.
+
+Before adding one, consider whether the functionality can be implemented safely with:
+
+- Node.js built-ins;
+- existing project dependencies;
+- a small self-contained implementation.
+
+If a new dependency is necessary, explain why in the PR.
+
+---
+
+# Code Style
+
+Follow the existing codebase conventions.
+
+Prefer:
+
+- clear names;
+- small focused functions;
+- explicit control flow;
+- limited side effects;
+- readable tests;
+- meaningful comments only where behaviour is non-obvious.
+
+Avoid comments that merely restate the code.
+
+---
+
+# Commit Messages
+
+Use clear scoped commit messages.
+
+Recommended format:
+
+```text
+type(scope): description
+```
+
+Examples:
+
+```text
+feat(policy): add deterministic rule evaluator
+feat(stellar): validate Stellar account IDs
+fix(api): reject malformed request metadata
+test(governance): cover quorum boundary cases
+docs(core): update contributor setup
+```
+
+---
+
+# Pull Request Requirements
+
+A good pull request should include:
+
+- a clear title;
+- a reference to the issue;
+- a concise explanation of the implementation;
+- tests;
+- any important design decisions;
+- no unrelated changes.
+
+Reference the issue using:
+
+```text
+Closes #123
+```
+
+---
+
+# Pull Request Description
+
+Your PR description should explain:
+
+## What changed?
+
+Describe the implementation.
+
+## Why?
+
+Explain the problem being solved.
+
+## How was it tested?
+
+List the commands and tests you ran.
+
+Example:
+
+```text
+pnpm typecheck
+pnpm build
+pnpm test
+```
+
+## Any important decisions?
+
+Document:
+
+- trade-offs;
+- assumptions;
+- unusual edge cases;
+- intentionally excluded functionality.
+
+---
+
+# CI and Auto-Merge
+
+GuildPass Core uses GitHub Actions.
+
+The required validation job is:
+
+```text
+Build and Test
+```
+
+The central Adamantine Guild PR automation checks:
+
+- CI status;
+- pending checks;
+- failed checks;
+- merge conflicts;
+- merge eligibility.
+
+A PR with failing required checks will not be auto-merged.
+
+If checks are still running, the automation waits.
+
+If checks pass and the PR is clean, the PR may be merged automatically.
+
+---
+
+# Workflow Changes
+
+Changes under:
+
+```text
+.github/workflows/
+```
+
+receive additional scrutiny.
+
+Do not modify GitHub Actions workflows as part of an unrelated feature.
+
+Workflow changes may require manual maintainer review before automation is allowed to execute them.
+
+---
+
+# Security-Sensitive Contributions
+
+Changes involving any of the following require extra care:
+
+- authentication;
+- authorization;
+- wallet ownership;
+- access control;
+- secrets;
+- governance;
+- smart contracts;
+- workflow permissions;
+- cryptographic operations.
+
+Security-sensitive code should include targeted tests and avoid undocumented assumptions.
+
+---
+
+# Issue Scope
+
+Contributor issues include explicit acceptance criteria.
+
+Your implementation should satisfy those criteria without expanding the task unnecessarily.
+
+If you discover a separate problem while working:
+
+- do not silently fold it into the same PR;
+- open or suggest a separate issue;
+- keep the current PR focused.
+
+---
+
+# Independent Issue Policy
+
+Campaign issues are designed so multiple contributors can work concurrently.
+
+If an issue includes an **Independence Requirement**, it must be respected.
+
+This means:
+
+- do not wait for another open issue;
+- do not import code that only exists in another contributor's unmerged branch;
+- do not create hidden cross-issue dependencies;
+- keep your solution independently mergeable.
+
+---
+
+# Documentation Changes
+
+Update documentation when your contribution changes:
+
+- setup instructions;
+- architecture;
+- public APIs;
+- data models;
+- CI behaviour;
+- Stellar integration;
+- contract interfaces.
+
+Documentation belongs under:
+
+```text
+docs/
+```
+
+or the relevant public Markdown file.
+
+---
+
+# Security Reporting
+
+Do not report vulnerabilities through public issues.
+
+Follow:
+
+```text
+SECURITY.md
+```
+
+for responsible disclosure instructions.
+
+---
+
+# Code of Conduct
+
+All contributors must follow:
+
+```text
+CODE_OF_CONDUCT.md
+```
+
+---
+
+# Need Help?
+
+If an issue is unclear, ask a focused question on the issue before implementing a significantly different interpretation.
+
+Avoid opening large speculative PRs without alignment.
+
+---
+
+Thank you for contributing to GuildPass Core.
