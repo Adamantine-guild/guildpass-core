@@ -82,7 +82,7 @@ importers:
 
   packages/shared-types: {}
 
-  packages/stellar-network-config:
+  packages/stellar-asset:
     devDependencies:
       typescript:
         specifier: ^5.3.3
