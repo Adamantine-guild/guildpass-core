@@ -57,7 +57,7 @@ describe("parseStellarNetworkConfig", () => {
     ["ftp://rpc.example", "UNSUPPORTED_URL_PROTOCOL"],
     ["file:///tmp/rpc", "UNSUPPORTED_URL_PROTOCOL"],
     ["https://user:password@rpc.example", "URL_CREDENTIALS_NOT_ALLOWED"],
-  ])("rejects invalid RPC URL %s", (rpcUrl, code) => {
+  ])("rejects invalid RPC URL %s", (rpcUrl: string, code: string) => {
     expect(parseStellarNetworkConfig({ passphrase: STELLAR_TESTNET_PASSPHRASE, rpcUrl })).toMatchObject({ valid: false, code, field: "rpcUrl" });
   });
 
