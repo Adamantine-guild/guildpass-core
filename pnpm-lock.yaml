@@ -39,6 +39,8 @@ importers:
 
   packages/async-task-pool: {}
 
+  packages/audit-chain: {}
+
   packages/canonical-json: {}
 
   packages/exact-amount: {}
@@ -91,6 +93,15 @@ importers:
         specifier: ^1.2.1
         version: 1.6.1(@types/node@20.19.43)
 
+  packages/stellar-network-config:
+    devDependencies:
+      typescript:
+        specifier: ^5.3.3
+        version: 5.9.3
+      vitest:
+        specifier: ^1.2.1
+        version: 1.6.1(@types/node@20.19.43)
+
   packages/stellar-utils:
     devDependencies:
       typescript:
@@ -99,6 +110,8 @@ importers:
       vitest:
         specifier: ^1.2.1
         version: 1.6.1(@types/node@20.19.43)
+
+  packages/voting-power-snapshot: {}
 
   packages/webhook-verification:
     devDependencies:
