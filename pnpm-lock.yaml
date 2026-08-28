@@ -39,6 +39,8 @@ importers:
 
   packages/canonical-json: {}
 
+  packages/delegation-graph: {}
+
   packages/exact-amount: {}
 
   packages/idempotency:
@@ -88,6 +90,8 @@ importers:
       vitest:
         specifier: ^1.2.1
         version: 1.6.1(@types/node@20.19.43)
+
+  packages/voting-power-snapshot: {}
 
   packages/webhook-verification:
     devDependencies:
