@@ -43,6 +43,8 @@ importers:
 
   packages/canonical-json: {}
 
+  packages/delegation-graph: {}
+
   packages/exact-amount: {}
 
   packages/idempotency:
