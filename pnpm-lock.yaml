@@ -43,6 +43,8 @@ importers:
 
   packages/canonical-json: {}
 
+  packages/circuit-breaker: {}
+
   packages/delegation-graph: {}
 
   packages/exact-amount: {}
