@@ -102,7 +102,8 @@ export function evaluateDelegationGraph(
         stack.delete(nodeId);
     };
 
-    for (const nodeId of nodeMap.keys()) {
+    const allNodesToCheck = new Set<string>([...nodeMap.keys(), ...outDegree.keys()]);
+    for (const nodeId of allNodesToCheck) {
         if (!visited.has(nodeId)) {
             checkCycleAndDepth(nodeId, 0);
         }
@@ -141,12 +142,14 @@ export function evaluateDelegationGraph(
     };
 
     const finalResults = new Map<string, bigint>();
-    // all nodes initially have 0 in final results, except if they are roots?
-    // Let's initialize all to 0
     for (const id of nodeMap.keys()) {
         finalResults.set(id, 0n);
     }
-    // Also need to handle nodes in edges that aren't in nodeMap (implicit nodes with 0 initial weight)
+    for (const source of outDegree.keys()) {
+        if (!finalResults.has(source)) {
+            finalResults.set(source, 0n);
+        }
+    }
     for (const target of outDegree.values()) {
         if (!finalResults.has(target)) {
             finalResults.set(target, 0n);
