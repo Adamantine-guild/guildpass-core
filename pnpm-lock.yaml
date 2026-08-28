@@ -53,6 +53,8 @@ importers:
         specifier: workspace:*
         version: link:../canonical-json
 
+  packages/lease-manager: {}
+
   packages/log-redaction:
     devDependencies:
       typescript:
