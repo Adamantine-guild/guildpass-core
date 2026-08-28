@@ -29,6 +29,7 @@ importers:
       zod:
         specifier: ^3.25.76
         version: 3.25.76
+
     devDependencies:
       prisma:
         specifier: ^6.4.0
@@ -114,6 +115,8 @@ importers:
       vitest:
         specifier: ^1.2.1
         version: 1.6.1(@types/node@20.19.43)
+
+  packages/stellar-memo: {}
 
   packages/stellar-utils:
     devDependencies:
