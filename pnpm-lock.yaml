@@ -43,6 +43,8 @@ importers:
 
   packages/canonical-json: {}
 
+  packages/capability-token: {}
+
   packages/circuit-breaker: {}
 
   packages/delegation-graph: {}
