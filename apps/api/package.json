@@ -1,0 +1,26 @@
+{
+  "name": "@guildpass/api",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "node dist/index.js",
+    "test": "node --test dist/**/*.test.js",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:studio": "prisma studio"
+  },
+  "dependencies": {
+    "@guildpass/shared-types": "workspace:*",
+    "@prisma/client": "^6.4.0",
+    "fastify": "^4.29.1",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "prisma": "^6.4.0",
+    "tsx": "^4.20.5"
+  }
+}

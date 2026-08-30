@@ -2,6 +2,7 @@ packages:
   - "apps/*"
   - "packages/*"
 allowBuilds:
-  '@prisma/client': false
-  '@prisma/engines': false
-  prisma: false
+  '@prisma/client': true
+  '@prisma/engines': true
+  esbuild: true
+  prisma: true

@@ -1,0 +1,50 @@
+name: Trigger Auto Merge Automation
+
+on:
+  pull_request_target:
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - ready_for_review
+
+  workflow_run:
+    workflows:
+      - Core CI
+    types:
+      - completed
+
+permissions:
+  contents: read
+
+jobs:
+  trigger-auto-merge:
+    name: Trigger central PR automation
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Trigger automation repo from PR event
+        if: github.event_name == 'pull_request_target'
+        env:
+          GH_TOKEN: ${{ secrets.AUTO_MERGE_TOKEN }}
+        run: |
+          gh api \
+            --method POST \
+            -H "Accept: application/vnd.github+json" \
+            /repos/Adamantine-guild/adamantine-pr-automation/dispatches \
+            -f event_type=guildpass-pr-opened \
+            -F client_payload[repo]="${{ github.repository }}" \
+            -F client_payload[pr_number]="${{ github.event.pull_request.number }}"
+
+      - name: Trigger automation repo after Core CI
+        if: github.event_name == 'workflow_run' && github.event.workflow_run.event == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.AUTO_MERGE_TOKEN }}
+        run: |
+          gh api \
+            --method POST \
+            -H "Accept: application/vnd.github+json" \
+            /repos/Adamantine-guild/adamantine-pr-automation/dispatches \
+            -f event_type=guildpass-pr-opened \
+            -F client_payload[repo]="${{ github.repository }}" \
+            -F client_payload[pr_number]="${{ github.event.workflow_run.pull_requests[0].number }}"

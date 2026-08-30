@@ -1,0 +1,92 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model Community {
+  id              String           @id @default(cuid())
+  name            String
+  slug            String           @unique
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  members         Member[]
+  roleDefinitions RoleDefinition[]
+
+  @@index([slug])
+}
+
+model Wallet {
+  id        String   @id @default(cuid())
+  address   String   @unique
+  network   String   @default("stellar")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  members   Member[]
+
+  @@index([address])
+}
+
+model Member {
+  id              String           @id @default(cuid())
+  communityId     String
+  walletId        String
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  community       Community        @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  wallet          Wallet           @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  membership      Membership?
+  roleAssignments RoleAssignment[]
+
+  @@unique([communityId, walletId])
+  @@index([communityId])
+  @@index([walletId])
+}
+
+model Membership {
+  id        String    @id @default(cuid())
+  memberId  String    @unique
+  state     String    @default("active")
+  expiresAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  member    Member    @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@index([memberId])
+  @@index([state])
+}
+
+model RoleDefinition {
+  id          String           @id @default(cuid())
+  communityId String
+  name        String
+  description String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  community   Community        @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  assignments RoleAssignment[]
+
+  @@unique([communityId, name])
+  @@index([communityId])
+}
+
+model RoleAssignment {
+  id               String         @id @default(cuid())
+  memberId         String
+  roleDefinitionId String
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  member           Member         @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  roleDefinition   RoleDefinition @relation(fields: [roleDefinitionId], references: [id], onDelete: Cascade)
+
+  @@unique([memberId, roleDefinitionId])
+  @@index([memberId])
+  @@index([roleDefinitionId])
+}

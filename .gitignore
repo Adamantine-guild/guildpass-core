@@ -1,20 +1,38 @@
-# Node
-node_modules
-dist
-.DS_Store
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
+# Dependencies
+node_modules/
+.pnpm-store/
 
-# Env
+# Environment
 .env
 .env.local
+.env.*.local
+!.env.example
 
-# Prisma
-apps/access-api/prisma/dev.db
+# Build output
+dist/
+build/
+coverage/
+*.tsbuildinfo
 
-# Foundry
-cache
-out
-broadcast
-contracts/script/fixtures/*.determinism-check.out.json
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# macOS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+
+# Prisma/local databases
+*.db
+*.db-journal
+
+# Rust
+target/
+
+# Misc
+.tmp/
+.cache/
