@@ -1,98 +1,140 @@
 <p align="center">
-  <img src="./logo/logo.png" alt="GuildPass Logo" width="180" />
+  <img src="./logo/logo.png" alt="GuildPass Core Logo" width="220" />
 </p>
 
 <h1 align="center">GuildPass Core</h1>
 
 <p align="center">
-  <strong>Open infrastructure for membership, access, governance and contribution-driven communities on Stellar.</strong>
+  <strong>Open infrastructure for programmable membership, access control, governance, contributions, rewards, and Stellar-native communities.</strong>
 </p>
 
 <p align="center">
-  <a href="https://github.com/Adamantine-guild/guildpass-core">
-    <img src="https://img.shields.io/badge/GitHub-GuildPass%20Core-181717?logo=github" alt="GitHub Repository" />
-  </a>
-  <img src="https://img.shields.io/badge/Version-Core%20V2-6F42C1" alt="GuildPass Core V2" />
   <img src="https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript&logoColor=white" alt="TypeScript" />
-  <img src="https://img.shields.io/badge/Node.js-20+-339933?logo=node.js&logoColor=white" alt="Node.js" />
+  <img src="https://img.shields.io/badge/Node.js-24+-339933?logo=node.js&logoColor=white" alt="Node.js" />
   <img src="https://img.shields.io/badge/Stellar-Soroban-7C3AED" alt="Stellar Soroban" />
-  <img src="https://img.shields.io/badge/License-See%20LICENSE-blue" alt="License" />
+  <img src="https://img.shields.io/badge/PostgreSQL-15-4169E1?logo=postgresql&logoColor=white" alt="PostgreSQL" />
+  <img src="https://img.shields.io/badge/Redis-7-DC382D?logo=redis&logoColor=white" alt="Redis" />
+  <img src="https://img.shields.io/badge/License-MIT-blue" alt="MIT License" />
 </p>
 
 ---
 
-## GuildPass
+## What is GuildPass Core?
 
-GuildPass is an open-source infrastructure project for communities that need programmable membership, access control, roles, governance, contribution tracking and rewards.
+GuildPass Core is the backend and domain layer of the GuildPass ecosystem.
 
-`guildpass-core` contains the backend and core domain logic behind the GuildPass ecosystem.
+GuildPass is designed for communities that need more than a simple list of members. It provides infrastructure for:
 
-The project is being rebuilt as **GuildPass Core V2** with a cleaner architecture, stronger domain boundaries, reproducible infrastructure and a Stellar-first blockchain model.
+- membership;
+- roles;
+- access control;
+- governance;
+- contribution tracking;
+- rewards;
+- auditability;
+- Stellar and Soroban integration.
 
-The goal is not simply to provide membership records. GuildPass is intended to provide a reusable foundation for communities that need to answer questions such as:
+GuildPass Core contains the logic and services that make those capabilities possible.
 
-- Is this wallet a recognised member of this community?
-- Is the membership currently valid?
-- Does the member have the required role?
-- Should this member be allowed to access a resource?
-- What contributions has the member made?
-- What rewards or role upgrades have they earned?
-- Which governance rules apply to the community?
-- What events should be recorded for auditing or downstream processing?
-- How should off-chain membership state interact with Stellar smart contracts?
+A GuildPass-powered application should be able to ask questions such as:
 
-GuildPass Core provides the infrastructure on which those decisions can be built.
+- Is this person an active member?
+- Has their membership expired or been suspended?
+- What roles do they hold?
+- Are they allowed to access a protected resource?
+- What contributions have they made?
+- What rewards are they eligible for?
+- What governance rules apply?
+- How should membership interact with Stellar and Soroban?
+
+GuildPass Core is the system responsible for answering those questions.
 
 ---
 
-## Core V2
+# For Non-Technical Readers
 
-GuildPass Core V2 is a ground-up rebuild of the original GuildPass Core implementation.
+GuildPass Core can be thought of as the **engine behind a community platform**.
 
-The previous implementation remains preserved in Git history and through the project's pre-rebuild archive, while V2 establishes a smaller and more maintainable foundation for future development.
+A community application might show:
+
+- member profiles;
+- private spaces;
+- contributor badges;
+- governance proposals;
+- rewards;
+- wallet-based membership.
+
+The application itself does not need to contain all the logic for deciding who is allowed to do what.
+
+Instead:
+
+```text
+Application
+    │
+    ▼
+GuildPass Core
+    │
+    ├── Membership
+    ├── Roles
+    ├── Access decisions
+    ├── Governance
+    ├── Contributions
+    ├── Rewards
+    └── Stellar / Soroban
+```
+
+GuildPass Core provides the reusable infrastructure underneath those features.
+
+---
+
+# GuildPass Core V2
+
+The current repository contains **GuildPass Core V2**, a ground-up rebuild of the original Core implementation.
+
+The previous version had accumulated a large amount of functionality and migration history. V2 was created to establish a cleaner and more maintainable foundation.
 
 The rebuild focuses on:
 
-- clear domain models;
-- deterministic access decisions;
-- modular application services;
-- reproducible database migrations;
+- smaller, well-defined modules;
 - strict TypeScript;
-- Stellar-native wallet support;
+- reproducible database migrations;
+- deterministic domain logic;
+- clear separation between business rules and infrastructure;
+- Stellar-first blockchain support;
 - Soroban smart contracts;
-- reliable testing;
-- CI-gated pull requests;
-- contribution-friendly issue scopes;
-- auditable domain events;
-- separation between infrastructure and business logic.
+- safer CI and contributor workflows;
+- independently testable components.
+
+The original implementation remains preserved in Git history and the repository's archived pre-rebuild references.
 
 ---
 
-## Current Status
+# Current Status
 
 > GuildPass Core V2 is under active development.
 
 The current V2 foundation includes:
 
 - pnpm workspace configuration;
-- TypeScript monorepo configuration;
+- TypeScript monorepo setup;
 - shared GuildPass domain types;
 - Fastify API foundation;
-- environment validation;
-- `/health` API endpoint;
-- local PostgreSQL infrastructure;
-- local Redis infrastructure;
-- contributor and repository governance files.
+- environment configuration;
+- `/health` endpoint;
+- PostgreSQL local infrastructure;
+- Redis local infrastructure;
+- CI validation;
+- contributor automation.
 
-Additional capabilities are being implemented incrementally through scoped contributor issues.
+Additional functionality is being added through scoped contributor issues.
 
-A feature described in the architecture or roadmap below should not automatically be assumed to be production-ready.
+Not every feature described in this README should be assumed to be fully implemented yet.
 
 ---
 
-## Architecture
+# Architecture
 
-GuildPass Core is organised as a modular monorepo.
+GuildPass Core V2 follows a modular monorepo structure.
 
 ```text
 guildpass-core/
@@ -103,34 +145,32 @@ guildpass-core/
 │
 ├── packages/
 │   ├── shared-types/
-│   │   └── Shared domain contracts and TypeScript types
+│   │   └── Shared domain types
 │   │
 │   ├── policy-engine/
-│   │   └── Deterministic access-control decisions
+│   │   └── Access decision logic
 │   │
 │   ├── constitutional-engine/
-│   │   └── Community rules and constitutional constraints
+│   │   └── Community constitutional rules
 │   │
 │   ├── contribution-engine/
-│   │   └── Contribution evaluation and scoring
+│   │   └── Contribution scoring
 │   │
 │   ├── governance-engine/
-│   │   └── Community governance logic
+│   │   └── Governance rules and calculations
 │   │
 │   └── reward-engine/
-│       └── Rewards, badges and role progression
+│       └── Reward and progression logic
 │
 ├── contracts/
 │   └── soroban/
-│       └── Stellar Soroban smart contracts
+│       └── Stellar Soroban contracts
 │
 ├── tests/
 │   └── integration/
 │
 ├── docs/
-│
 ├── logo/
-│
 ├── docker-compose.yml
 ├── pnpm-workspace.yaml
 ├── tsconfig.base.json
@@ -139,35 +179,33 @@ guildpass-core/
 └── README.md
 ```
 
-Some directories shown above are part of the V2 architecture and may be introduced as their associated implementation issues are completed.
+Some modules shown above may still be introduced incrementally as their implementation issues are completed.
 
 ---
 
-## Core Domains
+# Core Concepts
 
-### Communities
+## Communities
 
-A Community represents an organisation or group operating through GuildPass.
+A community is the main organisational boundary in GuildPass.
 
-Communities provide the boundary for:
+A community can define its own:
 
-- memberships;
+- members;
 - roles;
-- governance;
+- governance rules;
 - resources;
-- access decisions;
-- contributions;
+- access policies;
+- contribution models;
 - rewards.
 
-A community can define its own membership and permission model while using common GuildPass infrastructure.
-
 ---
 
-### Membership
+## Membership
 
 Membership represents the relationship between a person or wallet and a GuildPass community.
 
-The V2 domain currently defines membership states including:
+Current membership states include:
 
 ```text
 active
@@ -175,43 +213,22 @@ expired
 suspended
 ```
 
-Membership logic is designed to support:
+Membership logic is expected to support:
 
-- membership creation;
+- creation;
 - expiry;
 - suspension;
 - restoration;
-- membership-state evaluation;
-- eventual Soroban membership representation.
+- eligibility checks;
+- future on-chain representation.
 
 ---
 
-### Wallets
+## Roles
 
-GuildPass Core V2 is being designed with a **Stellar-first** wallet model.
+Roles represent permissions or responsibilities inside a community.
 
-Wallet infrastructure will be responsible for:
-
-- validating Stellar addresses;
-- linking wallets to members;
-- preventing invalid or duplicate wallet relationships;
-- providing a stable identity boundary for blockchain interaction.
-
-The shared domain currently defines the supported wallet network as:
-
-```text
-stellar
-```
-
-Additional chains should only be introduced through an intentional architectural decision rather than by carrying forward legacy multichain complexity.
-
----
-
-### Roles
-
-Roles provide community-level authorisation.
-
-Built-in role concepts currently include:
+Built-in role concepts include:
 
 ```text
 admin
@@ -219,17 +236,15 @@ member
 contributor
 ```
 
-GuildPass is also designed to support community-defined role definitions.
-
-Roles are expected to participate directly in access decisions and governance policies.
+GuildPass is also designed to support community-defined roles.
 
 ---
 
-### Access Control
+## Access Control
 
-Access decisions are intended to be deterministic.
+GuildPass Core is designed around explicit access decisions.
 
-Instead of controllers implementing permission logic independently, GuildPass uses a policy-engine model that evaluates relevant membership and role state and returns an explicit decision.
+A decision can return more than a simple boolean.
 
 Example:
 
@@ -252,178 +267,124 @@ INSUFFICIENT_ROLE
 DENY
 ```
 
-This makes access decisions easier to:
+This makes access behaviour easier to:
 
 - test;
 - audit;
-- explain;
-- consume from APIs;
-- reuse across GuildPass applications.
-
----
-
-## Planned Access Flow
-
-A typical access request is intended to follow this path:
-
-```text
-Client
-  │
-  ▼
-GuildPass API
-  │
-  ▼
-Request validation
-  │
-  ▼
-Community + Membership state
-  │
-  ▼
-Role assignments
-  │
-  ▼
-Policy Engine
-  │
-  ▼
-AccessDecision
-  │
-  ├── ALLOW
-  │
-  └── DENY + reason
-```
-
-The planned API endpoint for this capability is:
-
-```http
-POST /v1/access/check
-```
+- debug;
+- expose through APIs;
+- reuse across applications.
 
 ---
 
 ## Governance
 
-The GuildPass governance engine will provide reusable domain logic for community governance.
+GuildPass governance functionality is intended to provide reusable logic for:
 
-Rather than embedding governance behaviour directly inside routes or database queries, governance rules should be expressed through a dedicated engine.
+- rules;
+- voting;
+- quorum;
+- delegation;
+- eligibility;
+- proposal constraints;
+- constitutional requirements.
 
-Planned areas include:
-
-- community rule evaluation;
-- permissions;
-- governance constraints;
-- rule-set validation;
-- integration with constitutional rules;
-- deterministic governance outcomes.
-
----
-
-## Constitutional Rules
-
-GuildPass separates general governance logic from constitutional constraints.
-
-The constitutional engine is intended to represent rules that should not be bypassed by ordinary application behaviour.
-
-This provides a foundation for communities that want stronger guarantees around how governance decisions are evaluated.
+Governance calculations should remain deterministic and testable independently of API routes.
 
 ---
 
 ## Contributions
 
-Communities often need more than binary membership.
+The contribution system is intended to help communities evaluate meaningful participation.
 
-The GuildPass contribution engine is intended to track and evaluate meaningful participation, providing a foundation for systems such as:
+Examples may include:
 
-- contributor scores;
-- activity thresholds;
-- community progression;
-- reputation;
-- contribution-based privileges;
-- reward eligibility.
-
-Contribution logic should remain deterministic and independently testable.
+- contribution scores;
+- activity metrics;
+- completed tasks;
+- participation thresholds;
+- contributor progression.
 
 ---
 
 ## Rewards
 
-The reward engine will use community activity and contribution information to evaluate rewards.
+GuildPass rewards may be derived from:
 
-Potential reward outcomes include:
+- contribution activity;
+- participation;
+- governance outcomes;
+- community-defined rules.
+
+Potential outcomes include:
 
 - badges;
 - recognition;
-- role upgrades;
-- progression;
-- community-defined rewards.
-
-Reward evaluation should be separated from HTTP controllers and blockchain code so that the same rules can be reused by multiple GuildPass interfaces.
+- role progression;
+- reward allocations.
 
 ---
 
-## Stellar and Soroban
+# Stellar and Soroban
 
-GuildPass Core V2 is adopting Stellar as its primary blockchain environment.
+GuildPass Core V2 is Stellar-first.
 
-Smart contracts are located under:
+The current blockchain direction uses:
 
-```text
-contracts/soroban/
-```
+- Stellar accounts;
+- Soroban smart contracts;
+- Rust for contract development.
 
-The initial contract direction focuses on GuildPass membership.
+The previous EVM-oriented architecture is not the default direction for V2.
 
-The Soroban implementation is expected to complement the backend domain rather than duplicate all backend functionality on-chain.
+Blockchain logic should remain clearly separated from the rest of the application.
 
-A simplified future relationship is:
+Conceptually:
 
 ```text
 GuildPass API
-     │
-     ├──────────────┐
-     │              │
-     ▼              ▼
-PostgreSQL       Soroban
-     │           Contract
-     │              │
-     └──────┬───────┘
-            │
-            ▼
-      Membership State
+      │
+      ├──────────────┐
+      │              │
+      ▼              ▼
+PostgreSQL        Soroban
+      │           Contracts
+      │              │
+      └──────┬───────┘
+             │
+             ▼
+       GuildPass State
 ```
-
-The exact boundary between on-chain and off-chain responsibilities should remain explicit and documented as the contract architecture develops.
 
 ---
 
-## Technology Stack
+# Technology Stack
 
-### Backend
+## Backend
 
-- Node.js 20+
+- Node.js 24+
 - TypeScript
 - Fastify
 - Zod
 
-### Package Management
+## Package Management
 
 - pnpm
 - pnpm workspaces
 
-### Data
+## Data
 
-- PostgreSQL
-- Prisma ORM
-- Redis
+- PostgreSQL 15
+- Prisma
+- Redis 7
 
-> Prisma integration is part of the Core V2 implementation roadmap and may depend on the current state of the relevant contributor issues.
-
-### Blockchain
+## Blockchain
 
 - Stellar
 - Soroban
 - Rust
 
-### Infrastructure
+## Tooling
 
 - Docker
 - Docker Compose
@@ -431,18 +392,18 @@ The exact boundary between on-chain and off-chain responsibilities should remain
 
 ---
 
-## Prerequisites
+# Prerequisites
 
-Before working on GuildPass Core, install:
+Install:
 
-- Node.js 20 or newer
-- pnpm
+- Git
+- Node.js 24 or newer
+- pnpm 11.x
 - Docker
 - Docker Compose
-- Git
-- Rust and Stellar/Soroban tooling when working on smart contracts
+- Rust and Stellar tooling when working on Soroban contracts
 
-Check your Node version:
+Check Node:
 
 ```bash
 node --version
@@ -462,9 +423,9 @@ pnpm 11.16.0
 
 ---
 
-## Getting Started
+# Getting Started
 
-### 1. Fork the repository
+## 1. Fork the repository
 
 Fork:
 
@@ -472,11 +433,9 @@ Fork:
 Adamantine-guild/guildpass-core
 ```
 
-to your own GitHub account.
-
 ---
 
-### 2. Clone your fork
+## 2. Clone your fork
 
 ```bash
 git clone https://github.com/<YOUR_USERNAME>/guildpass-core.git
@@ -485,7 +444,7 @@ cd guildpass-core
 
 ---
 
-### 3. Add the upstream repository
+## 3. Add the upstream repository
 
 ```bash
 git remote add upstream https://github.com/Adamantine-guild/guildpass-core.git
@@ -497,38 +456,37 @@ Verify:
 git remote -v
 ```
 
-You should have:
-
-```text
-origin    your fork
-upstream  Adamantine-guild/guildpass-core
-```
-
 ---
 
-### 4. Install dependencies
-
-```bash
-pnpm install --frozen-lockfile
-```
-
-For local dependency updates:
+## 4. Install dependencies
 
 ```bash
 pnpm install
 ```
 
+For CI-style reproducibility:
+
+```bash
+pnpm install --frozen-lockfile
+```
+
+If pnpm asks you to approve expected dependency build scripts:
+
+```bash
+pnpm approve-builds
+```
+
 ---
 
-### 5. Configure environment variables
+# Environment Configuration
 
-Copy the example environment file:
+Create your local environment file:
 
 ```bash
 cp .env.example .env
 ```
 
-The local development defaults are:
+The local defaults are:
 
 ```env
 NODE_ENV=development
@@ -544,60 +502,60 @@ Do not commit `.env`.
 
 ---
 
-## Local Infrastructure
+# Start Local Infrastructure
 
-GuildPass Core uses Docker Compose for local infrastructure.
+GuildPass Core uses Docker Compose for PostgreSQL and Redis.
 
-Start the services:
+Start:
 
 ```bash
 docker compose up -d
 ```
 
-Check them:
+Check:
 
 ```bash
 docker compose ps
 ```
 
-The development stack includes:
+Expected local services:
 
 ```text
 PostgreSQL : 5432
 Redis      : 6379
 ```
 
-Stop the stack with:
+Stop:
 
 ```bash
 docker compose down
 ```
 
-To also remove local volumes:
+To remove local volumes as well:
 
 ```bash
 docker compose down -v
 ```
 
-Use volume deletion carefully because it removes local persisted database data.
+Use the volume-removal command carefully because it deletes local database data.
 
 ---
 
-## Running the API
+# Run the API
 
-Start the development server:
+Start development mode:
 
 ```bash
 pnpm dev
 ```
 
-or directly:
+or:
 
 ```bash
 pnpm --filter @guildpass/api dev
 ```
 
-The default API address is:
+Default API address:
 
 ```text
 http://localhost:3000
@@ -605,15 +563,15 @@ http://localhost:3000
 
 ---
 
-## Health Check
+# Health Check
 
-GuildPass Core provides a basic health endpoint:
+The API exposes:
 
 ```http
 GET /health
 ```
 
-Example:
+Test it:
 
 ```bash
 curl http://localhost:3000/health
@@ -628,27 +586,11 @@ Expected response:
 }
 ```
 
-Database readiness checks will be incorporated as the persistence layer is completed.
-
 ---
 
-## Workspace Commands
+# Development Commands
 
-### Build all workspaces
-
-```bash
-pnpm build
-```
-
-Equivalent to:
-
-```bash
-pnpm -r build
-```
-
----
-
-### Typecheck
+## Typecheck
 
 ```bash
 pnpm typecheck
@@ -656,7 +598,15 @@ pnpm typecheck
 
 ---
 
-### Run tests
+## Build
+
+```bash
+pnpm build
+```
+
+---
+
+## Test
 
 ```bash
 pnpm test
@@ -664,7 +614,7 @@ pnpm test
 
 ---
 
-### Start API development server
+## Start development server
 
 ```bash
 pnpm dev
@@ -672,23 +622,66 @@ pnpm dev
 
 ---
 
-## Shared Types
+# Database
 
-Core domain contracts live in:
+GuildPass Core V2 uses PostgreSQL as its primary relational datastore.
+
+The V2 database approach is designed around:
+
+- a coherent Prisma schema;
+- reproducible migrations;
+- fresh-database compatibility;
+- explicit constraints;
+- predictable relations;
+- CI migration verification.
+
+The intended development flow is:
+
+```text
+install dependencies
+        ↓
+start PostgreSQL
+        ↓
+generate Prisma client
+        ↓
+apply migrations
+        ↓
+typecheck
+        ↓
+build
+        ↓
+test
+```
+
+Database migrations should work against a fresh database without requiring manual repair.
+
+---
+
+# Redis
+
+Redis is used for infrastructure concerns such as caching.
+
+Redis must not become the authoritative source of GuildPass domain state.
+
+The database and relevant domain systems remain the source of truth.
+
+---
+
+# Shared Types
+
+Shared domain contracts live under:
 
 ```text
 packages/shared-types
 ```
 
-The package is published internally as:
+The package is exposed internally as:
 
 ```text
 @guildpass/shared-types
 ```
 
-It should contain definitions that need to be shared across GuildPass modules without introducing infrastructure dependencies.
-
-For example:
+Examples include:
 
 ```ts
 export interface Community {
@@ -709,179 +702,68 @@ export interface AccessDecision {
 }
 ```
 
-Shared types should remain focused on domain contracts.
-
-Database clients, HTTP frameworks and application-specific implementation details should not be introduced into this package.
+Shared types should remain free of unnecessary infrastructure dependencies.
 
 ---
 
-## Database
+# Design Principles
 
-GuildPass Core V2 uses PostgreSQL as its primary relational datastore.
+## 1. Domain logic should be explicit
 
-The database layer is being rebuilt with an emphasis on:
+Business rules should not be hidden inside:
 
-- one coherent Prisma schema;
-- reproducible migrations;
-- clean fresh-database setup;
-- explicit relationships;
-- predictable constraints;
-- testable seed and migration behaviour.
-
-A fresh clone should eventually be able to:
-
-```text
-install dependencies
-        ↓
-start PostgreSQL
-        ↓
-generate Prisma client
-        ↓
-apply migrations
-        ↓
-build
-        ↓
-test
-```
-
-without manual database repair.
+- controllers;
+- database queries;
+- route handlers;
+- middleware.
 
 ---
 
-## Redis
+## 2. Keep modules independently testable
 
-Redis is intended for infrastructure concerns such as access-decision caching.
+A policy calculator should be testable without starting a database.
 
-Redis must not become the source of truth for GuildPass domain state.
+A governance calculation should not require the API server.
 
-The authoritative state should remain in the appropriate persistent domain store.
-
-Caching should be treated as an optimisation layer.
+A Stellar parser should not require a network request.
 
 ---
 
-## Events and Transactional Outbox
+## 3. Prefer deterministic behaviour
 
-Core V2 will introduce structured domain events and a transactional outbox.
-
-This is intended to support reliable downstream processing without coupling domain operations directly to external consumers.
-
-The general pattern is:
-
-```text
-Domain operation
-      │
-      ▼
-Database transaction
-      │
-      ├── State update
-      │
-      └── Outbox event
-              │
-              ▼
-       Event processor
-```
-
-This ensures important events can be persisted alongside the state transition that produced them.
+Given the same inputs and state, domain logic should return the same result.
 
 ---
 
-## Auditability
+## 4. Keep infrastructure separate from business rules
 
-GuildPass infrastructure should make important state changes explainable.
+Fastify, PostgreSQL, Redis, and Soroban are infrastructure.
 
-Audit events are planned for operations involving areas such as:
-
-- membership;
-- roles;
-- access;
-- governance;
-- rewards;
-- administrative actions.
-
-Audit infrastructure should capture meaningful domain activity without leaking sensitive information.
+GuildPass domain behaviour should remain understandable without them.
 
 ---
 
-# Development Workflow
+## 5. Avoid rebuilding V1 accidentally
 
-## Sync your fork
+Core V2 is intentionally smaller.
 
-Before starting a new issue:
-
-```bash
-git checkout main
-git fetch upstream
-git pull upstream main
-git push origin main
-```
+Do not recreate old architecture unless there is a specific approved requirement.
 
 ---
 
-## Create a feature branch
+## 6. Migrations must be reproducible
 
-Do not work directly on `main`.
+Database migrations must work on a fresh database.
 
-Example:
-
-```bash
-git checkout -b feat/community-service
-```
-
-Recommended branch prefixes include:
-
-```text
-feat/
-fix/
-test/
-docs/
-refactor/
-chore/
-ci/
-```
-
-Examples:
-
-```text
-feat/community-service
-feat/stellar-wallet-validation
-fix/access-decision-state
-test/membership-lifecycle
-docs/api-architecture
-```
+Local database history should never be required for a migration to succeed.
 
 ---
 
-## Keep Changes Scoped
+## 7. Tests are part of the implementation
 
-Each pull request should solve the issue it references.
+New logic should include relevant tests.
 
-Avoid combining unrelated:
-
-- refactors;
-- dependencies;
-- formatting changes;
-- new features;
-- infrastructure changes
-
-into the same PR unless they are required by the issue.
-
-Smaller scoped PRs are easier to review, test and merge.
-
----
-
-## Before Opening a Pull Request
-
-Run:
-
-```bash
-pnpm install --frozen-lockfile
-pnpm typecheck
-pnpm build
-pnpm test
-```
-
-All applicable checks should pass before submitting your PR.
+Bug fixes should preferably include regression tests.
 
 ---
 
@@ -889,89 +771,69 @@ All applicable checks should pass before submitting your PR.
 
 GuildPass Core uses GitHub Actions to validate pull requests.
 
-The Core validation pipeline is intended to run:
+The Core pipeline performs:
 
 ```text
-dependency installation
+Install dependencies
         ↓
-typecheck
+Typecheck
         ↓
-build
+Build
         ↓
-tests
+Test
 ```
 
-The required Core validation job is:
+The required job is:
 
 ```text
 Build and Test
 ```
 
-Pull requests should not be merged until the required Core CI checks pass.
-
-As database infrastructure matures, validation will also expand to include fresh PostgreSQL and Prisma migration verification.
+Pull requests are not eligible for automatic merging until this check passes.
 
 ---
 
-## PR Automation
+# PR Automation
 
-GuildPass uses central PR automation maintained by Adamantine Guild.
+GuildPass repositories use central PR automation maintained by Adamantine Guild.
 
-The automation evaluates open contributor pull requests and can:
+The automation can:
 
-- inspect workflow status;
-- wait for pending checks;
+- inspect CI checks;
+- detect pending workflows;
 - detect failed checks;
 - detect merge conflicts;
-- comment when intervention is required;
-- safely approve eligible external-contributor workflow runs;
-- automatically merge eligible pull requests.
+- comment on blocked pull requests;
+- approve eligible external-contributor workflows;
+- merge eligible pull requests.
 
-For `guildpass-core`, the required Core CI check must be present and successful before a PR becomes eligible for automatic merging.
+For `guildpass-core`, the required CI check must exist and succeed before auto-merge is allowed.
 
-The intended flow is:
+The flow is:
 
 ```text
 Contributor opens PR
         │
-        ├───────────────┐
-        │               │
-        ▼               ▼
-    Core CI        PR automation
-        │               │
-        ▼               │
- Build and Test          │
-        │               │
-        └───────┬───────┘
-                │
-                ▼
-        Evaluate PR state
-                │
-        ┌───────┼─────────┐
-        │       │         │
-      Fail   Pending    Success
-        │       │         │
-        ▼       ▼         ▼
-      Block    Wait     Mergeable
+        ├──────────────┐
+        │              │
+        ▼              ▼
+     Core CI      PR Automation
+        │              │
+        ▼              │
+  Build and Test       │
+        │              │
+        └──────┬───────┘
+               │
+               ▼
+       Evaluate PR state
+               │
+      ┌────────┼────────┐
+      │        │        │
+    Failed   Pending   Passed
+      │        │        │
+      ▼        ▼        ▼
+    Block     Wait     Merge
 ```
-
-A failed pipeline does not qualify for auto-merge.
-
----
-
-## Workflow Security
-
-Pull requests that modify:
-
-```text
-.github/workflows/
-```
-
-require additional care.
-
-The central automation deliberately avoids blindly approving contributor workflow changes because GitHub Actions workflows can affect repository permissions and execution behaviour.
-
-CI and workflow modifications may therefore require maintainer review.
 
 ---
 
@@ -989,67 +851,112 @@ SECURITY.md
 
 ---
 
-## Contributor Issues
+# Contributor Workflow
 
-Work should normally begin from an existing GitHub issue.
+## Sync your fork
 
-GuildPass contributor issues generally contain:
-
-- difficulty;
-- issue type;
-- background;
-- problem definition;
-- expected outcome;
-- suggested implementation;
-- acceptance criteria;
-- likely affected files or directories.
-
-Campaign issues may also carry labels such as:
-
-```text
-Third Campaign
-backend
-database
-stellar
-soroban
-testing
-governance
-membership
-policy
-intermediate
-advanced
+```bash
+git checkout main
+git fetch upstream
+git pull upstream main
+git push origin main
 ```
-
-Select an issue that matches your experience and follow the acceptance criteria carefully.
 
 ---
 
-## Pull Request Guidelines
+## Create a feature branch
 
-When opening a pull request:
-
-1. Reference the issue being solved.
-2. Explain what changed.
-3. Keep the implementation scoped to the issue.
-4. Add or update tests where appropriate.
-5. Avoid unrelated formatting or refactoring.
-6. Ensure TypeScript typechecking passes.
-7. Ensure the project builds.
-8. Ensure tests pass.
-9. Resolve merge conflicts.
-10. Respond to review feedback where necessary.
+Do not work directly on `main`.
 
 Example:
+
+```bash
+git checkout -b feat/stellar-address-validation
+```
+
+Recommended prefixes:
+
+```text
+feat/
+fix/
+test/
+docs/
+refactor/
+chore/
+ci/
+```
+
+---
+
+## Work on one issue
+
+Contributor issues are intentionally scoped so multiple contributors can work concurrently.
+
+Do not make your issue depend on another open issue unless the issue explicitly says so.
+
+---
+
+## Validate your work
+
+Before opening a PR:
+
+```bash
+pnpm install --frozen-lockfile
+pnpm typecheck
+pnpm build
+pnpm test
+```
+
+---
+
+## Open a pull request
+
+Reference the issue:
 
 ```text
 Closes #123
 ```
 
+Your PR should explain:
+
+- what changed;
+- why;
+- how it works;
+- what tests were added;
+- any important design decisions.
+
 ---
 
-## Commit Messages
+# Contributor Issues
 
-Use clear, scoped commit messages.
+GuildPass Core contributor issues may include labels such as:
+
+```text
+Third Campaign
+advanced
+expert
+backend
+database
+stellar
+soroban
+policy
+governance
+membership
+roles
+testing
+security
+performance
+```
+
+Issues should be treated as the source of truth for implementation scope.
+
+Avoid expanding a contribution far beyond the issue acceptance criteria.
+
+---
+
+# Commit Messages
+
+Use clear scoped commit messages.
 
 Recommended format:
 
@@ -1060,162 +967,52 @@ type(scope): description
 Examples:
 
 ```text
-feat(membership): add membership lifecycle service
-fix(policy): handle suspended membership decisions
-test(wallet): add Stellar address validation cases
-docs(api): document access check contract
-ci(core): add database migration verification
+feat(policy): add deterministic rule evaluator
+feat(stellar): validate Stellar account IDs
+fix(api): reject malformed request metadata
+test(governance): cover quorum boundary cases
+docs(core): update contributor setup
 ```
-
----
-
-# Contributor Roadmap
-
-Core V2 development is intentionally being broken into smaller independently reviewable pieces.
-
-Major work areas include:
-
-### Foundation
-
-- Prisma and PostgreSQL setup
-- core Prisma schema
-- reproducible initial migration
-- fresh-clone CI validation
-- database-aware health checks
-
-### Domain Services
-
-- community service
-- Stellar wallet service
-- member and membership lifecycle
-- roles and role assignments
-
-### Access
-
-- policy engine
-- access-check API
-- standardised API errors
-- Redis access-decision caching
-
-### Infrastructure
-
-- audit events
-- transactional outbox
-- integration testing
-
-### Community Systems
-
-- governance engine
-- contribution engine
-- reward engine
-
-### Stellar
-
-- Soroban membership contract
-- Soroban contract tests
-
----
-
-# Design Principles
-
-Contributors should keep the following principles in mind when working on Core V2.
-
-## 1. Domain logic should be explicit
-
-Business rules should not be hidden inside controllers, Prisma calls or route handlers.
-
----
-
-## 2. Deterministic behaviour is preferred
-
-Given the same valid inputs and state, domain engines should return predictable outcomes.
-
----
-
-## 3. Infrastructure should not define the domain
-
-PostgreSQL, Redis, Fastify and Soroban are tools used by GuildPass.
-
-The GuildPass domain should remain understandable independently of those tools.
-
----
-
-## 4. Avoid premature abstraction
-
-V2 intentionally starts smaller than the previous architecture.
-
-Create abstractions when the domain requires them, not solely because they existed in V1.
-
----
-
-## 5. Migrations must be reproducible
-
-A migration should work against a fresh database without requiring knowledge of a developer's local database history.
-
----
-
-## 6. Tests are part of the feature
-
-New domain behaviour should include appropriate tests.
-
-Bug fixes should preferably include a regression test.
-
----
-
-## 7. Security-sensitive changes deserve explicit review
-
-Changes involving:
-
-- authentication;
-- wallet ownership;
-- permissions;
-- access control;
-- workflow files;
-- smart contracts;
-- secrets;
-- governance
-
-should be implemented conservatively and reviewed carefully.
-
----
-
-# Repository History
-
-GuildPass Core V2 is a rebuild, not a deletion of the project's history.
-
-The original implementation remains available through Git history and the repository's preserved pre-rebuild references.
-
-This allows maintainers to inspect earlier implementations when useful without carrying legacy architecture directly into V2.
-
-Contributors should implement against the current Core V2 architecture rather than restoring old V1 modules unless an issue explicitly requests it.
 
 ---
 
 # Security
 
-Do not report security vulnerabilities through a public GitHub issue.
+Never commit:
 
-Follow the process described in:
+- private keys;
+- Stellar secret keys;
+- seed phrases;
+- API tokens;
+- database passwords;
+- production credentials;
+- `.env` files containing secrets.
+
+Security vulnerabilities should not be disclosed through public GitHub issues.
+
+Follow:
 
 ```text
 SECURITY.md
 ```
 
-Never commit:
+for responsible disclosure instructions.
 
-- private keys;
-- seed phrases;
-- wallet secrets;
-- API keys;
-- database credentials;
-- access tokens;
-- production `.env` files.
+---
+
+# Repository History
+
+GuildPass Core V2 is a rebuild, not a deletion of the original project.
+
+The pre-rebuild implementation remains available through Git history and preserved archive references.
+
+Contributors should build against the current `main` branch and current V2 architecture unless an issue explicitly says otherwise.
 
 ---
 
 # Documentation
 
-Architecture and implementation documentation should live under:
+Architecture and implementation documentation belongs under:
 
 ```text
 docs/
@@ -1224,43 +1021,50 @@ docs/
 Documentation should be updated when a change materially affects:
 
 - architecture;
-- public APIs;
+- APIs;
 - data models;
-- developer setup;
-- smart-contract interfaces;
-- contributor workflows.
+- contributor setup;
+- CI;
+- Stellar integration;
+- Soroban contracts.
 
 ---
 
 # Licence
 
-GuildPass Core is distributed under the terms described in the repository's:
+GuildPass Core is distributed under the MIT License.
+
+See:
 
 ```text
 LICENSE
 ```
 
-Review the licence before redistributing or integrating the project.
+for the complete terms.
 
 ---
 
 # Adamantine Guild
 
-GuildPass is developed as part of the **Adamantine Guild** open-source ecosystem.
+GuildPass is developed as part of the Adamantine Guild open-source ecosystem.
 
-Repository:
+### GuildPass Core
 
 ```text
 https://github.com/Adamantine-guild/guildpass-core
 ```
 
-Organisation:
+### Adamantine Guild
 
 ```text
 https://github.com/Adamantine-guild
 ```
 
 ---
+
+<p align="center">
+  <img src="./logo/logo.png" alt="GuildPass Core Logo" width="110" />
+</p>
 
 <p align="center">
   <strong>GuildPass Core</strong><br />
