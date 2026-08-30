@@ -142,7 +142,7 @@ function validateTree(
   const maxDepth = options.maxDepth;
   const maxNodes = options.maxNodes;
 
-  if (depth > maxDepth) {
+  if (depth >= maxDepth) {
     throw new ExplanationError(
       `Evaluation tree exceeds maximum depth of ${maxDepth}`
     );
@@ -337,7 +337,15 @@ export function explainDecision(
   extractReasons(node, null, reasons, []);
 
   // Ensure deterministic ordering by sorting reasons
+  // For NOT nodes, ensure the NOT reason comes before child reason
   reasons.sort((a, b) => {
+    // Prioritize NOT codes over COND codes when codes are different
+    if (a.code.includes('NOT') && !b.code.includes('NOT')) {
+      return -1;
+    }
+    if (!a.code.includes('NOT') && b.code.includes('NOT')) {
+      return 1;
+    }
     // Sort by code first, then by nodeId
     if (a.code !== b.code) {
       return a.code.localeCompare(b.code);

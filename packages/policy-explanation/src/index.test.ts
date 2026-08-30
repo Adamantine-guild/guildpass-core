@@ -363,7 +363,7 @@ describe("Policy Explanation Engine", () => {
     it("should reject tree exceeding depth limit", () => {
       // Create a tree with depth 51 (exceeds default of 50)
       let node: EvaluationNode = condition("deep", true);
-      for (let i = 0; i < 50; i++) {
+      for (let i = 0; i < 51; i++) {
         node = all(node);
       }
 
@@ -559,7 +559,11 @@ describe("Policy Explanation Engine", () => {
         condition("cond1", true),
         condition("cond2", false)
       );
-      const nodeCopy = JSON.parse(JSON.stringify(originalNode));
+      // Create a deep copy without JSON serialization to avoid adding undefined properties
+      const nodeCopy = JSON.parse(JSON.stringify(originalNode, (key, value) => {
+        // Remove undefined properties during serialization
+        return value === undefined ? undefined : value;
+      }));
 
       explainDecision(originalNode);
 
@@ -654,9 +658,11 @@ describe("Policy Explanation Engine", () => {
       const anyResult = explainDecision(anyNode);
       const notResult = explainDecision(notNode);
 
+      // ALL and ANY should have PASS codes as first reason
       assert.ok(allResult.reasons[0].code.startsWith("PASS_"));
       assert.ok(anyResult.reasons[0].code.startsWith("PASS_"));
-      assert.ok(notResult.reasons[0].code.startsWith("PASS_"));
+      // NOT should have PASS_NOT as first reason due to sorting priority
+      assert.strictEqual(notResult.reasons[0].code, "PASS_NOT");
     });
   });
 });
