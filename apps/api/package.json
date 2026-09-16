@@ -14,6 +14,12 @@
     "prisma:studio": "prisma studio"
   },
   "dependencies": {
+    "@guildpass/capability-token": "workspace:*",
+    "@guildpass/circuit-breaker": "workspace:*",
+    "@guildpass/idempotency": "workspace:*",
+    "@guildpass/log-redaction": "workspace:*",
+    "@guildpass/rate-limit": "workspace:*",
+    "@guildpass/retry-policy": "workspace:*",
     "@guildpass/shared-types": "workspace:*",
     "@prisma/client": "^6.4.0",
     "fastify": "^4.29.1",
