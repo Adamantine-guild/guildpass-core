@@ -274,7 +274,7 @@ describe("GuildPass Core V2 Production Hardening", () => {
         failureThreshold: 2,
         cooldownMs: 60000,
         halfOpenProbeLimit: 1,
-        isFailure: (err) => classifyStellarError(err).isRetryable,
+        isFailure: (err: unknown) => classifyStellarError(err).isRetryable,
       });
 
       const executor = new StellarTransactionExecutor({

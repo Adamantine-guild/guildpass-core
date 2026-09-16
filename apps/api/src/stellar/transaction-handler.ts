@@ -202,7 +202,7 @@ export class StellarTransactionExecutor {
       return await this.circuitBreaker.execute(async () => {
         let attemptsCount = 0;
         try {
-          const result = await retry(async (meta) => {
+          const result = await retry(async (meta: { attempt: number }) => {
             attemptsCount = meta.attempt;
             return await operation();
           }, this.retryOptions);
