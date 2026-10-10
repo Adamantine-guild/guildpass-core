@@ -17,6 +17,24 @@ importers:
 
   apps/api:
     dependencies:
+      '@guildpass/capability-token':
+        specifier: workspace:*
+        version: link:../../packages/capability-token
+      '@guildpass/circuit-breaker':
+        specifier: workspace:*
+        version: link:../../packages/circuit-breaker
+      '@guildpass/idempotency':
+        specifier: workspace:*
+        version: link:../../packages/idempotency
+      '@guildpass/log-redaction':
+        specifier: workspace:*
+        version: link:../../packages/log-redaction
+      '@guildpass/rate-limit':
+        specifier: workspace:*
+        version: link:../../packages/rate-limit
+      '@guildpass/retry-policy':
+        specifier: workspace:*
+        version: link:../../packages/retry-policy
       '@guildpass/shared-types':
         specifier: workspace:*
         version: link:../../packages/shared-types
